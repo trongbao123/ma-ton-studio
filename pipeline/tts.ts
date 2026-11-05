@@ -28,10 +28,11 @@ export async function speak(text: string, style: string, outFile: string) {
         }),
       });
       const body = await res.json().catch(() => ({}));
-      const data = body?.steps?.flatMap((s: { content?: { data?: string }[] }) => s.content ?? []).find((c: { data?: string }) => c.data)?.data;
-      if (res.ok && data) {
+      type Part = { data?: string; mime_type?: string };
+      const part: Part | undefined = body?.steps?.flatMap((s: { content?: Part[] }) => s.content ?? []).find((c: Part) => c.data);
+      if (res.ok && part?.data) {
         void recordUsage(model, false);
-        await writeFile(outFile, Buffer.from(data, "base64"));
+        await writeFile(outFile, toWav(Buffer.from(part.data, "base64"), part.mime_type ?? ""));
         return;
       }
       last = `${model} ${res.status}: ${body?.error?.message ?? "không có audio"}`;
@@ -46,4 +47,26 @@ export async function speak(text: string, style: string, outFile: string) {
   }
   if (limited === MODELS.length) throw new QuotaExhaustedError(`Hết lượt giọng đọc free hôm nay. (${last})`);
   throw new Error(`TTS lỗi: ${last}`);
+}
+
+/** Một số model TTS trả PCM thô (audio/L16;rate=24000) thay vì WAV → gắn header WAV để ffmpeg đọc được. */
+export function toWav(buf: Buffer, mime: string): Buffer {
+  if (buf.subarray(0, 4).toString("ascii") === "RIFF") return buf;
+  const rate = Number(mime.match(/rate=(\d+)/)?.[1]) || 24000;
+  const channels = Number(mime.match(/channels=(\d+)/)?.[1]) || 1;
+  const header = Buffer.alloc(44);
+  header.write("RIFF", 0);
+  header.writeUInt32LE(36 + buf.length, 4);
+  header.write("WAVE", 8);
+  header.write("fmt ", 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(channels, 22);
+  header.writeUInt32LE(rate, 24);
+  header.writeUInt32LE(rate * channels * 2, 28);
+  header.writeUInt16LE(channels * 2, 32);
+  header.writeUInt16LE(16, 34);
+  header.write("data", 36);
+  header.writeUInt32LE(buf.length, 40);
+  return Buffer.concat([header, buf]);
 }
