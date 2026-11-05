@@ -8,7 +8,9 @@ import {
   chapterPrompt,
   outlinePrompt,
   outlineSchema,
+  continuePrompt,
   summaryPrompt,
+  wordCount,
 } from "./prompts";
 
 export async function draftBible(idea: string, genre: string) {
@@ -31,31 +33,52 @@ export async function planChapters(seriesId: number, count: number) {
     .values(drafts.map((d, i) => ({ seriesId, number: startAt + i, title: d.title, outline: d.outline })));
 }
 
-/** Viết nội dung + tóm tắt cho một chương. Chương đã duyệt thì không viết đè. */
-export async function writeChapter(chapterId: number) {
+export type WriteMode = "start" | "continue" | "finish";
+
+/**
+ * Viết chương theo từng lượt để mỗi request nằm dưới maxDuration (300s) của Vercel.
+ * Trình duyệt điều phối: start → continue (tới khi `enough`, tối đa 2 lần) → finish (tóm tắt, chuyển chờ duyệt).
+ */
+export async function writeChapterStep(chapterId: number, mode: WriteMode) {
   const chapter = await getChapter(chapterId);
   if (chapter.status === "approved") throw new Error("Chương đã duyệt — bỏ duyệt trước khi viết lại.");
-
   const s = await getSeries(chapter.seriesId);
-  const previous = await db()
+  const ai = textProvider();
+  let content = chapter.content;
+
+  if (mode === "finish") {
+    const summary = await ai.generateText({ ...summaryPrompt(chapter, content), temperature: 0.3 });
+    await db().update(chapters).set({ summary, status: "draft", updatedAt: new Date() }).where(eq(chapters.id, chapterId));
+  } else {
+    const base = chapterPrompt(s, await previousChapters(chapter), chapter);
+    const part = await ai.generateText({
+      ...(mode === "start" ? base : continuePrompt(base, content, s.targetWords)),
+      maxOutputTokens: 16000,
+      temperature: 0.9,
+    });
+    content = mode === "start" ? part : `${content}\n\n${part}`;
+    await db()
+      .update(chapters)
+      .set({ content, summary: "", status: "outline", updatedAt: new Date() })
+      .where(eq(chapters.id, chapterId));
+  }
+  const words = wordCount(content);
+  return { words, enough: words >= s.targetWords * 0.8 };
+}
+
+/** Prompt đầy đủ để người dùng tự dán vào ChatGPT/Claude web nếu muốn. */
+export async function manualPrompt(chapter: Chapter) {
+  const s = await getSeries(chapter.seriesId);
+  const p = chapterPrompt(s, await previousChapters(chapter), chapter);
+  return `${p.system}\n\n${p.prompt}`;
+}
+
+function previousChapters(chapter: Chapter) {
+  return db()
     .select()
     .from(chapters)
-    .where(and(eq(chapters.seriesId, s.id), lt(chapters.number, chapter.number)))
+    .where(and(eq(chapters.seriesId, chapter.seriesId), lt(chapters.number, chapter.number)))
     .orderBy(asc(chapters.number));
-
-  const ai = textProvider();
-  const content = await ai.generateText({
-    ...chapterPrompt(s, previous, chapter),
-    // Tiếng Việt ~2 token/từ, chừa thêm chỗ cho thinking token của model.
-    maxOutputTokens: s.targetWords * 4,
-    temperature: 0.9,
-  });
-  const summary = await ai.generateText({ ...summaryPrompt(chapter, content), temperature: 0.3 });
-
-  await db()
-    .update(chapters)
-    .set({ content, summary, status: "draft", updatedAt: new Date() })
-    .where(eq(chapters.id, chapterId));
 }
 
 export async function getSeries(id: number) {

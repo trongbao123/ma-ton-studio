@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { chapters, series } from "@/db/schema";
-import { draftBible, planChapters, writeChapter } from "@/lib/story/service";
+import { draftBible, planChapters, writeChapterStep, type WriteMode } from "@/lib/story/service";
 
 export type ActionState = { error?: string; ok?: string };
 
@@ -64,12 +64,14 @@ export async function planChaptersAction(seriesId: number, _: ActionState, form:
   });
 }
 
-export async function writeChapterAction(chapterId: number): Promise<ActionState> {
-  return attempt(async () => {
-    await writeChapter(chapterId);
-    revalidatePath("/", "layout");
-    return "AI đã viết xong — đọc và duyệt.";
-  });
+export async function writeChapterAction(chapterId: number, mode: WriteMode) {
+  try {
+    const r = await writeChapterStep(chapterId, mode);
+    if (mode === "finish") revalidatePath("/", "layout");
+    return r;
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 export async function saveChapterAction(chapterId: number, _: ActionState, form: FormData): Promise<ActionState> {

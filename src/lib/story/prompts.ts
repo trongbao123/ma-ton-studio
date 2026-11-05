@@ -68,6 +68,23 @@ ${chapter.outline}
   };
 }
 
+export function continuePrompt(base: { system: string; prompt: string }, written: string, targetWords: number) {
+  return {
+    system: base.system,
+    prompt: `${base.prompt}
+
+# Phần đã viết (${wordCount(written)} từ)
+${written}
+
+Chương còn quá ngắn. Viết TIẾP từ đúng chỗ dừng, thêm khoảng ${targetWords - wordCount(written)} từ, đi hết dàn ý và kết bằng cliffhanger. Không lặp lại đoạn đã viết, không tóm tắt.`,
+  };
+}
+
+export function wordCount(text: string) {
+  const t = text.trim();
+  return t ? t.split(/\s+/).length : 0;
+}
+
 export function summaryPrompt(chapter: Pick<Chapter, "number" | "title">, content: string) {
   return {
     system: "Bạn tóm tắt chương truyện để làm trí nhớ cho tác giả viết các chương sau.",

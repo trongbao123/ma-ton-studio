@@ -3,9 +3,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
-import { planChaptersAction, updateSeriesAction, writeChapterAction } from "@/app/actions";
+import { planChaptersAction, updateSeriesAction } from "@/app/actions";
 import { ActionForm } from "@/components/action-form";
 import { StatusBadge } from "@/components/status-badge";
+import { WriteButton } from "@/components/write-button";
 import { db } from "@/db";
 import { series } from "@/db/schema";
 import { parseId } from "@/lib/params";
@@ -60,12 +61,7 @@ async function SeriesDetail({ params }: { params: Promise<{ id: string }> }) {
                 </Link>
                 <StatusBadge status={c.status} />
                 {c.status === "outline" && (
-                  <ActionForm
-                    action={writeChapterAction.bind(null, c.id)}
-                    submitLabel="Viết"
-                    pendingLabel="Đang viết…"
-                    variant="secondary"
-                  />
+                  <WriteButton chapterId={c.id} label="Viết" />
                 )}
               </li>
             ))}

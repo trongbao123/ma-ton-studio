@@ -3,9 +3,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
-import { saveChapterAction, setApprovedAction, writeChapterAction } from "@/app/actions";
+import { saveChapterAction, setApprovedAction } from "@/app/actions";
 import { ActionForm } from "@/components/action-form";
+import { CopyButton } from "@/components/copy-button";
 import { StatusBadge } from "@/components/status-badge";
+import { WriteButton } from "@/components/write-button";
+import { manualPrompt } from "@/lib/story/service";
 import { db } from "@/db";
 import { chapters, series } from "@/db/schema";
 import { parseId } from "@/lib/params";
@@ -49,12 +52,10 @@ async function ChapterDetail({ params }: { params: Promise<{ id: string }> }) {
         </div>
         <div className="flex flex-wrap gap-2">
           {!approved && (
-            <ActionForm
-              action={writeChapterAction.bind(null, c.id)}
-              submitLabel={c.content ? "AI viết lại" : "AI viết chương"}
-              pendingLabel="AI đang viết (1–3 phút)…"
-              variant="secondary"
-            />
+            <>
+              <WriteButton chapterId={c.id} label={c.content ? "AI viết lại" : "AI viết chương"} />
+              <CopyButton text={await manualPrompt(c)} label="Copy prompt (dán vào ChatGPT)" />
+            </>
           )}
           {c.content && (
             <ActionForm action={setApprovedAction.bind(null, c.id, !approved)} submitLabel={approved ? "Bỏ duyệt" : "Duyệt"} />
