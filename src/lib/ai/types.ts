@@ -5,6 +5,8 @@ export interface TextRequest {
   prompt: string;
   maxOutputTokens?: number;
   temperature?: number;
+  /** "quality" cho văn truyện, "cheap" cho việc phụ (tóm tắt, prompt ảnh, metadata) — để dành quota model tốt. */
+  tier?: "quality" | "cheap";
 }
 
 export interface JsonRequest<T> extends TextRequest {

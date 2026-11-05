@@ -6,15 +6,18 @@ type Format = { type: "text"; mime_type: "application/json"; schema: Record<stri
 
 /**
  * Gọi Gemini qua Interactions API (model mới không còn chạy qua generateContent).
- * Free tier hay báo 503 "high demand" → thử lần lượt từng model trong danh sách.
+ * Free tier: ~20 lượt/ngày cho cả họ flash, hay báo 503 → thử lần lượt từng model;
+ * model đã hết quota ngày thì nhớ lại và bỏ qua trong cả tiến trình.
  */
 export class GeminiProvider implements TextProvider {
   readonly name = "gemini";
   private readonly client: GoogleGenAI;
 
+  private readonly exhausted = new Set<string>();
+
   constructor(
     apiKey: string,
-    private readonly models: string[],
+    private readonly models: Record<"quality" | "cheap", string[]>,
   ) {
     this.client = new GoogleGenAI({ apiKey });
   }
@@ -34,7 +37,7 @@ export class GeminiProvider implements TextProvider {
 
   private async call(req: TextRequest, format?: Format): Promise<string> {
     let lastError: unknown;
-    for (const model of this.models) {
+    for (const model of this.models[req.tier ?? "quality"].filter((m) => !this.exhausted.has(m))) {
       for (let attempt = 0; attempt < 2; attempt++) {
         try {
           const res = await this.client.interactions.create({
@@ -49,13 +52,21 @@ export class GeminiProvider implements TextProvider {
           lastError = new Error(`${model} trả về rỗng.`);
         } catch (e) {
           lastError = e;
+          if (isDailyLimit(e)) {
+            this.exhausted.add(model);
+            break;
+          }
           if (!isOverloaded(e)) throw e;
-          await new Promise((r) => setTimeout(r, 3000));
+          await new Promise((r) => setTimeout(r, 5000));
         }
       }
     }
-    throw new Error(`Gemini đang quá tải, thử lại sau. (${lastError instanceof Error ? lastError.message : lastError})`);
+    throw new Error(`Gemini hết lượt free hoặc quá tải, thử lại sau. (${lastError instanceof Error ? lastError.message : lastError})`);
   }
+}
+
+function isDailyLimit(e: unknown) {
+  return /per day/i.test(e instanceof Error ? e.message : String(e));
 }
 
 function isOverloaded(e: unknown) {

@@ -1,6 +1,6 @@
 import { writeFile } from "node:fs/promises";
 
-const MODELS = (process.env.TTS_MODELS ?? "gemini-3.8-flash-tts,gemini-3.1-flash-tts-preview").split(",");
+const MODELS = (process.env.TTS_MODELS ?? "gemini-3.8-flash-tts,gemini-3.1-flash-tts-preview,gemini-2.5-flash-preview-tts,gemini-3.8-flash-lite-tts").split(",");
 const VOICE = process.env.TTS_VOICE ?? "Charon";
 
 /** Đọc một khối văn bản bằng Gemini TTS, ghi WAV (24kHz mono). Thử lần lượt model khi quá tải/hết quota. */
@@ -29,7 +29,7 @@ export async function speak(text: string, style: string, outFile: string) {
         return;
       }
       last = `${model} ${res.status}: ${body?.error?.message ?? "không có audio"}`;
-      if (res.status !== 429 && res.status < 500) break;
+      if ((res.status !== 429 && res.status < 500) || /per day/i.test(last)) break;
       await new Promise((r) => setTimeout(r, 10_000 * (attempt + 1)));
     }
   }

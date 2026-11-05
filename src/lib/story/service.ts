@@ -30,7 +30,15 @@ export async function planChapters(seriesId: number, count: number) {
   const startAt = (previous.at(-1)?.number ?? 0) + 1;
   await db()
     .insert(chapters)
-    .values(drafts.map((d, i) => ({ seriesId, number: startAt + i, title: d.title, outline: d.outline })));
+    .values(
+      drafts.map((d, i) => ({
+        seriesId,
+        number: startAt + i,
+        // Model hay tự thêm "Chương N:" vào tiêu đề — UI đã hiển thị số chương.
+        title: d.title.replace(/^\s*chương\s*\d+\s*[:.\-–—]\s*/i, ""),
+        outline: d.outline,
+      })),
+    );
 }
 
 export type WriteMode = "start" | "continue" | "finish";
@@ -47,7 +55,7 @@ export async function writeChapterStep(chapterId: number, mode: WriteMode) {
   let content = chapter.content;
 
   if (mode === "finish") {
-    const summary = await ai.generateText({ ...summaryPrompt(chapter, content), temperature: 0.3 });
+    const summary = await ai.generateText({ ...summaryPrompt(chapter, content), temperature: 0.3, tier: "cheap" });
     await db().update(chapters).set({ summary, status: "draft", updatedAt: new Date() }).where(eq(chapters.id, chapterId));
   } else {
     const base = chapterPrompt(s, await previousChapters(chapter), chapter);

@@ -23,6 +23,7 @@ export async function videoMeta(s: Series, c: Chapter) {
     prompt: `Truyện: ${s.title}\nCốt truyện: ${s.premise}\nNhân vật/bối cảnh:\n${s.bible.slice(0, 3000)}\n\nChương ${c.number}: ${c.title}\n${c.content}`,
     schema: metaSchema,
     temperature: 0.8,
+    tier: "cheap",
   });
 }
 
@@ -37,6 +38,7 @@ For EACH numbered scene below write one vivid English image prompt (subject, act
 ${scenes.map((t, i) => `${i + 1}. ${t.slice(0, 600)}`).join("\n\n")}`,
     schema: z.object({ prompts: z.array(z.string()) }),
     temperature: 0.7,
+    tier: "cheap",
   });
   return scenes.map((_, i) => `${prompts[i] ?? prompts[i % Math.max(prompts.length, 1)] ?? characterLook}, ${ART_STYLE}`);
 }
