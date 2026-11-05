@@ -6,6 +6,7 @@ import { and, eq, gte, isNotNull } from "drizzle-orm";
 import { db } from "@/db";
 import { chapters, series, videos, type VideoMeta } from "@/db/schema";
 import { QuotaExhaustedError } from "@/lib/ai";
+import { escapeHtml, notify, WEB_URL } from "@/lib/notify";
 import { drawImage } from "./images";
 import { duration, ffmpeg, filterPath, pool } from "./ffmpeg";
 import { scenePrompts, videoMeta } from "./prompts";
@@ -295,10 +296,17 @@ export async function renderVideo(videoId: number) {
     await writeFile(metaFile, `${meta.title}\n\n${meta.description}\n\nTags: ${meta.tags.join(", ")}\n\n--- SHORT ---\n${meta.shortTitle}\n\n${meta.shortDescription}\n`);
 
     const assets = await publishRelease(videoId, [longVideo.out, ...extras, thumb, metaFile]);
+    const publishAt = v.publishAt ?? (await nextPublishSlot());
     await db()
       .update(videos)
-      .set({ status: "ready", meta, assets, durationSec: Math.round(long.seconds), publishAt: v.publishAt ?? (await nextPublishSlot()), updatedAt: new Date() })
+      .set({ status: "ready", meta, assets, durationSec: Math.round(long.seconds), publishAt, updatedAt: new Date() })
       .where(eq(videos.id, videoId));
+    await notify(
+      `🎬 <b>Video sẵn sàng đăng</b>\n${escapeHtml(meta.title)}\n` +
+        `⏱ ${Math.round(long.seconds / 60)} phút${extras.length ? " + Short" : ""}\n` +
+        `📅 Lên lịch: ${publishAt.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", weekday: "long", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}\n` +
+        `👉 ${WEB_URL}/videos`,
+    );
     if (process.env.GITHUB_ACTIONS) await rm(dir, { recursive: true, force: true });
     console.log(`✔ Xong video #${videoId} (${Math.round(long.seconds / 60)} phút)`);
   } catch (e) {
@@ -306,6 +314,9 @@ export async function renderVideo(videoId: number) {
     // Hết quota thì trả về hàng đợi — job 3 tiếng/lần sẽ làm tiếp từ phần đã cache.
     const status = e instanceof QuotaExhaustedError ? "queued" : "failed";
     await db().update(videos).set({ status, error: msg.slice(0, 2000), updatedAt: new Date() }).where(eq(videos.id, videoId));
+    if (status === "failed") {
+      await notify(`❌ <b>Render lỗi</b> video #${videoId} — chương ${c.number}\n${escapeHtml(msg.slice(0, 300))}\n${runUrl ?? ""}\n👉 ${WEB_URL}/videos`);
+    }
     throw e;
   }
 }

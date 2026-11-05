@@ -68,7 +68,7 @@ async function SeriesList() {
 /** Lượt AI free đã dùng trong ngày quota hiện tại (reset ~14–15h giờ Việt Nam). */
 async function UsageToday() {
   await connection();
-  const rows = await db().select().from(aiUsage).where(eq(aiUsage.day, quotaDay())).orderBy(desc(aiUsage.calls));
+  const rows = (await db().select().from(aiUsage).where(eq(aiUsage.day, quotaDay())).orderBy(desc(aiUsage.calls))).filter((r) => !r.model.startsWith("_"));
   return (
     <section className="card space-y-2">
       <h2 className="font-bold">Lượt AI free hôm nay</h2>
