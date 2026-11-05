@@ -29,18 +29,25 @@ export async function videoMeta(s: Series, c: Chapter) {
 
 /** Một prompt ảnh (tiếng Anh) cho mỗi phân cảnh, theo đúng thứ tự. */
 export async function scenePrompts(characterLook: string, scenes: string[]) {
-  const { prompts } = await textProvider().generateJson({
+  const { scenes: out } = await textProvider().generateJson({
     system: "You write prompts for an image model illustrating a Chinese xianxia audio story.",
     prompt: `Main character look (keep consistent): ${characterLook}
 
-For EACH numbered scene below write one vivid English image prompt (subject, action, setting, mood). Exactly ${scenes.length} prompts, same order.
+For EACH numbered scene below write one vivid English image prompt (subject, dynamic pose, setting, mood, cinematic camera angle) and mark action=true if the scene is a fight, chase, explosion, technique release or other intense moment. Exactly ${scenes.length} items, same order.
 
 ${scenes.map((t, i) => `${i + 1}. ${t.slice(0, 600)}`).join("\n\n")}`,
-    schema: z.object({ prompts: z.array(z.string()) }),
+    schema: z.object({ scenes: z.array(z.object({ prompt: z.string(), action: z.boolean() })) }),
     temperature: 0.7,
     tier: "cheap",
   });
-  return scenes.map((_, i) => `${prompts[i] ?? prompts[i % Math.max(prompts.length, 1)] ?? characterLook}, ${ART_STYLE}`);
+  const pick = (i: number) => out[i] ?? out[i % Math.max(out.length, 1)];
+  return scenes.map((_, i) => {
+    const sc = pick(i);
+    return {
+      prompt: `${sc?.prompt ?? characterLook}, ${sc?.action ? "dynamic action shot, motion, glowing spiritual energy, sparks, " : ""}${ART_STYLE}`,
+      action: Boolean(sc?.action),
+    };
+  });
 }
 
 export { ART_STYLE };

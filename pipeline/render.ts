@@ -10,6 +10,8 @@ import { escapeHtml, notify, WEB_URL } from "@/lib/notify";
 import { drawImage } from "./images";
 import { duration, ffmpeg, filterPath, pool } from "./ffmpeg";
 import { scenePrompts, videoMeta } from "./prompts";
+
+type ScenePrompt = Awaited<ReturnType<typeof scenePrompts>>[number];
 import { cuesForChunk, packChunks, sentences, toAss, type Cue } from "./text";
 import { speak } from "./tts";
 
@@ -82,15 +84,37 @@ const FADE = 0.8;
 /** Pollinations không key có logo ở đáy ảnh → cắt 7%. Ảnh Cloudflare sạch, không cần. */
 const LOGO_CROP = process.env.CLOUDFLARE_API_TOKEN ? "" : "crop=iw:ih*0.93:0:0,";
 const SHOT_SECONDS = 10;
+/** Cảnh hành động cắt nhanh, máy rung, zoom giật. */
+const ACTION_SHOT_SECONDS = 3;
+const ACTION_FADE = 0.3;
 const MOTIONS = ["in", "left", "out", "right", "up", "in"] as const;
-type Motion = (typeof MOTIONS)[number];
+const ACTION_MOTIONS = ["punch", "shakeL", "punchOut", "shakeR"] as const;
+type Motion = (typeof MOTIONS)[number] | (typeof ACTION_MOTIONS)[number];
+const CALM_FX = ["fade", "dissolve", "smoothleft", "fade"];
+const ACTION_FX = ["fadewhite", "zoomin", "slideleft", "radial", "fadewhite", "slideright"];
 
 /** Biểu thức zoompan cho một kiểu máy quay; `e` là tiến độ có easing (chậm–nhanh–chậm). */
 function motionExpr(m: Motion, frames: number) {
   const e = `(0.5-0.5*cos(PI*on/${frames}))`;
-  const cx = "iw/2-(iw/zoom/2)";
+  // Thở nhẹ cho cảnh tĩnh; rung tay máy cho cảnh hành động (zoompan tự kẹp toạ độ trong ảnh).
+  const sway = `3*sin(on/23)`;
+  const shakeX = `(16*sin(on*2.1)+9*sin(on*4.7+1))`;
+  const shakeY = `(11*sin(on*2.9+2)+6*sin(on*6.3))`;
+  const cx = `iw/2-(iw/zoom/2)+${sway}`;
   const cy = "ih/2-(ih/zoom/2)";
+  const ax = `iw/2-(iw/zoom/2)+${shakeX}`;
+  const ay = `ih/2-(ih/zoom/2)+${shakeY}`;
+  // Zoom giật nhanh rồi giữ: tiến độ dồn vào 1/3 đầu cảnh.
+  const fast = `min(1,${e}*2.2)`;
   switch (m) {
+    case "punch":
+      return { z: `1.04+0.16*${fast}`, x: ax, y: ay };
+    case "punchOut":
+      return { z: `1.22-0.14*${fast}`, x: ax, y: ay };
+    case "shakeL":
+      return { z: "1.16", x: `(iw-iw/zoom)*${e}+${shakeX}`, y: ay };
+    case "shakeR":
+      return { z: "1.16", x: `(iw-iw/zoom)*(1-${e})+${shakeX}`, y: ay };
     case "in":
       return { z: `1+${ZOOM}*${e}`, x: cx, y: cy };
     case "out":
@@ -112,56 +136,66 @@ const ZOOM = 0.08;
  * zoompan làm tròn toạ độ theo pixel nguồn, nguồn 4K thì mỗi bước chỉ còn ½ pixel ở 1080p → hết rung.
  * Cắt 7% đáy để bỏ logo Pollinations.
  */
-async function shot(img: string, out: string, seconds: number, w: number, h: number, motion: Motion) {
+export async function shot(img: string, out: string, seconds: number, w: number, h: number, motion: Motion, action: boolean) {
   const frames = Math.max(1, Math.round(seconds * FPS));
   const { z, x, y } = motionExpr(motion, frames);
+  // Hành động: tương phản gắt hơn + chớp sáng 0.15s đầu cảnh như cú va chạm.
+  const punch = action ? ",eq=contrast=1.12:saturation=1.2,fade=in:st=0:d=0.15:color=white" : "";
   await ffmpeg([
     "-loop", "1", "-i", img, "-t", seconds.toFixed(3),
     "-vf",
     `${LOGO_CROP}scale=${w * 2}:${h * 2}:force_original_aspect_ratio=increase:flags=lanczos,crop=${w * 2}:${h * 2}:(iw-ow)/2:(ih-oh)*0.3,unsharp=5:5:1.0,` +
-      `zoompan=z='${z}':x='${x}':y='${y}':d=1:s=${w}x${h}:fps=${FPS},format=yuv420p`,
+      `zoompan=z='${z}':x='${x}':y='${y}':d=1:s=${w}x${h}:fps=${FPS}${punch},format=yuv420p`,
     "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-r", String(FPS), out,
   ]);
 }
 
 /** Nối các cảnh bằng crossfade theo nhóm (nhóm lớn quá ffmpeg tốn RAM); giữa các nhóm là cắt thẳng. */
-async function crossfadeGroup(clips: { file: string; seconds: number }[], out: string) {
+export async function crossfadeGroup(clips: { file: string; seconds: number; fade: number; fx: string }[], out: string) {
   if (clips.length === 1) return ffmpeg(["-i", clips[0].file, "-c", "copy", out]);
   const inputs = clips.flatMap((c) => ["-i", c.file]);
   let graph = "";
   let offset = 0;
   let prev = "[0]";
   clips.slice(0, -1).forEach((c, i) => {
-    offset += c.seconds - FADE;
+    const next = clips[i + 1];
+    offset += c.seconds - next.fade;
     const label = i === clips.length - 2 ? "[v]" : `[x${i}]`;
-    graph += `${prev}[${i + 1}]xfade=transition=fade:duration=${FADE}:offset=${offset.toFixed(3)}${label};`;
+    graph += `${prev}[${i + 1}]xfade=transition=${next.fx}:duration=${next.fade}:offset=${offset.toFixed(3)}${label};`;
     prev = label;
   });
   await ffmpeg([...inputs, "-filter_complex", graph.slice(0, -1), "-map", "[v]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", out]);
 }
 
 async function buildVideo(opts: {
-  dir: string; name: string; narration: Narration; prompts: string[]; scenes: { start: number; end: number }[];
+  dir: string; name: string; narration: Narration; prompts: ScenePrompt[]; scenes: { start: number; end: number }[];
   w: number; h: number; imgW: number; imgH: number; fontSize: number; marginV: number; titleCard?: string;
 }) {
   const { dir, name, narration, prompts, scenes, w, h } = opts;
   // Mỗi ảnh (1 scene) tách thành nhiều cảnh ~10s với kiểu máy quay khác nhau.
+  // Cảnh hành động cắt ~3s, mỗi nhát một kiểu zoom/rung và chuyển cảnh chớp trắng/zoom.
   const shots = scenes.flatMap((sc, i) => {
-    const n = Math.max(1, Math.round((sc.end - sc.start) / SHOT_SECONDS));
+    const action = prompts[i].action;
+    const n = Math.max(1, Math.round((sc.end - sc.start) / (action ? ACTION_SHOT_SECONDS : SHOT_SECONDS)));
     const len = (sc.end - sc.start) / n;
-    return Array.from({ length: n }, (_, k) => ({ image: i, seconds: len, motion: MOTIONS[(i * 2 + k) % MOTIONS.length] }));
+    return Array.from({ length: n }, (_, k) => ({
+      image: i, seconds: len, action,
+      motion: action ? ACTION_MOTIONS[(i + k) % ACTION_MOTIONS.length] : MOTIONS[(i * 2 + k) % MOTIONS.length],
+      fade: action ? ACTION_FADE : FADE,
+      fx: action ? ACTION_FX[(i + k) % ACTION_FX.length] : CALM_FX[(i + k) % CALM_FX.length],
+    }));
   });
   const GROUP = 12;
   const files = await pool(shots, 4, async (sh, j) => {
     const img = path.join(dir, `${name}-img-${sh.image}.jpg`);
-    await drawImage(prompts[sh.image], img, { width: opts.imgW, height: opts.imgH, seed: 1000 + sh.image * 7 });
+    await drawImage(prompts[sh.image].prompt, img, { width: opts.imgW, height: opts.imgH, seed: 1000 + sh.image * 7 });
     // Cảnh nào sẽ crossfade với cảnh sau thì kéo dài thêm FADE để tổng thời lượng vẫn khớp giọng đọc.
     const fadesNext = j % GROUP !== GROUP - 1 && j !== shots.length - 1;
-    const seconds = sh.seconds + (fadesNext ? FADE : 0);
+    const seconds = sh.seconds + (fadesNext ? shots[j + 1].fade : 0);
     const file = path.join(dir, `${name}-shot-${String(j).padStart(3, "0")}.mp4`);
-    await shot(img, file, seconds, w, h, sh.motion);
+    await shot(img, file, seconds, w, h, sh.motion, sh.action);
     if (j % 10 === 0) console.log(`  ${name} cảnh ${j + 1}/${shots.length}`);
-    return { file, seconds };
+    return { file, seconds, fade: sh.fade, fx: sh.fx };
   });
 
   const groups: string[] = [];
@@ -266,7 +300,7 @@ export async function renderVideo(videoId: number) {
     // 1 ảnh ~20s (tách 2 cảnh ~10s). Free Pollinations 1 ảnh/45s nên giới hạn 45 ảnh.
     const n = Math.min(45, Math.max(6, Math.round(long.seconds / 20)));
     const longScenes = splitScenes(long.cues, n, long.seconds);
-    const longPrompts = await cached(path.join(dir, `long-prompts-${n}.json`), () => scenePrompts(m.characterLook, longScenes.map((x) => x.text)));
+    const longPrompts = await cached(path.join(dir, `long-scenes-${n}.json`), () => scenePrompts(m.characterLook, longScenes.map((x) => x.text)));
     const longVideo = await buildVideo({
       dir, name: "long", narration: long, prompts: longPrompts, scenes: longScenes,
       w: 1920, h: 1080, imgW: 1280, imgH: 768, fontSize: 62, marginV: 70,
@@ -280,9 +314,9 @@ export async function renderVideo(videoId: number) {
       const shortDir = path.join(dir, "short");
       const short = await narrate(m.shortScript, shortDir);
       const shortScenes = splitScenes(short.cues, 5, short.seconds);
-      const shortPrompts = await cached(path.join(shortDir, "prompts.json"), () => scenePrompts(m.characterLook, shortScenes.map((x) => x.text)));
+      const shortPrompts = await cached(path.join(shortDir, "scenes.json"), () => scenePrompts(m.characterLook, shortScenes.map((x) => x.text)));
       const shortVideo = await buildVideo({
-        dir: shortDir, name: "short", narration: short, prompts: shortPrompts.map((p) => `${p}, vertical portrait composition`), scenes: shortScenes,
+        dir: shortDir, name: "short", narration: short, prompts: shortPrompts.map((p) => ({ ...p, prompt: `${p.prompt}, vertical portrait composition` })), scenes: shortScenes,
         w: 1080, h: 1920, imgW: 768, imgH: 1408, fontSize: 72, marginV: 520,
       });
       extras.push(shortVideo.out);
