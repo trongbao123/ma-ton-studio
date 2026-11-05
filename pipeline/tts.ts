@@ -3,7 +3,7 @@ import { QuotaExhaustedError } from "@/lib/ai";
 import { recordUsage } from "@/lib/ai/usage";
 
 const MODELS = (process.env.TTS_MODELS ?? "gemini-3.8-flash-tts,gemini-3.1-flash-tts-preview,gemini-2.5-flash-preview-tts,gemini-3.8-flash-lite-tts").split(",");
-const VOICE = process.env.TTS_VOICE ?? "Sadachbia";
+const VOICE = process.env.TTS_VOICE ?? "Algenib";
 
 /**
  * Đọc một khối văn bản bằng Gemini TTS, ghi WAV (24kHz mono). Thử lần lượt model khi quá tải/hết quota.

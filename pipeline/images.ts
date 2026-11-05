@@ -1,4 +1,29 @@
 import { access, writeFile } from "node:fs/promises";
+import { and, eq } from "drizzle-orm";
+import { db } from "@/db";
+import { aiUsage } from "@/db/schema";
+
+/** Cloudflare reset quota free lúc 00:00 UTC (7h sáng VN) — đánh dấu theo ngày UTC, khác ngày Pacific của Gemini. */
+const CF_MARK = "_cloudflare";
+const utcDay = () => new Date().toISOString().slice(0, 10);
+let cfExhausted = false;
+
+/** Còn quota ảnh Cloudflare hôm nay không (chưa cấu hình Cloudflare thì coi như không cần chờ). */
+export async function cloudflareReady() {
+  if (!process.env.CLOUDFLARE_API_TOKEN || !process.env.DATABASE_URL) return true;
+  const [row] = await db().select().from(aiUsage).where(and(eq(aiUsage.day, utcDay()), eq(aiUsage.model, CF_MARK)));
+  return !row?.limited;
+}
+
+async function markCloudflareExhausted() {
+  cfExhausted = true;
+  if (!process.env.DATABASE_URL) return;
+  await db()
+    .insert(aiUsage)
+    .values({ day: utcDay(), model: CF_MARK, calls: 0, limited: true })
+    .onConflictDoUpdate({ target: [aiUsage.day, aiUsage.model], set: { limited: true } })
+    .catch((e) => console.warn("Không ghi được quota Cloudflare:", e));
+}
 
 /** Bản free không key: 1 ảnh / 45 giây / IP → xếp hàng tuần tự, có key thì bỏ giãn cách. */
 const GAP_MS = process.env.POLLINATIONS_TOKEN ? 0 : 46_000;
@@ -13,7 +38,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  */
 export function drawImage(prompt: string, outFile: string, opts: { width: number; height: number; seed: number }) {
   // Có Cloudflare thì dùng Flux (đẹp hơn hẳn); Pollinations free (model Sana) chỉ là dự phòng.
-  if (process.env.CLOUDFLARE_API_TOKEN && process.env.CLOUDFLARE_ACCOUNT_ID) {
+  if (process.env.CLOUDFLARE_API_TOKEN && process.env.CLOUDFLARE_ACCOUNT_ID && !cfExhausted) {
     return cloudflareFlux(prompt, outFile).catch((e) => {
       console.warn("⚠ Cloudflare lỗi, chuyển Pollinations:", e instanceof Error ? e.message : e);
       return pollinations(prompt, outFile, opts);
@@ -41,7 +66,10 @@ async function cloudflareFlux(prompt: string, outFile: string) {
       return;
     }
     last = `${res.status} ${JSON.stringify(body?.errors ?? body).slice(0, 200)}`;
-    if (res.status === 429 && /daily|neuron|limit/i.test(last)) break;
+    if (res.status === 429 && /daily|neuron|limit/i.test(last)) {
+      await markCloudflareExhausted();
+      break;
+    }
     await sleep(5_000 * (attempt + 1));
   }
   throw new Error(`Cloudflare Flux lỗi: ${last}`);

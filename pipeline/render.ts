@@ -7,7 +7,7 @@ import { db } from "@/db";
 import { chapters, series, videos, type VideoMeta } from "@/db/schema";
 import { QuotaExhaustedError } from "@/lib/ai";
 import { escapeHtml, notify, WEB_URL } from "@/lib/notify";
-import { drawImage } from "./images";
+import { cloudflareReady, drawImage } from "./images";
 import { duration, ffmpeg, filterPath, pool } from "./ffmpeg";
 import { scenePrompts, videoMeta } from "./prompts";
 
@@ -285,6 +285,8 @@ export async function renderVideo(videoId: number) {
   await mkdir(path.join(dir, "short"), { recursive: true });
   try {
     console.log(`▶ Video #${videoId}: ${s.title} — chương ${c.number}`);
+    // Hết quota ảnh đẹp thì chờ 7h sáng (lần chạy 00:17 UTC) thay vì ra video ảnh mờ Pollinations.
+    if (!(await cloudflareReady())) throw new QuotaExhaustedError("Hết quota ảnh Cloudflare hôm nay — chờ reset 7h sáng.");
     const m = await cached(path.join(dir, "meta.json"), () => videoMeta(s, c));
     const meta: VideoMeta = {
       title: m.title.length > 100 ? `${m.title.slice(0, 97)}…` : m.title,
