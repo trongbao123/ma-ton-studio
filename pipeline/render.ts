@@ -266,22 +266,34 @@ export async function renderVideo(videoId: number) {
       titleCard: `${s.title}\n\nChương ${c.number}: ${c.title}`,
     });
 
-    console.log("● Short");
-    const shortDir = path.join(dir, "short");
-    const short = await narrate(m.shortScript, shortDir);
-    const shortScenes = splitScenes(short.cues, 5, short.seconds);
-    const shortPrompts = await cached(path.join(shortDir, "prompts.json"), () => scenePrompts(m.characterLook, shortScenes.map((x) => x.text)));
-    const shortVideo = await buildVideo({
-      dir: shortDir, name: "short", narration: short, prompts: shortPrompts.map((p) => `${p}, vertical portrait composition`), scenes: shortScenes,
-      w: 1080, h: 1920, imgW: 768, imgH: 1408, fontSize: 72, marginV: 520,
-    });
+    // Short và thumbnail là phụ: lỗi thì vẫn xuất video dài thay vì bỏ cả lần render.
+    const extras: string[] = [];
+    try {
+      console.log("● Short");
+      const shortDir = path.join(dir, "short");
+      const short = await narrate(m.shortScript, shortDir);
+      const shortScenes = splitScenes(short.cues, 5, short.seconds);
+      const shortPrompts = await cached(path.join(shortDir, "prompts.json"), () => scenePrompts(m.characterLook, shortScenes.map((x) => x.text)));
+      const shortVideo = await buildVideo({
+        dir: shortDir, name: "short", narration: short, prompts: shortPrompts.map((p) => `${p}, vertical portrait composition`), scenes: shortScenes,
+        w: 1080, h: 1920, imgW: 768, imgH: 1408, fontSize: 72, marginV: 520,
+      });
+      extras.push(shortVideo.out);
+    } catch (e) {
+      if (e instanceof QuotaExhaustedError) throw e;
+      console.warn("⚠ Bỏ qua Short:", e instanceof Error ? e.message : e);
+    }
 
     console.log("● Thumbnail");
-    const thumb = await thumbnail(dir, `${m.thumbnailPrompt}, ${m.characterLook}`, m.thumbnailText, c.number);
+    const thumb = await thumbnail(dir, `${m.thumbnailPrompt}, ${m.characterLook}`, m.thumbnailText, c.number).catch(async (e) => {
+      console.warn("⚠ Thumbnail AI lỗi, dùng ảnh đầu video:", e instanceof Error ? e.message : e);
+      await writeFile(path.join(dir, "thumb-src.jpg"), await readFile(path.join(dir, "long-img-0.jpg")));
+      return thumbnail(dir, "", m.thumbnailText, c.number);
+    });
     const metaFile = path.join(dir, "youtube.txt");
     await writeFile(metaFile, `${meta.title}\n\n${meta.description}\n\nTags: ${meta.tags.join(", ")}\n\n--- SHORT ---\n${meta.shortTitle}\n\n${meta.shortDescription}\n`);
 
-    const assets = await publishRelease(videoId, [longVideo.out, shortVideo.out, thumb, metaFile]);
+    const assets = await publishRelease(videoId, [longVideo.out, ...extras, thumb, metaFile]);
     await db()
       .update(videos)
       .set({ status: "ready", meta, assets, durationSec: Math.round(long.seconds), publishAt: v.publishAt ?? (await nextPublishSlot()), updatedAt: new Date() })

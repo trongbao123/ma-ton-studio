@@ -27,8 +27,10 @@ async function fetchImage(prompt: string, outFile: string, opts: { width: number
   const headers: Record<string, string> = {};
   if (process.env.POLLINATIONS_TOKEN) headers.Authorization = `Bearer ${process.env.POLLINATIONS_TOKEN}`;
 
+  // IP máy GitHub dùng chung nên hay bị giới hạn → thử tới 15 phút cho mỗi ảnh.
+  const deadline = Date.now() + 15 * 60_000;
   let last = "";
-  for (let attempt = 0; attempt < 8; attempt++) {
+  for (let attempt = 0; Date.now() < deadline; attempt++) {
     await sleep(Math.max(0, lastAt + GAP_MS - Date.now()));
     lastAt = Date.now();
     try {
@@ -42,7 +44,7 @@ async function fetchImage(prompt: string, outFile: string, opts: { width: number
       last = `${res.status} ${body.slice(0, 200)}`;
       const retryAfter = Number(body.match(/Retry after (\d+)s/)?.[1]);
       if (retryAfter) lastAt = Date.now() + retryAfter * 1000 + 2000 - GAP_MS;
-      else await sleep(10_000 * (attempt + 1));
+      else await sleep(Math.min(60_000, 10_000 * (attempt + 1)));
     } catch (e) {
       last = String(e);
       await sleep(10_000);
