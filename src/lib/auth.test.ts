@@ -20,6 +20,11 @@ describe("isAuthorized", () => {
     expect(isAuthorized("Bearer abc", "bi-mat")).toBe(false);
   });
 
+  it("kiểm username khi có ADMIN_USER", () => {
+    expect(isAuthorized(basic("trongbao", "pw"), "pw", "trongbao")).toBe(true);
+    expect(isAuthorized(basic("khac", "pw"), "pw", "trongbao")).toBe(false);
+  });
+
   it("chặn tất cả khi chưa cấu hình ADMIN_PASSWORD", () => {
     expect(isAuthorized(basic("u", ""), undefined)).toBe(false);
     expect(isAuthorized(basic("u", ""), "")).toBe(false);

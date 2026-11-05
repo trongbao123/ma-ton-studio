@@ -2,7 +2,7 @@
  * Kiểm tra header Basic Auth. Web chỉ có một người dùng nên dùng mật khẩu chung trong env,
  * đủ để người lạ không đốt quota API.
  */
-export function isAuthorized(header: string | null, password: string | undefined): boolean {
+export function isAuthorized(header: string | null, password: string | undefined, user?: string): boolean {
   if (!password) return false;
   if (!header?.startsWith("Basic ")) return false;
   let decoded: string;
@@ -11,8 +11,9 @@ export function isAuthorized(header: string | null, password: string | undefined
   } catch {
     return false;
   }
-  const supplied = decoded.slice(decoded.indexOf(":") + 1);
-  return timingSafeEqual(supplied, password);
+  const sep = decoded.indexOf(":");
+  const userOk = !user || timingSafeEqual(decoded.slice(0, sep), user);
+  return timingSafeEqual(decoded.slice(sep + 1), password) && userOk;
 }
 
 function timingSafeEqual(a: string, b: string) {
