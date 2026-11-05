@@ -6,7 +6,7 @@ const ART_STYLE =
   "chinese xianxia fantasy, ancient china, cinematic lighting, dramatic composition, highly detailed digital painting, dark crimson and black palette, epic atmosphere, no text, no watermark";
 
 const metaSchema = z.object({
-  title: z.string().describe("Tiêu đề YouTube ≤ 90 ký tự, gây tò mò, có tên truyện và số chương"),
+  title: z.string().describe("Tiêu đề YouTube 60–90 ký tự, viết hoa chữ cái đầu như câu thường (KHÔNG in hoa toàn bộ), gây tò mò, có tên truyện và số chương"),
   description: z.string().describe("Mô tả 3 đoạn: tóm tắt hấp dẫn không spoil kết, kêu gọi đăng ký/like, hashtag"),
   tags: z.array(z.string()).describe("15–25 tag tiếng Việt và không dấu"),
   shortTitle: z.string().describe("Tiêu đề Short ≤ 70 ký tự, có #shorts"),

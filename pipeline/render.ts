@@ -163,7 +163,7 @@ export async function renderVideo(videoId: number) {
     console.log(`▶ Video #${videoId}: ${s.title} — chương ${c.number}`);
     const m = await cached(path.join(dir, "meta.json"), () => videoMeta(s, c));
     const meta: VideoMeta = {
-      title: m.title,
+      title: m.title.length > 100 ? `${m.title.slice(0, 97)}…` : m.title,
       description: `${m.description}\n\n(Nội dung có sử dụng AI hỗ trợ giọng đọc và hình ảnh.)`,
       tags: m.tags,
       shortTitle: m.shortTitle,
