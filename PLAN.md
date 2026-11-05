@@ -3,16 +3,23 @@
 Web tự động sản xuất video truyện tiên hiệp cho kênh YouTube "Ma Tôn Truyện".
 Người dùng chỉ duyệt; AI làm phần còn lại.
 
-## Quyết định đã chốt
-| Mảng | Chọn | Lý do |
+## Quyết định đã chốt — bản FREE
+Mọi provider đi qua 1 interface (`TextProvider`, `ImageProvider`, `VoiceProvider`)
+→ kênh có tiền thì đổi sang bản trả phí bằng 1 biến môi trường.
+
+| Mảng | Free | Khi có tiền đổi sang |
 |---|---|---|
-| Viết truyện | Claude API (`claude-sonnet-5`), `claude-opus-5-5` cho dàn ý/arc | Văn dài tiếng Việt tốt, giữ mạch theo story bible |
-| Ảnh + thumbnail | OpenAI image API | Chất lượng cao, theo prompt tốt |
-| Giọng đọc | ElevenLabs (fallback: Google Cloud TTS) | Tự nhiên nhất cho tiếng Việt |
-| Dựng video | Remotion Lambda trên AWS (thay CapCut — không có API) | Vercel function có giới hạn thời gian, không render được video 30 phút; Lambda chia nhỏ render song song |
-| Đăng + số liệu | YouTube Data API v3 + YouTube Analytics API | vidIQ không có API, dùng tay để research |
-| Stack | Next.js trên Vercel + Neon Postgres + Vercel Blob (file) + Vercel Cron/Workflow (job theo bước) | Không cần máy local, một ngôn ngữ (TypeScript) |
-| Chạy ở đâu | Vercel (web + job ngắn) + AWS Lambda (render) | Không phải bật máy |
+| Viết truyện | Gemini API free tier (Google AI Studio) | Claude API |
+| Ảnh + thumbnail | Cloudflare Workers AI (Flux) free/ngày; dự phòng Pollinations | OpenAI image API |
+| Giọng đọc | Edge TTS (`vi-VN-NamMinhNeural`, `vi-VN-HoaiMyNeural`) — không chính thức | ElevenLabs |
+| Dựng video | ffmpeg trên GitHub Actions (private repo: 2000 phút/tháng free) | Remotion Lambda |
+| Web + cron | Vercel Hobby (cron 1 lần/ngày) | Vercel Pro |
+| Database | Neon free | — |
+| Lưu file | Cloudflare R2 free 10GB; xóa video sau khi đã lên YouTube | — |
+| Đăng + số liệu | YouTube Data API + Analytics API (free) | — |
+
+Luồng render: Vercel cron → gọi `workflow_dispatch` GitHub Actions → ffmpeg render
+→ upload R2 → báo về Vercel → chờ duyệt → đăng YouTube.
 
 ## Chiến lược nội dung
 - 1 video dài/ngày (20–40 phút, 1–2 chương) — watch time cao, RPM tốt.
@@ -29,10 +36,10 @@ Người dùng chỉ duyệt; AI làm phần còn lại.
 - **P4 — Tối ưu**: kéo analytics, AI điều chỉnh chủ đề/tiêu đề theo retention.
 
 ## Việc người dùng phải làm (AI không làm thay được)
-1. Anthropic API key — console.anthropic.com
-2. OpenAI API key — platform.openai.com (khác gói ChatGPT)
-3. ElevenLabs API key — elevenlabs.io (gói Creator trở lên để dùng thương mại)
+1. Gemini API key — aistudio.google.com (free)
+2. (Sau này) Anthropic / OpenAI / ElevenLabs key khi chuyển bản trả phí
+3. —
 4. Google Cloud project: bật YouTube Data API v3 + Analytics API, tạo OAuth client,
    gửi đơn audit để upload không bị khóa private (làm NGAY, mất vài tuần).
-5. Tài khoản Vercel (gói Pro để cron chạy dày + function chạy lâu hơn) — `vercel login`
-6. Tài khoản AWS cho Remotion Lambda (P2)
+5. Tài khoản Vercel (Hobby) — `vercel login`
+6. Cloudflare (R2 + Workers AI), GitHub (Actions)
