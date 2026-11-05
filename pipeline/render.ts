@@ -173,7 +173,7 @@ async function buildVideo(opts: {
   const ass = path.join(dir, `${name}.ass`);
   await writeFile(ass, toAss(narration.cues, { width: w, height: h, fontSize: opts.fontSize, marginV: opts.marginV }));
   // Màu điện ảnh: tăng tương phản nhẹ, tối 4 góc, hạt phim.
-  const grade = "eq=contrast=1.08:saturation=1.12:brightness=-0.02,vignette=PI/5,noise=alls=5:allf=t";
+  const grade = "eq=contrast=1.08:saturation=1.12:brightness=-0.02,vignette=PI/5,noise=alls=3:allf=t";
   const text = BURN_TEXT
     ? `,ass=${filterPath(ass)}:fontsdir=${filterPath(FONT_DIR)}` +
       (opts.titleCard
@@ -187,7 +187,8 @@ async function buildVideo(opts: {
   await ffmpeg([
     "-i", silent, "-i", narration.audio, ...audio,
     "-vf", `${grade}${text},format=yuv420p`,
-    "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+    // Hạt phim làm bitrate phình (12 phút ≈ 256MB) → chặn ~5Mbps, đủ nét cho YouTube 1080p.
+    "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-maxrate", "5M", "-bufsize", "10M",
     "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart", out,
   ]);
   return { out };
