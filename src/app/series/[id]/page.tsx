@@ -100,7 +100,6 @@ async function SeriesDetail({ params }: { params: Promise<{ id: string }> }) {
             </label>
           </div>
           <Field name="premise" label="Cốt truyện" rows={4} value={s.premise} />
-          <Field name="voiceStyle" label="Giọng đọc" rows={2} value={s.voiceStyle} />
           <Field name="style" label="Giọng văn" rows={2} value={s.style} />
           <Field name="bible" label="Nhân vật, cảnh giới, thế lực, bối cảnh" rows={18} value={s.bible} />
         </ActionForm>

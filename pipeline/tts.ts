@@ -5,8 +5,11 @@ import { recordUsage } from "@/lib/ai/usage";
 const MODELS = (process.env.TTS_MODELS ?? "gemini-3.8-flash-tts,gemini-3.1-flash-tts-preview,gemini-2.5-flash-preview-tts,gemini-3.8-flash-lite-tts").split(",");
 const VOICE = process.env.TTS_VOICE ?? "Charon";
 
-/** Đọc một khối văn bản bằng Gemini TTS, ghi WAV (24kHz mono). Thử lần lượt model khi quá tải/hết quota. */
-export async function speak(text: string, style: string, outFile: string) {
+/**
+ * Đọc một khối văn bản bằng Gemini TTS, ghi WAV (24kHz mono). Thử lần lượt model khi quá tải/hết quota.
+ * Free tier: gemini-3.8-flash-tts chỉ 10 lượt/ngày — các model sau là dự phòng.
+ */
+export async function speak(text: string, outFile: string) {
   // Đã có file từ lần chạy trước (cache GitHub Actions) thì không tốn quota đọc lại.
   if (await access(outFile).then(() => true, () => false)) return;
   let last = "";
@@ -22,7 +25,9 @@ export async function speak(text: string, style: string, outFile: string) {
         },
         body: JSON.stringify({
           model,
-          input: `Đọc nguyên văn đoạn sau bằng ${style}. Không thêm, không bớt chữ nào:\n\n${text}`,
+          // Chỉ gửi đúng văn bản truyện: kèm câu hướng dẫn thì model đôi khi đọc luôn câu đó.
+          // Model TTS không nhận system instruction → chất giọng giữ bằng `voice` cố định.
+          input: text,
           response_modalities: ["audio"],
           generation_config: { speech_config: [{ voice: VOICE, language: "vi-VN" }] },
         }),

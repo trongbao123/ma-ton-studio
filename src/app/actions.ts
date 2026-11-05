@@ -49,7 +49,6 @@ export async function updateSeriesAction(seriesId: number, _: ActionState, form:
         bible: String(form.get("bible")),
         style: String(form.get("style")),
         targetWords: Number(form.get("targetWords")) || 4000,
-        voiceStyle: String(form.get("voiceStyle") ?? ""),
         autopilot: form.get("autopilot") === "on",
         autoApprove: form.get("autoApprove") === "on",
         chaptersPerDay: Math.min(Math.max(Number(form.get("chaptersPerDay")) || 2, 1), 10),

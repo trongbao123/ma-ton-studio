@@ -44,11 +44,11 @@ export async function nextPublishSlot(now = new Date()) {
 }
 
 /** Đọc toàn bộ văn bản thành 1 file WAV + cue phụ đề. */
-async function narrate(text: string, style: string, dir: string, maxChars = 2800): Promise<Narration> {
+async function narrate(text: string, dir: string, maxChars = 4000): Promise<Narration> {
   const chunks = packChunks(sentences(text), maxChars);
   const files = await pool(chunks, 3, async (chunk, i) => {
     const f = path.join(dir, `tts-${String(i).padStart(3, "0")}.wav`);
-    await speak(chunk.join(" "), style, f);
+    await speak(chunk.join(" "), f);
     console.log(`  TTS ${i + 1}/${chunks.length}`);
     return f;
   });
@@ -255,7 +255,7 @@ export async function renderVideo(videoId: number) {
 
     console.log("● Video dài: đọc giọng");
     const intro = `${s.title}. Chương ${c.number}: ${c.title}.`;
-    const long = await narrate(`${intro}\n${c.content}`, s.voiceStyle, dir);
+    const long = await narrate(`${intro}\n${c.content}`, dir);
     // 1 ảnh ~20s (tách 2 cảnh ~10s). Free Pollinations 1 ảnh/45s nên giới hạn 45 ảnh.
     const n = Math.min(45, Math.max(6, Math.round(long.seconds / 20)));
     const longScenes = splitScenes(long.cues, n, long.seconds);
@@ -268,7 +268,7 @@ export async function renderVideo(videoId: number) {
 
     console.log("● Short");
     const shortDir = path.join(dir, "short");
-    const short = await narrate(m.shortScript, s.voiceStyle, shortDir, 2000);
+    const short = await narrate(m.shortScript, shortDir);
     const shortScenes = splitScenes(short.cues, 5, short.seconds);
     const shortPrompts = await cached(path.join(shortDir, "prompts.json"), () => scenePrompts(m.characterLook, shortScenes.map((x) => x.text)));
     const shortVideo = await buildVideo({
