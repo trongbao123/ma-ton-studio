@@ -1,0 +1,35 @@
+import type { Metadata } from "next";
+import { Be_Vietnam_Pro } from "next/font/google";
+import Link from "next/link";
+import "./globals.css";
+
+const font = Be_Vietnam_Pro({
+  variable: "--font-be-vietnam",
+  subsets: ["vietnamese", "latin"],
+  weight: ["400", "500", "700"],
+});
+
+export const metadata: Metadata = {
+  title: "Ma Tôn Studio",
+  description: "Xưởng viết truyện tự động cho kênh Ma Tôn Truyện",
+};
+
+export default function RootLayout({ children }: LayoutProps<"/">) {
+  return (
+    <html lang="vi" className={`${font.variable} h-full antialiased`}>
+      <body className="flex min-h-full flex-col font-sans">
+        <header className="border-b border-border">
+          <nav className="mx-auto flex max-w-5xl items-center gap-6 px-4 py-3">
+            <Link href="/" className="font-bold text-accent">
+              Ma Tôn Studio
+            </Link>
+            <Link href="/series/new" className="text-sm text-muted hover:text-foreground">
+              + Truyện mới
+            </Link>
+          </nav>
+        </header>
+        <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8">{children}</main>
+      </body>
+    </html>
+  );
+}
