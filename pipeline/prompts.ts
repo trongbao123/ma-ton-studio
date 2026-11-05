@@ -3,7 +3,7 @@ import type { Chapter, Series } from "@/db/schema";
 import { textProvider } from "@/lib/ai";
 
 const ART_STYLE =
-  "chinese xianxia fantasy, ancient china, cinematic lighting, dramatic composition, highly detailed digital painting, dark crimson and black palette, epic atmosphere, no text, no watermark";
+  "chinese xianxia fantasy, ancient china, beautiful handsome characters with detailed symmetrical faces, fully clothed in elegant hanfu robes, cinematic lighting, sharp focus, masterpiece, highly detailed digital painting, rich colors with crimson accents, epic atmosphere, no text, no watermark, no nudity";
 
 const metaSchema = z.object({
   title: z.string().describe("Tiêu đề YouTube 60–90 ký tự, viết hoa chữ cái đầu như câu thường (KHÔNG in hoa toàn bộ), gây tò mò, có tên truyện và số chương"),

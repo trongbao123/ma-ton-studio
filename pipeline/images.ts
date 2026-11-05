@@ -12,6 +12,42 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * Có POLLINATIONS_TOKEN (đăng ký free ở enter.pollinations.ai) thì hết logo và không phải chờ.
  */
 export function drawImage(prompt: string, outFile: string, opts: { width: number; height: number; seed: number }) {
+  // Có Cloudflare thì dùng Flux (đẹp hơn hẳn); Pollinations free (model Sana) chỉ là dự phòng.
+  if (process.env.CLOUDFLARE_API_TOKEN && process.env.CLOUDFLARE_ACCOUNT_ID) {
+    return cloudflareFlux(prompt, outFile, opts.seed).catch((e) => {
+      console.warn("⚠ Cloudflare lỗi, chuyển Pollinations:", e instanceof Error ? e.message : e);
+      return pollinations(prompt, outFile, opts);
+    });
+  }
+  return pollinations(prompt, outFile, opts);
+}
+
+/** Flux-1-schnell trên Cloudflare Workers AI: ảnh 1024×1024, free ~10k neuron/ngày (≈ vài trăm ảnh). */
+async function cloudflareFlux(prompt: string, outFile: string, seed: number) {
+  if (await access(outFile).then(() => true, () => false)) return;
+  const url = `https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/ai/run/@cf/black-forest-labs/flux-1-schnell`;
+  let last = "";
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: prompt.slice(0, 2000), steps: 8, seed }),
+      signal: AbortSignal.timeout(120_000),
+    });
+    const body = await res.json().catch(() => ({}));
+    const image = body?.result?.image;
+    if (res.ok && image) {
+      await writeFile(outFile, Buffer.from(image, "base64"));
+      return;
+    }
+    last = `${res.status} ${JSON.stringify(body?.errors ?? body).slice(0, 200)}`;
+    if (res.status === 429 && /daily|neuron|limit/i.test(last)) break;
+    await sleep(5_000 * (attempt + 1));
+  }
+  throw new Error(`Cloudflare Flux lỗi: ${last}`);
+}
+
+function pollinations(prompt: string, outFile: string, opts: { width: number; height: number; seed: number }) {
   const job = queue.then(() => fetchImage(prompt, outFile, opts));
   queue = job.catch(() => {});
   return job;

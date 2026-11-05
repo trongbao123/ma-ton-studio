@@ -79,6 +79,8 @@ function splitScenes(cues: Cue[], n: number, total: number) {
 }
 
 const FADE = 0.8;
+/** Pollinations không key có logo ở đáy ảnh → cắt 7%. Ảnh Cloudflare sạch, không cần. */
+const LOGO_CROP = process.env.CLOUDFLARE_API_TOKEN ? "" : "crop=iw:ih*0.93:0:0,";
 const SHOT_SECONDS = 10;
 const MOTIONS = ["in", "left", "out", "right", "up", "in"] as const;
 type Motion = (typeof MOTIONS)[number];
@@ -90,17 +92,20 @@ function motionExpr(m: Motion, frames: number) {
   const cy = "ih/2-(ih/zoom/2)";
   switch (m) {
     case "in":
-      return { z: `1+0.2*${e}`, x: cx, y: cy };
+      return { z: `1+${ZOOM}*${e}`, x: cx, y: cy };
     case "out":
-      return { z: `1.2-0.2*${e}`, x: cx, y: cy };
+      return { z: `${1 + ZOOM}-${ZOOM}*${e}`, x: cx, y: cy };
     case "left":
-      return { z: "1.18", x: `(iw-iw/zoom)*${e}`, y: cy };
+      return { z: String(1 + ZOOM), x: `(iw-iw/zoom)*${e}`, y: cy };
     case "right":
-      return { z: "1.18", x: `(iw-iw/zoom)*(1-${e})`, y: cy };
+      return { z: String(1 + ZOOM), x: `(iw-iw/zoom)*(1-${e})`, y: cy };
     case "up":
-      return { z: "1.18", x: cx, y: `(ih-ih/zoom)*(1-${e})` };
+      return { z: String(1 + ZOOM), x: cx, y: `(ih-ih/zoom)*(1-${e})` };
   }
 }
+
+/** Zoom tối đa của chuyển động máy quay — thấp để không phóng ảnh nguồn (chỉ ~1MP) quá tay gây mờ. */
+const ZOOM = 0.08;
 
 /**
  * Ảnh → 1 cảnh có chuyển động máy quay. Phóng ảnh lên 2× khung ra (lanczos + làm nét) rồi mới zoompan:
@@ -113,7 +118,7 @@ async function shot(img: string, out: string, seconds: number, w: number, h: num
   await ffmpeg([
     "-loop", "1", "-i", img, "-t", seconds.toFixed(3),
     "-vf",
-    `crop=iw:ih*0.93:0:0,scale=${w * 2}:${h * 2}:force_original_aspect_ratio=increase:flags=lanczos,crop=${w * 2}:${h * 2},unsharp=5:5:0.8,` +
+    `${LOGO_CROP}scale=${w * 2}:${h * 2}:force_original_aspect_ratio=increase:flags=lanczos,crop=${w * 2}:${h * 2},unsharp=5:5:1.0,` +
       `zoompan=z='${z}':x='${x}':y='${y}':d=1:s=${w}x${h}:fps=${FPS},format=yuv420p`,
     "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-r", String(FPS), out,
   ]);
@@ -214,7 +219,7 @@ async function thumbnail(dir: string, prompt: string, text: string, chapterNo: n
     ? `,drawtext=fontfile=${filterPath(FONT)}:text='${escText(text.toUpperCase())}':fontsize=96:fontcolor=#FFD23F:borderw=8:bordercolor=black:x=(w-tw)/2:y=h-th-70,` +
       `drawtext=fontfile=${filterPath(FONT)}:text='CHƯƠNG ${chapterNo}':fontsize=54:fontcolor=white:box=1:boxcolor=#B91C1C:boxborderw=18:x=40:y=40`
     : "";
-  await ffmpeg(["-i", img, "-vf", `crop=iw:ih*0.93:0:0,scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720${draw}`, "-q:v", "3", out]);
+  await ffmpeg(["-i", img, "-vf", `${LOGO_CROP}scale=1280:720:force_original_aspect_ratio=increase:flags=lanczos,crop=1280:720,unsharp=5:5:0.6${draw}`, "-q:v", "3", out]);
   return out;
 }
 
