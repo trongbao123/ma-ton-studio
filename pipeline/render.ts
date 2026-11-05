@@ -118,7 +118,7 @@ async function shot(img: string, out: string, seconds: number, w: number, h: num
   await ffmpeg([
     "-loop", "1", "-i", img, "-t", seconds.toFixed(3),
     "-vf",
-    `${LOGO_CROP}scale=${w * 2}:${h * 2}:force_original_aspect_ratio=increase:flags=lanczos,crop=${w * 2}:${h * 2},unsharp=5:5:1.0,` +
+    `${LOGO_CROP}scale=${w * 2}:${h * 2}:force_original_aspect_ratio=increase:flags=lanczos,crop=${w * 2}:${h * 2}:(iw-ow)/2:(ih-oh)*0.3,unsharp=5:5:1.0,` +
       `zoompan=z='${z}':x='${x}':y='${y}':d=1:s=${w}x${h}:fps=${FPS},format=yuv420p`,
     "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-r", String(FPS), out,
   ]);
@@ -219,7 +219,7 @@ async function thumbnail(dir: string, prompt: string, text: string, chapterNo: n
     ? `,drawtext=fontfile=${filterPath(FONT)}:text='${escText(text.toUpperCase())}':fontsize=96:fontcolor=#FFD23F:borderw=8:bordercolor=black:x=(w-tw)/2:y=h-th-70,` +
       `drawtext=fontfile=${filterPath(FONT)}:text='CHƯƠNG ${chapterNo}':fontsize=54:fontcolor=white:box=1:boxcolor=#B91C1C:boxborderw=18:x=40:y=40`
     : "";
-  await ffmpeg(["-i", img, "-vf", `${LOGO_CROP}scale=1280:720:force_original_aspect_ratio=increase:flags=lanczos,crop=1280:720,unsharp=5:5:0.6${draw}`, "-q:v", "3", out]);
+  await ffmpeg(["-i", img, "-vf", `${LOGO_CROP}scale=1280:720:force_original_aspect_ratio=increase:flags=lanczos,crop=1280:720:(iw-ow)/2:(ih-oh)*0.3,unsharp=5:5:0.6${draw}`, "-q:v", "3", out]);
   return out;
 }
 

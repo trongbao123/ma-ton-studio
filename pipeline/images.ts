@@ -14,7 +14,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export function drawImage(prompt: string, outFile: string, opts: { width: number; height: number; seed: number }) {
   // Có Cloudflare thì dùng Flux (đẹp hơn hẳn); Pollinations free (model Sana) chỉ là dự phòng.
   if (process.env.CLOUDFLARE_API_TOKEN && process.env.CLOUDFLARE_ACCOUNT_ID) {
-    return cloudflareFlux(prompt, outFile, opts.seed).catch((e) => {
+    return cloudflareFlux(prompt, outFile).catch((e) => {
       console.warn("⚠ Cloudflare lỗi, chuyển Pollinations:", e instanceof Error ? e.message : e);
       return pollinations(prompt, outFile, opts);
     });
@@ -22,8 +22,8 @@ export function drawImage(prompt: string, outFile: string, opts: { width: number
   return pollinations(prompt, outFile, opts);
 }
 
-/** Flux-1-schnell trên Cloudflare Workers AI: ảnh 1024×1024, free ~10k neuron/ngày (≈ vài trăm ảnh). */
-async function cloudflareFlux(prompt: string, outFile: string, seed: number) {
+/** Flux-1-schnell trên Cloudflare Workers AI: ảnh vuông 1024×1024 (không nhận seed/kích thước), free ~10k neuron/ngày. */
+async function cloudflareFlux(prompt: string, outFile: string) {
   if (await access(outFile).then(() => true, () => false)) return;
   const url = `https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/ai/run/@cf/black-forest-labs/flux-1-schnell`;
   let last = "";
@@ -31,7 +31,7 @@ async function cloudflareFlux(prompt: string, outFile: string, seed: number) {
     const res = await fetch(url, {
       method: "POST",
       headers: { Authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: prompt.slice(0, 2000), steps: 8, seed }),
+      body: JSON.stringify({ prompt: prompt.slice(0, 2000), steps: 8 }),
       signal: AbortSignal.timeout(120_000),
     });
     const body = await res.json().catch(() => ({}));
