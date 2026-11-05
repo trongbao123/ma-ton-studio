@@ -1,6 +1,18 @@
-import { neon } from "@neondatabase/serverless";
+import { neon, neonConfig } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
 import * as schema from "./schema";
+
+// Pipeline chờ AI vài phút rồi mới ghi DB → socket keep-alive cũ bị đóng, fetch lỗi "fetch failed". Thử lại khi lỗi mạng.
+neonConfig.fetchFunction = async (input: RequestInfo | URL, init?: RequestInit) => {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fetch(input, init);
+    } catch (e) {
+      if (attempt >= 3) throw e;
+      await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+    }
+  }
+};
 
 let instance: ReturnType<typeof createDb> | undefined;
 
