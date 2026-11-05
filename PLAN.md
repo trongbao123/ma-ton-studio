@@ -9,10 +9,10 @@ Người dùng chỉ duyệt; AI làm phần còn lại.
 | Viết truyện | Claude API (`claude-sonnet-5`), `claude-opus-5-5` cho dàn ý/arc | Văn dài tiếng Việt tốt, giữ mạch theo story bible |
 | Ảnh + thumbnail | OpenAI image API | Chất lượng cao, theo prompt tốt |
 | Giọng đọc | ElevenLabs (fallback: Google Cloud TTS) | Tự nhiên nhất cho tiếng Việt |
-| Dựng video | Remotion + ffmpeg (thay CapCut — không có API) | Render tự động, có zoom/chuyển cảnh/phụ đề |
+| Dựng video | Remotion Lambda trên AWS (thay CapCut — không có API) | Vercel function có giới hạn thời gian, không render được video 30 phút; Lambda chia nhỏ render song song |
 | Đăng + số liệu | YouTube Data API v3 + YouTube Analytics API | vidIQ không có API, dùng tay để research |
-| Stack | Next.js (web) + worker Node (BullMQ) + Postgres + Redis, chạy Docker | Một ngôn ngữ (TypeScript) |
-| Chạy ở đâu | Mac local trước, lên VPS khi ổn định | Render cần CPU, local rẻ và nhanh |
+| Stack | Next.js trên Vercel + Neon Postgres + Vercel Blob (file) + Vercel Cron/Workflow (job theo bước) | Không cần máy local, một ngôn ngữ (TypeScript) |
+| Chạy ở đâu | Vercel (web + job ngắn) + AWS Lambda (render) | Không phải bật máy |
 
 ## Chiến lược nội dung
 - 1 video dài/ngày (20–40 phút, 1–2 chương) — watch time cao, RPM tốt.
@@ -34,3 +34,5 @@ Người dùng chỉ duyệt; AI làm phần còn lại.
 3. ElevenLabs API key — elevenlabs.io (gói Creator trở lên để dùng thương mại)
 4. Google Cloud project: bật YouTube Data API v3 + Analytics API, tạo OAuth client,
    gửi đơn audit để upload không bị khóa private (làm NGAY, mất vài tuần).
+5. Tài khoản Vercel (gói Pro để cron chạy dày + function chạy lâu hơn) — `vercel login`
+6. Tài khoản AWS cho Remotion Lambda (P2)
