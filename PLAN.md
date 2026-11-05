@@ -32,7 +32,7 @@ Luồng render: Vercel cron → gọi `workflow_dispatch` GitHub Actions → ffm
 ## Giai đoạn
 - **P1 — Viết**: story bible, dàn ý arc, viết chương, màn duyệt/sửa.
 - **P2 — Video**: chia cảnh, tạo ảnh, TTS, render mp4 + phụ đề + thumbnail.
-- **P3 — Đăng**: lịch đăng, upload qua API, cắt Shorts.
+- **P3 — Đăng**: lịch đăng, cắt Shorts, xuất "gói đăng" (mp4, thumbnail, tiêu đề, mô tả, tag, chapter) để người dùng tự upload + bấm công khai. Upload qua API chỉ bật khi project Google đã qua audit (chưa audit → video bị khóa private, không tự mở công khai được).
 - **P4 — Tối ưu**: kéo analytics, AI điều chỉnh chủ đề/tiêu đề theo retention.
 
 ## Việc người dùng phải làm (AI không làm thay được)
