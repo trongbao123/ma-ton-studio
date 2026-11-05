@@ -52,6 +52,7 @@ export async function updateSeriesAction(seriesId: number, _: ActionState, form:
         voiceStyle: String(form.get("voiceStyle") ?? ""),
         autopilot: form.get("autopilot") === "on",
         autoApprove: form.get("autoApprove") === "on",
+        chaptersPerDay: Math.min(Math.max(Number(form.get("chaptersPerDay")) || 2, 1), 10),
       })
       .where(eq(series.id, seriesId));
     revalidatePath(`/series/${seriesId}`);

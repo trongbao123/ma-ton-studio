@@ -20,6 +20,12 @@ jobs:
         with: { node-version: 24, cache: pnpm }
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
       - run: pnpm install --frozen-lockfile
+      # Giữ phần đã làm (giọng đọc, ảnh) khi lần trước dừng vì hết quota.
+      - uses: actions/cache@v4
+        with:
+          path: .render
+          key: render-${{ github.run_id }}
+          restore-keys: render-
       - run: pnpm exec tsx pipeline/render.ts ${{ inputs.video_id }}
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}

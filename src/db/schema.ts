@@ -17,6 +17,8 @@ export const series = pgTable("series", {
   autopilot: boolean("autopilot").notNull().default(false),
   /** Tự duyệt chương AI viết và render luôn — bỏ bước người đọc duyệt (rủi ro chất lượng). */
   autoApprove: boolean("auto_approve").notNull().default(false),
+  /** Số chương tối đa autopilot viết mỗi ngày (còn bị chặn bởi quota free). */
+  chaptersPerDay: integer("chapters_per_day").notNull().default(2),
   /** Chỉ dẫn giọng đọc cho TTS. */
   voiceStyle: text("voice_style").notNull().default("giọng nam trầm, kể chuyện kiếm hiệp cổ trang, nhịp vừa, nhấn nhá ở đoạn cao trào"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -64,6 +66,8 @@ export const videos = pgTable("videos", {
   error: text("error"),
   runUrl: text("run_url"),
   youtubeUrl: text("youtube_url"),
+  /** Khung giờ đăng đề xuất — người dùng đặt "Lên lịch" trong YouTube Studio đúng giờ này. */
+  publishAt: timestamp("publish_at", { withTimezone: true }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -71,3 +75,15 @@ export const videos = pgTable("videos", {
 export type Series = typeof series.$inferSelect;
 export type Video = typeof videos.$inferSelect;
 export type Chapter = typeof chapters.$inferSelect;
+
+/** Đếm lượt gọi AI theo ngày (giờ Pacific — Google reset quota free lúc 0h Pacific). */
+export const aiUsage = pgTable(
+  "ai_usage",
+  {
+    day: text("day").notNull(),
+    model: text("model").notNull(),
+    calls: integer("calls").notNull().default(0),
+    limited: boolean("limited").notNull().default(false),
+  },
+  (t) => [unique("ai_usage_day_model").on(t.day, t.model)],
+);

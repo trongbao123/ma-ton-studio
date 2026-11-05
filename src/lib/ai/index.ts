@@ -2,6 +2,7 @@ import { GeminiProvider } from "./gemini";
 import type { TextProvider } from "./types";
 
 export type { TextProvider } from "./types";
+export { QuotaExhaustedError } from "./gemini";
 
 let provider: TextProvider | undefined;
 

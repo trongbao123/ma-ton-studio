@@ -1,6 +1,10 @@
 import { GoogleGenAI } from "@google/genai";
 import { z } from "zod";
 import type { JsonRequest, TextProvider, TextRequest } from "./types";
+import { recordUsage } from "./usage";
+
+/** Mọi model đã hết quota ngày — người gọi nên dừng và chờ lượt sau thay vì coi là lỗi. */
+export class QuotaExhaustedError extends Error {}
 
 type Format = { type: "text"; mime_type: "application/json"; schema: Record<string, unknown> };
 
@@ -47,6 +51,7 @@ export class GeminiProvider implements TextProvider {
             generation_config: { max_output_tokens: req.maxOutputTokens, temperature: req.temperature },
             ...(format && { response_format: format }),
           });
+          void recordUsage(model, false);
           const text = res.output_text?.trim();
           if (text) return text;
           lastError = new Error(`${model} trả về rỗng.`);
@@ -54,6 +59,7 @@ export class GeminiProvider implements TextProvider {
           lastError = e;
           if (isDailyLimit(e)) {
             this.exhausted.add(model);
+            void recordUsage(model, true);
             break;
           }
           if (!isOverloaded(e)) throw e;
@@ -61,7 +67,11 @@ export class GeminiProvider implements TextProvider {
         }
       }
     }
-    throw new Error(`Gemini hết lượt free hoặc quá tải, thử lại sau. (${lastError instanceof Error ? lastError.message : lastError})`);
+    const detail = lastError instanceof Error ? lastError.message : String(lastError);
+    if (isDailyLimit(lastError) || this.models[req.tier ?? "quality"].every((m) => this.exhausted.has(m))) {
+      throw new QuotaExhaustedError(`Hết lượt AI free hôm nay — tự chạy tiếp khi quota reset. (${detail})`);
+    }
+    throw new Error(`Gemini quá tải, thử lại sau. (${detail})`);
   }
 }
 

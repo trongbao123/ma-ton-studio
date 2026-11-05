@@ -21,7 +21,7 @@ export default function VideosPage() {
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Video</h1>
       <p className="text-sm text-muted">
-        Tải video + thumbnail, upload lên YouTube Studio, dán tiêu đề/mô tả/tag, bật nhãn “nội dung đã chỉnh sửa/tổng hợp”, rồi bấm “Đã đăng”.
+        Tải video + thumbnail → YouTube Studio → dán tiêu đề/mô tả/tag → bật nhãn “nội dung đã chỉnh sửa/tổng hợp” → chọn “Lên lịch” đúng giờ bên dưới → bấm “Đã đăng”.
       </p>
       <Suspense fallback={<p className="text-muted">Đang tải…</p>}>
         <VideoList />
@@ -69,6 +69,13 @@ async function VideoList() {
             {v.meta && (
               <div className="space-y-2 text-sm">
                 <p className="font-medium">{v.meta.title}</p>
+                {v.publishAt && v.status === "ready" && (
+                  <p className="text-amber-500">
+                    Lên lịch đăng:{" "}
+                    {v.publishAt.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", weekday: "long", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                    {" "}(Short đăng cùng lúc hoặc sau 2 giờ)
+                  </p>
+                )}
                 <div className="flex flex-wrap gap-2">
                   {[
                     ["long.mp4", "⬇ Video dài"],

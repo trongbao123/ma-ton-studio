@@ -1,13 +1,20 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, gte, ne } from "drizzle-orm";
 import { db } from "@/db";
 import { chapters, series, videos } from "@/db/schema";
+import { QuotaExhaustedError } from "@/lib/ai";
 import { planChapters, writeChapterStep } from "@/lib/story/service";
 import { renderVideo } from "./render";
 
-/** Số chương AI viết sẵn chờ duyệt tối đa — tránh viết dồn khi người dùng chưa kịp đọc. */
+/** Số chương chờ duyệt tối đa khi không tự duyệt — tránh viết dồn khi người dùng chưa kịp đọc. */
 const MAX_PENDING = 3;
 
-async function writeNext(seriesId: number) {
+/** 0h hôm nay giờ Việt Nam (UTC+7). */
+function startOfTodayVN() {
+  const now = new Date(Date.now() + 7 * 3600_000);
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - 7 * 3600_000);
+}
+
+async function writeNext(seriesId: number): Promise<number> {
   const list = await db().select().from(chapters).where(eq(chapters.seriesId, seriesId)).orderBy(asc(chapters.number));
   if (list.filter((c) => c.status === "outline").length < 2) {
     console.log("  lên dàn ý 10 chương");
@@ -16,41 +23,71 @@ async function writeNext(seriesId: number) {
   }
   const next = list.find((c) => c.status === "outline")!;
   console.log(`  viết chương ${next.number}: ${next.title}`);
-  let r = await writeChapterStep(next.id, "start");
+  let r = await writeChapterStep(next.id, next.content ? "continue" : "start");
   for (let i = 0; i < 2 && !r.enough; i++) r = await writeChapterStep(next.id, "continue");
   await writeChapterStep(next.id, "finish");
   return next.id;
 }
 
+async function renderQueue(failures: string[]) {
+  for (const v of await db().select().from(videos).where(eq(videos.status, "queued")).orderBy(asc(videos.id))) {
+    try {
+      await renderVideo(v.id);
+    } catch (e) {
+      if (e instanceof QuotaExhaustedError) {
+        console.log(`⏸ ${e.message}`);
+        return;
+      }
+      failures.push(`video #${v.id}: ${e instanceof Error ? e.message : e}`);
+    }
+  }
+}
+
+/**
+ * Chạy 3 tiếng/lần: render hàng đợi trước, rồi viết chương tới khi đủ chỉ tiêu ngày hoặc hết quota free.
+ * Hết quota không phải lỗi — lần chạy sau làm tiếp.
+ */
 async function main() {
   const failures: string[] = [];
+  await renderQueue(failures);
+
+  let quotaLeft = true;
   for (const s of await db().select().from(series).where(eq(series.autopilot, true))) {
+    if (!quotaLeft) break;
+    console.log(`▶ ${s.title}`);
     try {
-      console.log(`▶ ${s.title}`);
-      const pending = await db()
+      const writtenToday = await db()
         .select({ id: chapters.id })
         .from(chapters)
-        .where(and(eq(chapters.seriesId, s.id), eq(chapters.status, "draft")));
-      if (!s.autoApprove && pending.length >= MAX_PENDING) {
-        console.log(`  bỏ qua: đã có ${pending.length} chương chờ duyệt`);
-        continue;
+        .where(and(eq(chapters.seriesId, s.id), ne(chapters.status, "outline"), gte(chapters.updatedAt, startOfTodayVN())));
+      for (let done = writtenToday.length; done < s.chaptersPerDay; done++) {
+        const pending = await db()
+          .select({ id: chapters.id })
+          .from(chapters)
+          .where(and(eq(chapters.seriesId, s.id), eq(chapters.status, "draft")));
+        if (!s.autoApprove && pending.length >= MAX_PENDING) {
+          console.log(`  dừng: đã có ${pending.length} chương chờ duyệt`);
+          break;
+        }
+        const chapterId = await writeNext(s.id);
+        if (s.autoApprove) {
+          await db().update(chapters).set({ status: "approved", updatedAt: new Date() }).where(eq(chapters.id, chapterId));
+          await db().insert(videos).values({ chapterId });
+        }
       }
-      const chapterId = await writeNext(s.id);
-      if (s.autoApprove) {
-        await db().update(chapters).set({ status: "approved", updatedAt: new Date() }).where(eq(chapters.id, chapterId));
-        await db().insert(videos).values({ chapterId });
-      }
+      if (writtenToday.length >= s.chaptersPerDay) console.log(`  đủ ${s.chaptersPerDay} chương hôm nay`);
     } catch (e) {
-      console.error(e);
-      failures.push(`${s.title}: ${e instanceof Error ? e.message : e}`);
+      if (e instanceof QuotaExhaustedError) {
+        console.log(`⏸ ${e.message}`);
+        quotaLeft = false;
+      } else {
+        console.error(e);
+        failures.push(`${s.title}: ${e instanceof Error ? e.message : e}`);
+      }
     }
   }
 
-  // Render mọi video còn trong hàng đợi (do tự duyệt, hoặc web không gọi được Actions).
-  for (const v of await db().select().from(videos).where(eq(videos.status, "queued")).orderBy(asc(videos.id))) {
-    await renderVideo(v.id).catch((e) => failures.push(`video #${v.id}: ${e instanceof Error ? e.message : e}`));
-  }
-
+  await renderQueue(failures);
   if (failures.length) {
     console.error("Lỗi:\n" + failures.join("\n"));
     process.exit(1);

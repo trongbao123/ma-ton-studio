@@ -93,6 +93,11 @@ async function SeriesDetail({ params }: { params: Promise<{ id: string }> }) {
             <label className="flex items-center gap-2">
               <input type="checkbox" name="autoApprove" defaultChecked={s.autoApprove} /> Tự duyệt + render (không cần đọc)
             </label>
+            <label className="flex items-center gap-2">
+              Tối đa
+              <input name="chaptersPerDay" type="number" min={1} max={10} defaultValue={s.chaptersPerDay} className="field w-16" />
+              chương/ngày
+            </label>
           </div>
           <Field name="premise" label="Cốt truyện" rows={4} value={s.premise} />
           <Field name="voiceStyle" label="Giọng đọc" rows={2} value={s.voiceStyle} />

@@ -12,6 +12,7 @@ const s: Series = {
   targetWords: 3000,
   autopilot: false,
   autoApprove: false,
+  chaptersPerDay: 2,
   voiceStyle: "",
   createdAt: new Date(0),
 };

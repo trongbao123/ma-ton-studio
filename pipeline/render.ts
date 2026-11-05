@@ -1,10 +1,11 @@
 import { execFile } from "node:child_process";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { eq } from "drizzle-orm";
+import { and, eq, gte, isNotNull } from "drizzle-orm";
 import { db } from "@/db";
 import { chapters, series, videos, type VideoMeta } from "@/db/schema";
+import { QuotaExhaustedError } from "@/lib/ai";
 import { drawImage } from "./images";
 import { duration, ffmpeg, filterPath, pool } from "./ffmpeg";
 import { scenePrompts, videoMeta } from "./prompts";
@@ -19,6 +20,28 @@ const BURN_TEXT = process.env.BURN_TEXT !== "0";
 const FPS = 24;
 
 type Narration = { audio: string; cues: Cue[]; seconds: number };
+
+/** Kết quả AI được cache trong thư mục render: lần chạy lại (sau khi hết quota) không tốn lượt gọi lại. */
+async function cached<T>(file: string, make: () => Promise<T>): Promise<T> {
+  if (await access(file).then(() => true, () => false)) return JSON.parse(await readFile(file, "utf8"));
+  const value = await make();
+  await writeFile(file, JSON.stringify(value));
+  return value;
+}
+
+/** Khung giờ đăng tiếp theo: 19h giờ Việt Nam, mỗi ngày 1 video dài, bắt đầu từ hôm nay (hoặc mai nếu đã qua 17h). */
+export async function nextPublishSlot(now = new Date()) {
+  const taken = await db()
+    .select({ at: videos.publishAt })
+    .from(videos)
+    .where(and(isNotNull(videos.publishAt), gte(videos.publishAt, now)));
+  const days = new Set(taken.map((t) => t.at!.toISOString().slice(0, 10)));
+  // 19h VN = 12h UTC.
+  const slot = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 12));
+  if (slot.getTime() - now.getTime() < 2 * 3600_000) slot.setUTCDate(slot.getUTCDate() + 1);
+  while (days.has(slot.toISOString().slice(0, 10))) slot.setUTCDate(slot.getUTCDate() + 1);
+  return slot;
+}
 
 /** Đọc toàn bộ văn bản thành 1 file WAV + cue phụ đề. */
 async function narrate(text: string, style: string, dir: string, maxChars = 2800): Promise<Narration> {
@@ -133,12 +156,12 @@ export async function renderVideo(videoId: number) {
     : null;
   await db().update(videos).set({ status: "rendering", error: null, runUrl, updatedAt: new Date() }).where(eq(videos.id, videoId));
 
+  // Giữ thư mục giữa các lần chạy (được cache trên Actions) để không tốn lại quota TTS/ảnh đã làm.
   const dir = path.resolve(`.render/video-${videoId}`);
-  await rm(dir, { recursive: true, force: true });
-  await mkdir(dir, { recursive: true });
+  await mkdir(path.join(dir, "short"), { recursive: true });
   try {
     console.log(`▶ Video #${videoId}: ${s.title} — chương ${c.number}`);
-    const m = await videoMeta(s, c);
+    const m = await cached(path.join(dir, "meta.json"), () => videoMeta(s, c));
     const meta: VideoMeta = {
       title: m.title,
       description: `${m.description}\n\n(Nội dung có sử dụng AI hỗ trợ giọng đọc và hình ảnh.)`,
@@ -152,7 +175,7 @@ export async function renderVideo(videoId: number) {
     const long = await narrate(`${intro}\n${c.content}`, s.voiceStyle, dir);
     const n = Math.min(40, Math.max(6, Math.round(long.seconds / 40)));
     const longScenes = splitScenes(long.cues, n, long.seconds);
-    const longPrompts = await scenePrompts(m.characterLook, longScenes.map((x) => x.text));
+    const longPrompts = await cached(path.join(dir, `long-prompts-${n}.json`), () => scenePrompts(m.characterLook, longScenes.map((x) => x.text)));
     const longVideo = await buildVideo({
       dir, name: "long", narration: long, prompts: longPrompts, scenes: longScenes,
       w: 1280, h: 720, imgW: 1280, imgH: 768, fontSize: 44, marginV: 50,
@@ -160,10 +183,9 @@ export async function renderVideo(videoId: number) {
 
     console.log("● Short");
     const shortDir = path.join(dir, "short");
-    await mkdir(shortDir);
     const short = await narrate(m.shortScript, s.voiceStyle, shortDir, 2000);
     const shortScenes = splitScenes(short.cues, 4, short.seconds);
-    const shortPrompts = await scenePrompts(m.characterLook, shortScenes.map((x) => x.text));
+    const shortPrompts = await cached(path.join(shortDir, "prompts.json"), () => scenePrompts(m.characterLook, shortScenes.map((x) => x.text)));
     const shortVideo = await buildVideo({
       dir: shortDir, name: "short", narration: short, prompts: shortPrompts.map((p) => `${p}, vertical portrait composition`), scenes: shortScenes,
       w: 1080, h: 1920, imgW: 768, imgH: 1408, fontSize: 72, marginV: 520,
@@ -177,12 +199,15 @@ export async function renderVideo(videoId: number) {
     const assets = await publishRelease(videoId, [longVideo.out, shortVideo.out, thumb, metaFile]);
     await db()
       .update(videos)
-      .set({ status: "ready", meta, assets, durationSec: Math.round(long.seconds), updatedAt: new Date() })
+      .set({ status: "ready", meta, assets, durationSec: Math.round(long.seconds), publishAt: v.publishAt ?? (await nextPublishSlot()), updatedAt: new Date() })
       .where(eq(videos.id, videoId));
+    if (process.env.GITHUB_ACTIONS) await rm(dir, { recursive: true, force: true });
     console.log(`✔ Xong video #${videoId} (${Math.round(long.seconds / 60)} phút)`);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    await db().update(videos).set({ status: "failed", error: msg.slice(0, 2000), updatedAt: new Date() }).where(eq(videos.id, videoId));
+    // Hết quota thì trả về hàng đợi — job 3 tiếng/lần sẽ làm tiếp từ phần đã cache.
+    const status = e instanceof QuotaExhaustedError ? "queued" : "failed";
+    await db().update(videos).set({ status, error: msg.slice(0, 2000), updatedAt: new Date() }).where(eq(videos.id, videoId));
     throw e;
   }
 }
@@ -193,7 +218,7 @@ if (process.argv[1]?.endsWith("render.ts")) {
     () => process.exit(0),
     (e) => {
       console.error(e);
-      process.exit(1);
+      process.exit(e instanceof QuotaExhaustedError ? 0 : 1);
     },
   );
 }

@@ -3,7 +3,8 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { db } from "@/db";
-import { chapters, series } from "@/db/schema";
+import { aiUsage, chapters, series } from "@/db/schema";
+import { quotaDay } from "@/lib/ai/usage";
 
 export default function HomePage() {
   return (
@@ -11,6 +12,9 @@ export default function HomePage() {
       <h1 className="text-2xl font-bold">Truyện của kênh</h1>
       <Suspense fallback={<p className="text-muted">Đang tải…</p>}>
         <SeriesList />
+      </Suspense>
+      <Suspense fallback={null}>
+        <UsageToday />
       </Suspense>
     </div>
   );
@@ -58,5 +62,33 @@ async function SeriesList() {
         </li>
       ))}
     </ul>
+  );
+}
+
+/** Lượt AI free đã dùng trong ngày quota hiện tại (reset ~14–15h giờ Việt Nam). */
+async function UsageToday() {
+  await connection();
+  const rows = await db().select().from(aiUsage).where(eq(aiUsage.day, quotaDay())).orderBy(desc(aiUsage.calls));
+  return (
+    <section className="card space-y-2">
+      <h2 className="font-bold">Lượt AI free hôm nay</h2>
+      <p className="text-xs text-muted">
+        Google reset quota lúc 0h Pacific (≈ 14–15h Việt Nam). Job tự chạy 3 tiếng/lần, hết lượt thì chờ lượt sau.
+      </p>
+      {rows.length === 0 ? (
+        <p className="text-sm text-muted">Chưa dùng lượt nào.</p>
+      ) : (
+        <ul className="grid gap-1 text-sm sm:grid-cols-2">
+          {rows.map((r) => (
+            <li key={r.model} className="flex justify-between gap-4">
+              <span className="truncate">{r.model}</span>
+              <span className={r.limited ? "text-red-500" : "text-muted"}>
+                {r.calls} lượt{r.limited ? " · hết quota" : ""}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
