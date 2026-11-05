@@ -12,7 +12,19 @@ let cfExhausted = false;
 export async function cloudflareReady() {
   if (!process.env.CLOUDFLARE_API_TOKEN || !process.env.DATABASE_URL) return true;
   const [row] = await db().select().from(aiUsage).where(and(eq(aiUsage.day, utcDay()), eq(aiUsage.model, CF_MARK)));
-  return !row?.limited;
+  if (row?.limited) return false;
+  // Chưa đánh dấu thì hỏi thẳng Cloudflare bằng 1 ảnh 1 bước (rất ít neuron).
+  const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/ai/run/@cf/black-forest-labs/flux-1-schnell`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt: "a dot", steps: 1 }),
+    signal: AbortSignal.timeout(60_000),
+  }).catch(() => null);
+  if (res?.status === 429 && /daily|neuron/i.test(await res.text())) {
+    await markCloudflareExhausted();
+    return false;
+  }
+  return true;
 }
 
 async function markCloudflareExhausted() {
