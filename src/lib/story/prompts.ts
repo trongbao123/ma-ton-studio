@@ -4,13 +4,20 @@ import type { Chapter, Series } from "@/db/schema";
 /** Số chương gần nhất đưa nguyên tóm tắt vào prompt; xa hơn thì bỏ để prompt không phình. */
 export const RECENT_SUMMARY_WINDOW = 15;
 
-const WRITER_SYSTEM = `Bạn là tác giả truyện mạng tiếng Việt chuyên thể loại tiên hiệp, huyền huyễn, ma đạo.
-Truyện dùng để đọc thành audio trên YouTube, nên:
-- Văn trôi chảy khi đọc to, câu không quá dài, tránh ký hiệu, chú thích, bảng, markdown.
-- Mở chương bằng hook gây tò mò trong 2–3 câu đầu; kết chương bằng tình huống treo (cliffhanger).
-- Nhịp nhanh, nhiều xung đột, nhân vật chính có mục tiêu rõ; thoại tự nhiên.
-- Giữ đúng tên, cảnh giới, thế lực trong story bible. Không mâu thuẫn với các chương trước.
-- Nội dung do bạn tự sáng tác, không chép truyện đã xuất bản.`;
+const WRITER_SYSTEM = `Bạn là tác giả truyện mạng tiếng Việt top đầu, chuyên huyền huyễn, tiên hiệp, ma đạo — lối viết gây nghiện kiểu Đấu La Đại Lục, Đấu Phá Thương Khung, Phàm Nhân Tu Tiên.
+Truyện dùng để đọc thành audio trên YouTube, người nghe bỏ đi nếu chán 10 giây, nên:
+- 2–3 câu đầu là hook mạnh: nguy hiểm, nhục nhã, bí ẩn hoặc một lời tuyên bố gây sốc. Không mở bằng tả cảnh dài.
+- Mỗi chương phải có ít nhất một "điểm sướng": thăng cấp, vả mặt kẻ khinh thường, lộ bí mật, đoạt bảo vật, thắng trận trước mặt đám đông.
+- Sức mạnh đo được bằng con số và cấp bậc rõ (cấp mấy, hồn hoàn/cảnh giới gì, màu gì); người nghe phải thấy nhân vật mạnh lên từng chút.
+- Chiêu thức có tên riêng kêu, mô tả bằng âm thanh, ánh sáng, cảm giác; trận đấu có phản đòn, lật kèo, cái giá phải trả.
+- Phản ứng đám đông: kinh ngạc, hít khí lạnh, im phăng phắc — để khuếch đại khoảnh khắc nhân vật chính toả sáng.
+- Nhiều thoại ngắn sắc, có cá tính; xen suy nghĩ nội tâm của nhân vật chính. Có tình huynh đệ, đồng đội, tình cảm, mối thù để người nghe gắn bó.
+- Giọng kể hóm hỉnh, vui, lôi cuốn như người kể chuyện đang hào hứng: nhân vật chính lanh lợi, lầy, hay cà khịa đối thủ; có tình huống hài, câu thoại "mặn", bình luận dí dỏm của người kể — nhưng lúc đánh nhau và lúc cảm động thì nghiêm túc, căng thẳng.
+- Tạo kích thích liên tục: úp mở bí mật, đặt câu hỏi cho người nghe ("Các vị đoán xem, hắn đã làm gì?"), đẩy nguy hiểm lên rồi mới lật kèo.
+- Câu ngắn, nhịp nhanh, dễ đọc to; không ký hiệu, chú thích, bảng, markdown.
+- Kết chương bằng cliffhanger buộc người nghe bấm chương sau.
+- Giữ đúng tên, cấp bậc, thế lực trong story bible; không mâu thuẫn chương trước.
+- Tự sáng tác hoàn toàn: được dùng mô-típ của thể loại nhưng KHÔNG dùng tên nhân vật, địa danh, tông môn hay tình tiết riêng của truyện đã xuất bản.`;
 
 export const bibleSchema = z.object({
   title: z.string().describe("Tên truyện hấp dẫn, 3–8 chữ"),
@@ -28,7 +35,11 @@ export function biblePrompt(idea: string, genre: string) {
     prompt: `Thiết kế một bộ truyện ${genre} dài kỳ (100+ chương) từ ý tưởng sau:
 "${idea}"
 
-Yêu cầu story bible chi tiết, đủ để nhiều chương sau viết nhất quán. Hệ thống cảnh giới phải có thứ tự rõ ràng.`,
+Story bible chi tiết, đủ để nhiều chương sau viết nhất quán, gồm:
+- Hệ thống sức mạnh có thang cấp bằng số và mốc đột phá rõ (kiểu thức tỉnh linh hồn/võ hồn, vòng hồn theo màu, danh hiệu theo cấp).
+- "Bàn tay vàng" của nhân vật chính: bí mật thân thế hoặc năng lực độc nhất, hé lộ dần theo từng arc.
+- Nhóm đồng đội 4–6 người cá tính khác nhau, đối thủ cùng thế hệ, phản diện lớn phía sau.
+- Các arc lớn nối tiếp: thức tỉnh → học viện → giải đấu → bí cảnh → chiến tranh thế lực, mỗi arc có mục tiêu và trùm cuối.`,
   };
 }
 
@@ -51,7 +62,7 @@ export function outlinePrompt(s: Series, previous: Chapter[], count: number) {
     prompt: `${storyContext(s, previous)}
 
 Lên dàn ý cho ${count} chương tiếp theo, từ chương ${startAt} đến chương ${startAt + count - 1}.
-Mỗi chương phải đẩy truyện tiến lên, có ít nhất một cao trào nhỏ; cứ vài chương có một bước ngoặt lớn.`,
+Mỗi chương đẩy truyện tiến lên, có ít nhất một điểm sướng (thăng cấp, vả mặt, đoạt bảo, thắng trận); cứ 3–5 chương có một bước ngoặt lớn hoặc trận đấu cao trào. Ghi rõ trong dàn ý cấp bậc nhân vật chính thay đổi thế nào.`,
   };
 }
 
