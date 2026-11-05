@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { and, eq, gte, isNotNull } from "drizzle-orm";
@@ -17,7 +17,7 @@ const FONT_DIR = path.resolve("pipeline/fonts");
 const FONT = path.join(FONT_DIR, "BeVietnamPro-Bold.ttf");
 /** Máy local thiếu libass/drawtext thì đặt BURN_TEXT=0 để test phần còn lại. */
 const BURN_TEXT = process.env.BURN_TEXT !== "0";
-const FPS = 24;
+const FPS = 30;
 
 type Narration = { audio: string; cues: Cue[]; seconds: number };
 
@@ -77,56 +77,139 @@ function splitScenes(cues: Cue[], n: number, total: number) {
   });
 }
 
-/** Ảnh tĩnh → clip có hiệu ứng zoom chậm (Ken Burns), cắt bỏ logo đáy ảnh Pollinations. */
-async function kenBurns(img: string, out: string, seconds: number, w: number, h: number, zoomIn: boolean) {
+const FADE = 0.8;
+const SHOT_SECONDS = 10;
+const MOTIONS = ["in", "left", "out", "right", "up", "in"] as const;
+type Motion = (typeof MOTIONS)[number];
+
+/** Biểu thức zoompan cho một kiểu máy quay; `e` là tiến độ có easing (chậm–nhanh–chậm). */
+function motionExpr(m: Motion, frames: number) {
+  const e = `(0.5-0.5*cos(PI*on/${frames}))`;
+  const cx = "iw/2-(iw/zoom/2)";
+  const cy = "ih/2-(ih/zoom/2)";
+  switch (m) {
+    case "in":
+      return { z: `1+0.2*${e}`, x: cx, y: cy };
+    case "out":
+      return { z: `1.2-0.2*${e}`, x: cx, y: cy };
+    case "left":
+      return { z: "1.18", x: `(iw-iw/zoom)*${e}`, y: cy };
+    case "right":
+      return { z: "1.18", x: `(iw-iw/zoom)*(1-${e})`, y: cy };
+    case "up":
+      return { z: "1.18", x: cx, y: `(ih-ih/zoom)*(1-${e})` };
+  }
+}
+
+/**
+ * Ảnh → 1 cảnh có chuyển động máy quay. Phóng ảnh lên 2× khung ra (lanczos + làm nét) rồi mới zoompan:
+ * zoompan làm tròn toạ độ theo pixel nguồn, nguồn 4K thì mỗi bước chỉ còn ½ pixel ở 1080p → hết rung.
+ * Cắt 7% đáy để bỏ logo Pollinations.
+ */
+async function shot(img: string, out: string, seconds: number, w: number, h: number, motion: Motion) {
   const frames = Math.max(1, Math.round(seconds * FPS));
-  const z = zoomIn ? `min(1+0.12*on/${frames},1.12)` : `max(1.12-0.12*on/${frames},1)`;
+  const { z, x, y } = motionExpr(motion, frames);
   await ffmpeg([
     "-loop", "1", "-i", img, "-t", seconds.toFixed(3),
     "-vf",
-    `crop=iw:ih*0.93:0:0,scale=${w * 1.25}:${h * 1.25}:force_original_aspect_ratio=increase,crop=${w * 1.25}:${h * 1.25},` +
-      `zoompan=z='${z}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=${w}x${h}:fps=${FPS},format=yuv420p`,
-    "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-r", String(FPS), out,
+    `crop=iw:ih*0.93:0:0,scale=${w * 2}:${h * 2}:force_original_aspect_ratio=increase:flags=lanczos,crop=${w * 2}:${h * 2},unsharp=5:5:0.8,` +
+      `zoompan=z='${z}':x='${x}':y='${y}':d=1:s=${w}x${h}:fps=${FPS},format=yuv420p`,
+    "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-r", String(FPS), out,
   ]);
+}
+
+/** Nối các cảnh bằng crossfade theo nhóm (nhóm lớn quá ffmpeg tốn RAM); giữa các nhóm là cắt thẳng. */
+async function crossfadeGroup(clips: { file: string; seconds: number }[], out: string) {
+  if (clips.length === 1) return ffmpeg(["-i", clips[0].file, "-c", "copy", out]);
+  const inputs = clips.flatMap((c) => ["-i", c.file]);
+  let graph = "";
+  let offset = 0;
+  let prev = "[0]";
+  clips.slice(0, -1).forEach((c, i) => {
+    offset += c.seconds - FADE;
+    const label = i === clips.length - 2 ? "[v]" : `[x${i}]`;
+    graph += `${prev}[${i + 1}]xfade=transition=fade:duration=${FADE}:offset=${offset.toFixed(3)}${label};`;
+    prev = label;
+  });
+  await ffmpeg([...inputs, "-filter_complex", graph.slice(0, -1), "-map", "[v]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", out]);
 }
 
 async function buildVideo(opts: {
   dir: string; name: string; narration: Narration; prompts: string[]; scenes: { start: number; end: number }[];
-  w: number; h: number; imgW: number; imgH: number; fontSize: number; marginV: number;
+  w: number; h: number; imgW: number; imgH: number; fontSize: number; marginV: number; titleCard?: string;
 }) {
   const { dir, name, narration, prompts, scenes, w, h } = opts;
-  const clips = await pool(scenes, 4, async (sc, i) => {
-    const img = path.join(dir, `${name}-img-${i}.jpg`);
-    await drawImage(prompts[i], img, { width: opts.imgW, height: opts.imgH, seed: 1000 + i * 7 });
-    const clip = path.join(dir, `${name}-clip-${String(i).padStart(3, "0")}.mp4`);
-    await kenBurns(img, clip, sc.end - sc.start, w, h, i % 2 === 0);
-    console.log(`  ${name} cảnh ${i + 1}/${scenes.length}`);
-    return clip;
+  // Mỗi ảnh (1 scene) tách thành nhiều cảnh ~10s với kiểu máy quay khác nhau.
+  const shots = scenes.flatMap((sc, i) => {
+    const n = Math.max(1, Math.round((sc.end - sc.start) / SHOT_SECONDS));
+    const len = (sc.end - sc.start) / n;
+    return Array.from({ length: n }, (_, k) => ({ image: i, seconds: len, motion: MOTIONS[(i * 2 + k) % MOTIONS.length] }));
   });
-  const list = path.join(dir, `${name}-clips.txt`);
-  await writeFile(list, clips.map((c) => `file '${c}'`).join("\n"));
+  const GROUP = 12;
+  const files = await pool(shots, 4, async (sh, j) => {
+    const img = path.join(dir, `${name}-img-${sh.image}.jpg`);
+    await drawImage(prompts[sh.image], img, { width: opts.imgW, height: opts.imgH, seed: 1000 + sh.image * 7 });
+    // Cảnh nào sẽ crossfade với cảnh sau thì kéo dài thêm FADE để tổng thời lượng vẫn khớp giọng đọc.
+    const fadesNext = j % GROUP !== GROUP - 1 && j !== shots.length - 1;
+    const seconds = sh.seconds + (fadesNext ? FADE : 0);
+    const file = path.join(dir, `${name}-shot-${String(j).padStart(3, "0")}.mp4`);
+    await shot(img, file, seconds, w, h, sh.motion);
+    if (j % 10 === 0) console.log(`  ${name} cảnh ${j + 1}/${shots.length}`);
+    return { file, seconds };
+  });
+
+  const groups: string[] = [];
+  for (let g = 0; g * GROUP < files.length; g++) {
+    const out = path.join(dir, `${name}-group-${g}.mp4`);
+    await crossfadeGroup(files.slice(g * GROUP, (g + 1) * GROUP), out);
+    groups.push(out);
+  }
+  const list = path.join(dir, `${name}-groups.txt`);
+  await writeFile(list, groups.map((c) => `file '${c}'`).join("\n"));
   const silent = path.join(dir, `${name}-silent.mp4`);
   await ffmpeg(["-f", "concat", "-safe", "0", "-i", list, "-c", "copy", silent]);
 
   const out = path.join(dir, `${name}.mp4`);
   const ass = path.join(dir, `${name}.ass`);
   await writeFile(ass, toAss(narration.cues, { width: w, height: h, fontSize: opts.fontSize, marginV: opts.marginV }));
-  const vf = BURN_TEXT ? ["-vf", `ass=${filterPath(ass)}:fontsdir=${filterPath(FONT_DIR)}`] : [];
+  // Màu điện ảnh: tăng tương phản nhẹ, tối 4 góc, hạt phim.
+  const grade = "eq=contrast=1.08:saturation=1.12:brightness=-0.02,vignette=PI/5,noise=alls=5:allf=t";
+  const text = BURN_TEXT
+    ? `,ass=${filterPath(ass)}:fontsdir=${filterPath(FONT_DIR)}` +
+      (opts.titleCard
+        ? `,drawtext=fontfile=${filterPath(FONT)}:text='${escText(opts.titleCard)}':fontsize=${Math.round(w / 22)}:fontcolor=white:borderw=5:bordercolor=black@0.8:x=(w-tw)/2:y=(h-th)/2:alpha='if(lt(t,0.6),t/0.6,if(lt(t,4),1,max(0,(5-t))))':enable='lt(t,5)'`
+        : "")
+    : "";
+  const music = await pickMusic();
+  const audio = music
+    ? ["-stream_loop", "-1", "-i", music, "-filter_complex", "[2:a]volume=0.10[m];[1:a][m]amix=inputs=2:duration=first:normalize=0[a]", "-map", "0:v", "-map", "[a]"]
+    : ["-map", "0:v", "-map", "1:a"];
   await ffmpeg([
-    "-i", silent, "-i", narration.audio, ...vf,
-    "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
-    "-c:a", "aac", "-b:a", "128k", "-shortest", "-movflags", "+faststart", out,
+    "-i", silent, "-i", narration.audio, ...audio,
+    "-vf", `${grade}${text},format=yuv420p`,
+    "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+    "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart", out,
   ]);
-  return { out, firstImage: path.join(dir, `${name}-img-0.jpg`) };
+  return { out };
+}
+
+function escText(s: string) {
+  return s.replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "\u2019").replace(/%/g, "\\%");
+}
+
+/** Nhạc nền tuỳ chọn: bỏ file .mp3 (bản quyền free, vd YouTube Audio Library) vào pipeline/music/. */
+async function pickMusic() {
+  const dir = path.resolve("pipeline/music");
+  const files = (await readdir(dir).catch(() => [] as string[])).filter((f) => f.endsWith(".mp3"));
+  return files.length ? path.join(dir, files[Math.floor(Math.random() * files.length)]) : null;
 }
 
 async function thumbnail(dir: string, prompt: string, text: string, chapterNo: number) {
   const img = path.join(dir, "thumb-src.jpg");
   await drawImage(prompt, img, { width: 1280, height: 768, seed: 42 });
   const out = path.join(dir, "thumbnail.jpg");
-  const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "\u2019").replace(/%/g, "\\%");
   const draw = BURN_TEXT
-    ? `,drawtext=fontfile=${filterPath(FONT)}:text='${esc(text.toUpperCase())}':fontsize=96:fontcolor=#FFD23F:borderw=8:bordercolor=black:x=(w-tw)/2:y=h-th-70,` +
+    ? `,drawtext=fontfile=${filterPath(FONT)}:text='${escText(text.toUpperCase())}':fontsize=96:fontcolor=#FFD23F:borderw=8:bordercolor=black:x=(w-tw)/2:y=h-th-70,` +
       `drawtext=fontfile=${filterPath(FONT)}:text='CHƯƠNG ${chapterNo}':fontsize=54:fontcolor=white:box=1:boxcolor=#B91C1C:boxborderw=18:x=40:y=40`
     : "";
   await ffmpeg(["-i", img, "-vf", `crop=iw:ih*0.93:0:0,scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720${draw}`, "-q:v", "3", out]);
@@ -173,18 +256,20 @@ export async function renderVideo(videoId: number) {
     console.log("● Video dài: đọc giọng");
     const intro = `${s.title}. Chương ${c.number}: ${c.title}.`;
     const long = await narrate(`${intro}\n${c.content}`, s.voiceStyle, dir);
-    const n = Math.min(40, Math.max(6, Math.round(long.seconds / 40)));
+    // 1 ảnh ~20s (tách 2 cảnh ~10s). Free Pollinations 1 ảnh/45s nên giới hạn 45 ảnh.
+    const n = Math.min(45, Math.max(6, Math.round(long.seconds / 20)));
     const longScenes = splitScenes(long.cues, n, long.seconds);
     const longPrompts = await cached(path.join(dir, `long-prompts-${n}.json`), () => scenePrompts(m.characterLook, longScenes.map((x) => x.text)));
     const longVideo = await buildVideo({
       dir, name: "long", narration: long, prompts: longPrompts, scenes: longScenes,
-      w: 1280, h: 720, imgW: 1280, imgH: 768, fontSize: 44, marginV: 50,
+      w: 1920, h: 1080, imgW: 1280, imgH: 768, fontSize: 62, marginV: 70,
+      titleCard: `${s.title}\n\nChương ${c.number}: ${c.title}`,
     });
 
     console.log("● Short");
     const shortDir = path.join(dir, "short");
     const short = await narrate(m.shortScript, s.voiceStyle, shortDir, 2000);
-    const shortScenes = splitScenes(short.cues, 4, short.seconds);
+    const shortScenes = splitScenes(short.cues, 5, short.seconds);
     const shortPrompts = await cached(path.join(shortDir, "prompts.json"), () => scenePrompts(m.characterLook, shortScenes.map((x) => x.text)));
     const shortVideo = await buildVideo({
       dir: shortDir, name: "short", narration: short, prompts: shortPrompts.map((p) => `${p}, vertical portrait composition`), scenes: shortScenes,
