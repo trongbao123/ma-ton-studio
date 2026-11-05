@@ -1,0 +1,28 @@
+name: render
+on:
+  workflow_dispatch:
+    inputs:
+      video_id:
+        description: "ID video cần render"
+        required: true
+permissions:
+  contents: write
+concurrency:
+  group: render-${{ inputs.video_id }}
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: pnpm }
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec tsx pipeline/render.ts ${{ inputs.video_id }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          POLLINATIONS_TOKEN: ${{ secrets.POLLINATIONS_TOKEN }}
+          GH_TOKEN: ${{ github.token }}

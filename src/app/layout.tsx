@@ -23,6 +23,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             <Link href="/" className="font-bold text-accent">
               Ma Tôn Studio
             </Link>
+            <Link href="/videos" className="text-sm text-muted hover:text-foreground">
+              Video
+            </Link>
             <Link href="/series/new" className="text-sm text-muted hover:text-foreground">
               + Truyện mới
             </Link>

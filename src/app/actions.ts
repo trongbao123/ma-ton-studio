@@ -4,8 +4,9 @@ import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
-import { chapters, series } from "@/db/schema";
+import { chapters, series, videos } from "@/db/schema";
 import { draftBible, planChapters, writeChapterStep, type WriteMode } from "@/lib/story/service";
+import { dispatchRender, queueVideo } from "@/lib/story/videos";
 
 export type ActionState = { error?: string; ok?: string };
 
@@ -48,6 +49,9 @@ export async function updateSeriesAction(seriesId: number, _: ActionState, form:
         bible: String(form.get("bible")),
         style: String(form.get("style")),
         targetWords: Number(form.get("targetWords")) || 4000,
+        voiceStyle: String(form.get("voiceStyle") ?? ""),
+        autopilot: form.get("autopilot") === "on",
+        autoApprove: form.get("autoApprove") === "on",
       })
       .where(eq(series.id, seriesId));
     revalidatePath(`/series/${seriesId}`);
@@ -100,7 +104,28 @@ export async function setApprovedAction(chapterId: number, approved: boolean): P
       .update(chapters)
       .set({ status: approved ? "approved" : row?.content ? "draft" : "outline", updatedAt: new Date() })
       .where(eq(chapters.id, chapterId));
+    if (approved) await queueVideo(chapterId);
     revalidatePath("/", "layout");
-    return approved ? "Đã duyệt." : "Đã bỏ duyệt.";
+    return approved ? "Đã duyệt — đang render video." : "Đã bỏ duyệt.";
+  });
+}
+
+export async function rerenderAction(videoId: number): Promise<ActionState> {
+  return attempt(async () => {
+    await db().update(videos).set({ status: "queued", error: null, updatedAt: new Date() }).where(eq(videos.id, videoId));
+    await dispatchRender(videoId);
+    revalidatePath("/videos");
+    return "Đã xếp hàng render lại.";
+  });
+}
+
+export async function markPublishedAction(videoId: number, _: ActionState, form: FormData): Promise<ActionState> {
+  return attempt(async () => {
+    await db()
+      .update(videos)
+      .set({ status: "published", youtubeUrl: String(form.get("youtubeUrl") ?? "") || null, updatedAt: new Date() })
+      .where(eq(videos.id, videoId));
+    revalidatePath("/videos");
+    return "Đã đánh dấu đã đăng.";
   });
 }

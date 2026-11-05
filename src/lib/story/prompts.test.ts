@@ -10,6 +10,9 @@ const s: Series = {
   bible: "Cảnh giới: Luyện Khí → Trúc Cơ → Kim Đan.",
   style: "ngôi thứ nhất",
   targetWords: 3000,
+  autopilot: false,
+  autoApprove: false,
+  voiceStyle: "",
   createdAt: new Date(0),
 };
 

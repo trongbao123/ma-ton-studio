@@ -86,7 +86,16 @@ async function SeriesDetail({ params }: { params: Promise<{ id: string }> }) {
               <input id="targetWords" name="targetWords" type="number" className="field" defaultValue={s.targetWords} />
             </div>
           </div>
+          <div className="flex flex-wrap gap-6 text-sm">
+            <label className="flex items-center gap-2">
+              <input type="checkbox" name="autopilot" defaultChecked={s.autopilot} /> Autopilot: mỗi sáng tự viết 1 chương
+            </label>
+            <label className="flex items-center gap-2">
+              <input type="checkbox" name="autoApprove" defaultChecked={s.autoApprove} /> Tự duyệt + render (không cần đọc)
+            </label>
+          </div>
           <Field name="premise" label="Cốt truyện" rows={4} value={s.premise} />
+          <Field name="voiceStyle" label="Giọng đọc" rows={2} value={s.voiceStyle} />
           <Field name="style" label="Giọng văn" rows={2} value={s.style} />
           <Field name="bible" label="Nhân vật, cảnh giới, thế lực, bối cảnh" rows={18} value={s.bible} />
         </ActionForm>

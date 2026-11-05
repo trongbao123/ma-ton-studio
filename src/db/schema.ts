@@ -1,6 +1,7 @@
-import { integer, pgEnum, pgTable, serial, text, timestamp, unique } from "drizzle-orm/pg-core";
+import { boolean, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, unique } from "drizzle-orm/pg-core";
 
 export const chapterStatus = pgEnum("chapter_status", ["outline", "draft", "approved"]);
+export const videoStatus = pgEnum("video_status", ["queued", "rendering", "ready", "failed", "published"]);
 
 export const series = pgTable("series", {
   id: serial("id").primaryKey(),
@@ -12,6 +13,12 @@ export const series = pgTable("series", {
   /** Giọng văn mong muốn, ví dụ "kể ngôi thứ ba, nhịp nhanh, nhiều cao trào". */
   style: text("style").notNull().default(""),
   targetWords: integer("target_words").notNull().default(4000),
+  /** Mỗi sáng GitHub Actions tự viết 1 chương mới. */
+  autopilot: boolean("autopilot").notNull().default(false),
+  /** Tự duyệt chương AI viết và render luôn — bỏ bước người đọc duyệt (rủi ro chất lượng). */
+  autoApprove: boolean("auto_approve").notNull().default(false),
+  /** Chỉ dẫn giọng đọc cho TTS. */
+  voiceStyle: text("voice_style").notNull().default("giọng nam trầm, kể chuyện kiếm hiệp cổ trang, nhịp vừa, nhấn nhá ở đoạn cao trào"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -35,5 +42,32 @@ export const chapters = pgTable(
   (t) => [unique("chapters_series_number").on(t.seriesId, t.number)],
 );
 
+export type VideoMeta = {
+  title: string;
+  description: string;
+  tags: string[];
+  shortTitle: string;
+  shortDescription: string;
+};
+
+/** Một lần render cho một chương: video dài + 1 Short + thumbnail, lưu ở GitHub Release `video-<id>`. */
+export const videos = pgTable("videos", {
+  id: serial("id").primaryKey(),
+  chapterId: integer("chapter_id")
+    .notNull()
+    .references(() => chapters.id, { onDelete: "cascade" }),
+  status: videoStatus("status").notNull().default("queued"),
+  meta: jsonb("meta").$type<VideoMeta>(),
+  /** Tên file asset trong release → id asset GitHub, dùng để tải qua /api/videos/[id]/[file]. */
+  assets: jsonb("assets").$type<Record<string, number>>().notNull().default({}),
+  durationSec: integer("duration_sec"),
+  error: text("error"),
+  runUrl: text("run_url"),
+  youtubeUrl: text("youtube_url"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 export type Series = typeof series.$inferSelect;
+export type Video = typeof videos.$inferSelect;
 export type Chapter = typeof chapters.$inferSelect;
