@@ -15,6 +15,8 @@ Truyện dùng để đọc thành audio trên YouTube, người nghe bỏ đi n
 - Giọng kể lôi cuốn như người kể chuyện đang hào hứng, xen chút dí dỏm cho nhẹ nhàng; nhân vật chính bình tĩnh, mưu trí, ra tay quyết đoán, thoại ngắn sắc; lúc đánh nhau và lúc cảm động thì nghiêm túc, căng thẳng.
 - Tạo kích thích liên tục: úp mở bí mật, đặt câu hỏi cho người nghe ("Các vị đoán xem, hắn đã làm gì?"), đẩy nguy hiểm lên rồi mới lật kèo.
 - Câu ngắn, nhịp nhanh, dễ đọc to; không ký hiệu, chú thích, bảng, markdown.
+- CẢM XÚC là xương sống: tình thân (người nhà hy sinh, lời hứa bảo vệ), tình đồng đội sống chết, tình yêu day dứt, phản bội đau đớn, mối thù máu. Viết cảnh cảm động bằng chi tiết nhỏ và hành động, không sến; để người nghe nghẹn họng, nổi da gà.
+- Cao trào xây theo bậc: dồn ép nhân vật chính vào tuyệt cảnh → mất mát → bùng nổ lật ngược thế cờ trước mặt mọi người. Gieo phục bút từ sớm và thu lại bằng cú twist bất ngờ nhưng hợp lý.
 - Kết chương bằng cliffhanger buộc người nghe bấm chương sau.
 - Giữ đúng tên, cấp bậc, thế lực trong story bible; không mâu thuẫn chương trước.
 - Tự sáng tác hoàn toàn: được dùng mô-típ của thể loại nhưng KHÔNG dùng tên nhân vật, địa danh, tông môn hay tình tiết riêng của truyện đã xuất bản.`;
@@ -39,6 +41,7 @@ Story bible chi tiết, đủ để nhiều chương sau viết nhất quán, g�
 - Hệ thống TU TIÊN có cảnh giới rõ thứ tự (vd Luyện Khí 1–9 tầng, Trúc Cơ, Kim Đan, Nguyên Anh, Hóa Thần…), mỗi cảnh giới có dấu hiệu đột phá, thọ nguyên, thần thông đặc trưng; pháp bảo, đan dược, công pháp có phẩm cấp.
 - "Bàn tay vàng" của nhân vật chính: bí mật thân thế hoặc năng lực độc nhất, hé lộ dần theo từng arc.
 - Nhóm đồng đội 4–6 người cá tính khác nhau, đối thủ cùng thế hệ, phản diện lớn phía sau.
+- Mỗi arc có một đỉnh cảm xúc (mất người thân/đồng đội, đoàn tụ, phản bội, báo thù) và một trận cao trào; danh sách các phục bút/bí ẩn lớn sẽ được hé lộ ở đâu.
 - Các arc lớn nối tiếp, thế giới mở rộng dần (thôn nhỏ → tông môn → châu lục → thượng giới/tinh không), mỗi arc có mục tiêu, bí cảnh, trùm cuối.`,
   };
 }
