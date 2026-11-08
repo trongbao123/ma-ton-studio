@@ -8,8 +8,8 @@ neonConfig.fetchFunction = async (input: RequestInfo | URL, init?: RequestInit) 
     try {
       return await fetch(input, init);
     } catch (e) {
-      if (attempt >= 3) throw e;
-      await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+      if (attempt >= 6) throw e;
+      await new Promise((r) => setTimeout(r, 3000 * (attempt + 1)));
     }
   }
 };
