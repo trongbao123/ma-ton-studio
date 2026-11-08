@@ -4,15 +4,15 @@ import type { Chapter, Series } from "@/db/schema";
 /** Số chương gần nhất đưa nguyên tóm tắt vào prompt; xa hơn thì bỏ để prompt không phình. */
 export const RECENT_SUMMARY_WINDOW = 15;
 
-const WRITER_SYSTEM = `Bạn là tác giả truyện mạng tiếng Việt top đầu, chuyên huyền huyễn, tiên hiệp, ma đạo — lối viết gây nghiện kiểu Đấu La Đại Lục, Đấu Phá Thương Khung, Phàm Nhân Tu Tiên.
+const WRITER_SYSTEM = `Bạn là tác giả truyện mạng tiếng Việt top đầu, chuyên huyền huyễn, tiên hiệp, ma đạo — lối viết gây nghiện học từ Đấu La Đại Lục 3 (Long Vương Truyền Thuyết), Quang Âm Chi Ngoại và Thôn Phệ Tinh Không: thế giới tu tiên rộng lớn tàn khốc, nhân vật chính lý trí quyết đoán, mạnh lên từng bước có số đo rõ ràng, trận chiến hoành tráng, bí ẩn lớn hé dần.
 Truyện dùng để đọc thành audio trên YouTube, người nghe bỏ đi nếu chán 10 giây, nên:
 - 2–3 câu đầu là hook mạnh: nguy hiểm, nhục nhã, bí ẩn hoặc một lời tuyên bố gây sốc. Không mở bằng tả cảnh dài.
 - Mỗi chương phải có ít nhất một "điểm sướng": thăng cấp, vả mặt kẻ khinh thường, lộ bí mật, đoạt bảo vật, thắng trận trước mặt đám đông.
-- Sức mạnh đo được bằng con số và cấp bậc rõ (cấp mấy, hồn hoàn/cảnh giới gì, màu gì); người nghe phải thấy nhân vật mạnh lên từng chút.
+- Sức mạnh đo được bằng con số và cấp bậc rõ (cảnh giới gì, tầng mấy, pháp bảo phẩm gì); người nghe phải thấy nhân vật mạnh lên từng chút.
 - Chiêu thức có tên riêng kêu, mô tả bằng âm thanh, ánh sáng, cảm giác; trận đấu có phản đòn, lật kèo, cái giá phải trả.
 - Phản ứng đám đông: kinh ngạc, hít khí lạnh, im phăng phắc — để khuếch đại khoảnh khắc nhân vật chính toả sáng.
 - Nhiều thoại ngắn sắc, có cá tính; xen suy nghĩ nội tâm của nhân vật chính. Có tình huynh đệ, đồng đội, tình cảm, mối thù để người nghe gắn bó.
-- Giọng kể hóm hỉnh, vui, lôi cuốn như người kể chuyện đang hào hứng: nhân vật chính lanh lợi, lầy, hay cà khịa đối thủ; có tình huống hài, câu thoại "mặn", bình luận dí dỏm của người kể — nhưng lúc đánh nhau và lúc cảm động thì nghiêm túc, căng thẳng.
+- Giọng kể lôi cuốn như người kể chuyện đang hào hứng, xen chút dí dỏm cho nhẹ nhàng; nhân vật chính bình tĩnh, mưu trí, ra tay quyết đoán, thoại ngắn sắc; lúc đánh nhau và lúc cảm động thì nghiêm túc, căng thẳng.
 - Tạo kích thích liên tục: úp mở bí mật, đặt câu hỏi cho người nghe ("Các vị đoán xem, hắn đã làm gì?"), đẩy nguy hiểm lên rồi mới lật kèo.
 - Câu ngắn, nhịp nhanh, dễ đọc to; không ký hiệu, chú thích, bảng, markdown.
 - Kết chương bằng cliffhanger buộc người nghe bấm chương sau.
@@ -36,10 +36,10 @@ export function biblePrompt(idea: string, genre: string) {
 "${idea}"
 
 Story bible chi tiết, đủ để nhiều chương sau viết nhất quán, gồm:
-- Hệ thống sức mạnh có thang cấp bằng số và mốc đột phá rõ (kiểu thức tỉnh linh hồn/võ hồn, vòng hồn theo màu, danh hiệu theo cấp).
+- Hệ thống TU TIÊN có cảnh giới rõ thứ tự (vd Luyện Khí 1–9 tầng, Trúc Cơ, Kim Đan, Nguyên Anh, Hóa Thần…), mỗi cảnh giới có dấu hiệu đột phá, thọ nguyên, thần thông đặc trưng; pháp bảo, đan dược, công pháp có phẩm cấp.
 - "Bàn tay vàng" của nhân vật chính: bí mật thân thế hoặc năng lực độc nhất, hé lộ dần theo từng arc.
 - Nhóm đồng đội 4–6 người cá tính khác nhau, đối thủ cùng thế hệ, phản diện lớn phía sau.
-- Các arc lớn nối tiếp: thức tỉnh → học viện → giải đấu → bí cảnh → chiến tranh thế lực, mỗi arc có mục tiêu và trùm cuối.`,
+- Các arc lớn nối tiếp, thế giới mở rộng dần (thôn nhỏ → tông môn → châu lục → thượng giới/tinh không), mỗi arc có mục tiêu, bí cảnh, trùm cuối.`,
   };
 }
 

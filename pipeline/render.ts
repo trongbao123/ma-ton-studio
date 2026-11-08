@@ -84,37 +84,17 @@ const FADE = 0.8;
 /** Pollinations không key có logo ở đáy ảnh → cắt 7%. Ảnh Cloudflare sạch, không cần. */
 const LOGO_CROP = process.env.CLOUDFLARE_API_TOKEN ? "" : "crop=iw:ih*0.93:0:0,";
 const SHOT_SECONDS = 10;
-/** Cảnh hành động cắt nhanh, máy rung, zoom giật. */
-const ACTION_SHOT_SECONDS = 3;
-const ACTION_FADE = 0.3;
+/** Cảnh hành động chỉ cắt nhanh hơn (không rung, không chớp — người xem thấy khó chịu). */
+const ACTION_SHOT_SECONDS = 5;
 const MOTIONS = ["in", "left", "out", "right", "up", "in"] as const;
-const ACTION_MOTIONS = ["punch", "shakeL", "punchOut", "shakeR"] as const;
-type Motion = (typeof MOTIONS)[number] | (typeof ACTION_MOTIONS)[number];
-const CALM_FX = ["fade", "dissolve", "smoothleft", "fade"];
-const ACTION_FX = ["fadewhite", "zoomin", "slideleft", "radial", "fadewhite", "slideright"];
+type Motion = (typeof MOTIONS)[number];
 
 /** Biểu thức zoompan cho một kiểu máy quay; `e` là tiến độ có easing (chậm–nhanh–chậm). */
 function motionExpr(m: Motion, frames: number) {
   const e = `(0.5-0.5*cos(PI*on/${frames}))`;
-  // Thở nhẹ cho cảnh tĩnh; rung tay máy cho cảnh hành động (zoompan tự kẹp toạ độ trong ảnh).
-  const sway = `3*sin(on/23)`;
-  const shakeX = `(16*sin(on*2.1)+9*sin(on*4.7+1))`;
-  const shakeY = `(11*sin(on*2.9+2)+6*sin(on*6.3))`;
-  const cx = `iw/2-(iw/zoom/2)+${sway}`;
+  const cx = "iw/2-(iw/zoom/2)";
   const cy = "ih/2-(ih/zoom/2)";
-  const ax = `iw/2-(iw/zoom/2)+${shakeX}`;
-  const ay = `ih/2-(ih/zoom/2)+${shakeY}`;
-  // Zoom giật nhanh rồi giữ: tiến độ dồn vào 1/3 đầu cảnh.
-  const fast = `min(1,${e}*2.2)`;
   switch (m) {
-    case "punch":
-      return { z: `1.04+0.16*${fast}`, x: ax, y: ay };
-    case "punchOut":
-      return { z: `1.22-0.14*${fast}`, x: ax, y: ay };
-    case "shakeL":
-      return { z: "1.16", x: `(iw-iw/zoom)*${e}+${shakeX}`, y: ay };
-    case "shakeR":
-      return { z: "1.16", x: `(iw-iw/zoom)*(1-${e})+${shakeX}`, y: ay };
     case "in":
       return { z: `1+${ZOOM}*${e}`, x: cx, y: cy };
     case "out":
@@ -129,23 +109,21 @@ function motionExpr(m: Motion, frames: number) {
 }
 
 /** Zoom tối đa của chuyển động máy quay — thấp để không phóng ảnh nguồn (chỉ ~1MP) quá tay gây mờ. */
-const ZOOM = 0.08;
+const ZOOM = 0.06;
 
 /**
  * Ảnh → 1 cảnh có chuyển động máy quay. Phóng ảnh lên 2× khung ra (lanczos + làm nét) rồi mới zoompan:
  * zoompan làm tròn toạ độ theo pixel nguồn, nguồn 4K thì mỗi bước chỉ còn ½ pixel ở 1080p → hết rung.
  * Cắt 7% đáy để bỏ logo Pollinations.
  */
-export async function shot(img: string, out: string, seconds: number, w: number, h: number, motion: Motion, action: boolean) {
+export async function shot(img: string, out: string, seconds: number, w: number, h: number, motion: Motion) {
   const frames = Math.max(1, Math.round(seconds * FPS));
   const { z, x, y } = motionExpr(motion, frames);
-  // Hành động: tương phản gắt hơn + chớp sáng 0.15s đầu cảnh như cú va chạm.
-  const punch = action ? ",eq=contrast=1.12:saturation=1.2,fade=in:st=0:d=0.15:color=white" : "";
   await ffmpeg([
     "-loop", "1", "-i", img, "-t", seconds.toFixed(3),
     "-vf",
     `${LOGO_CROP}scale=${w * 2}:${h * 2}:force_original_aspect_ratio=increase:flags=lanczos,crop=${w * 2}:${h * 2}:(iw-ow)/2:(ih-oh)*0.3,unsharp=5:5:1.0,` +
-      `zoompan=z='${z}':x='${x}':y='${y}':d=1:s=${w}x${h}:fps=${FPS}${punch},format=yuv420p`,
+      `zoompan=z='${z}':x='${x}':y='${y}':d=1:s=${w}x${h}:fps=${FPS},format=yuv420p`,
     "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-r", String(FPS), out,
   ]);
 }
@@ -173,16 +151,15 @@ async function buildVideo(opts: {
 }) {
   const { dir, name, narration, prompts, scenes, w, h } = opts;
   // Mỗi ảnh (1 scene) tách thành nhiều cảnh ~10s với kiểu máy quay khác nhau.
-  // Cảnh hành động cắt ~3s, mỗi nhát một kiểu zoom/rung và chuyển cảnh chớp trắng/zoom.
   const shots = scenes.flatMap((sc, i) => {
     const action = prompts[i].action;
     const n = Math.max(1, Math.round((sc.end - sc.start) / (action ? ACTION_SHOT_SECONDS : SHOT_SECONDS)));
     const len = (sc.end - sc.start) / n;
     return Array.from({ length: n }, (_, k) => ({
       image: i, seconds: len, action,
-      motion: action ? ACTION_MOTIONS[(i + k) % ACTION_MOTIONS.length] : MOTIONS[(i * 2 + k) % MOTIONS.length],
-      fade: action ? ACTION_FADE : FADE,
-      fx: action ? ACTION_FX[(i + k) % ACTION_FX.length] : CALM_FX[(i + k) % CALM_FX.length],
+      motion: MOTIONS[(i * 2 + k) % MOTIONS.length],
+      fade: FADE,
+      fx: "fade",
     }));
   });
   const GROUP = 12;
@@ -193,7 +170,7 @@ async function buildVideo(opts: {
     const fadesNext = j % GROUP !== GROUP - 1 && j !== shots.length - 1;
     const seconds = sh.seconds + (fadesNext ? shots[j + 1].fade : 0);
     const file = path.join(dir, `${name}-shot-${String(j).padStart(3, "0")}.mp4`);
-    await shot(img, file, seconds, w, h, sh.motion, sh.action);
+    await shot(img, file, seconds, w, h, sh.motion);
     if (j % 10 === 0) console.log(`  ${name} cảnh ${j + 1}/${shots.length}`);
     return { file, seconds, fade: sh.fade, fx: sh.fx };
   });
@@ -213,7 +190,7 @@ async function buildVideo(opts: {
   const ass = path.join(dir, `${name}.ass`);
   await writeFile(ass, toAss(narration.cues, { width: w, height: h, fontSize: opts.fontSize, marginV: opts.marginV }));
   // Màu điện ảnh: tăng tương phản nhẹ, tối 4 góc, hạt phim.
-  const grade = "eq=contrast=1.08:saturation=1.12:brightness=-0.02,vignette=PI/5,noise=alls=3:allf=t";
+  const grade = "eq=contrast=1.05:saturation=1.08,vignette=PI/6";
   const text = BURN_TEXT
     ? `,ass=${filterPath(ass)}:fontsdir=${filterPath(FONT_DIR)}` +
       (opts.titleCard
@@ -299,8 +276,8 @@ export async function renderVideo(videoId: number) {
     console.log("● Video dài: đọc giọng");
     const intro = `${s.title}. Chương ${c.number}: ${c.title}.`;
     const long = await narrate(`${intro}\n${c.content}`, dir);
-    // 1 ảnh ~20s (tách 2 cảnh ~10s). Free Pollinations 1 ảnh/45s nên giới hạn 45 ảnh.
-    const n = Math.min(45, Math.max(6, Math.round(long.seconds / 20)));
+    // 1 ảnh ~25s (tách ~2–3 cảnh), tối đa 30 ảnh để vừa quota Cloudflare free 1 ngày.
+    const n = Math.min(30, Math.max(6, Math.round(long.seconds / 25)));
     const longScenes = splitScenes(long.cues, n, long.seconds);
     const longPrompts = await cached(path.join(dir, `long-scenes-${n}.json`), () => scenePrompts(m.characterLook, longScenes.map((x) => x.text)));
     const longVideo = await buildVideo({

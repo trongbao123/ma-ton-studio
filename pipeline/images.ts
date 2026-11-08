@@ -1,86 +1,80 @@
-import { access, writeFile } from "node:fs/promises";
-import { and, eq } from "drizzle-orm";
-import { db } from "@/db";
-import { aiUsage } from "@/db/schema";
+import { readFile, rm, writeFile } from "node:fs/promises";
+import { QuotaExhaustedError } from "@/lib/ai";
 
-/** Cloudflare reset quota free lúc 00:00 UTC (7h sáng VN) — đánh dấu theo ngày UTC, khác ngày Pacific của Gemini. */
-const CF_MARK = "_cloudflare";
-const utcDay = () => new Date().toISOString().slice(0, 10);
-let cfExhausted = false;
-
-/** Còn quota ảnh Cloudflare hôm nay không (chưa cấu hình Cloudflare thì coi như không cần chờ). */
-export async function cloudflareReady() {
-  if (!process.env.CLOUDFLARE_API_TOKEN || !process.env.DATABASE_URL) return true;
-  const [row] = await db().select().from(aiUsage).where(and(eq(aiUsage.day, utcDay()), eq(aiUsage.model, CF_MARK)));
-  if (row?.limited) return false;
-  // Chưa đánh dấu thì hỏi thẳng Cloudflare bằng 1 ảnh 1 bước (rất ít neuron).
-  const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/ai/run/@cf/black-forest-labs/flux-1-schnell`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt: "a dot", steps: 1 }),
-    signal: AbortSignal.timeout(60_000),
-  }).catch(() => null);
-  if (res?.status === 429 && /daily|neuron/i.test(await res.text())) {
-    await markCloudflareExhausted();
-    return false;
-  }
-  return true;
-}
-
-async function markCloudflareExhausted() {
-  cfExhausted = true;
-  if (!process.env.DATABASE_URL) return;
-  await db()
-    .insert(aiUsage)
-    .values({ day: utcDay(), model: CF_MARK, calls: 0, limited: true })
-    .onConflictDoUpdate({ target: [aiUsage.day, aiUsage.model], set: { limited: true } })
-    .catch((e) => console.warn("Không ghi được quota Cloudflare:", e));
-}
-
-/** Bản free không key: 1 ảnh / 45 giây / IP → xếp hàng tuần tự, có key thì bỏ giãn cách. */
+/** Pollinations free không key: 1 ảnh / 45 giây / IP → xếp hàng tuần tự. Chỉ dùng khi không cấu hình Cloudflare. */
 const GAP_MS = process.env.POLLINATIONS_TOKEN ? 0 : 46_000;
 let queue: Promise<unknown> = Promise.resolve();
 let lastAt = 0;
-
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/**
- * Ảnh free từ Pollinations. Bản không key có logo nhỏ ở góc dưới — render sẽ cắt bỏ.
- * Có POLLINATIONS_TOKEN (đăng ký free ở enter.pollinations.ai) thì hết logo và không phải chờ.
- */
-export function drawImage(prompt: string, outFile: string, opts: { width: number; height: number; seed: number }) {
-  // Có Cloudflare thì dùng Flux (đẹp hơn hẳn); Pollinations free (model Sana) chỉ là dự phòng.
-  if (process.env.CLOUDFLARE_API_TOKEN && process.env.CLOUDFLARE_ACCOUNT_ID && !cfExhausted) {
-    return cloudflareFlux(prompt, outFile).catch((e) => {
-      console.warn("⚠ Cloudflare lỗi, chuyển Pollinations:", e instanceof Error ? e.message : e);
-      return pollinations(prompt, outFile, opts);
-    });
-  }
-  return pollinations(prompt, outFile, opts);
+const CF_MODEL = process.env.CF_IMAGE_MODEL ?? "@cf/black-forest-labs/flux-1-schnell";
+const cfUrl = () => `https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/ai/run/${CF_MODEL}`;
+const hasCloudflare = () => Boolean(process.env.CLOUDFLARE_API_TOKEN && process.env.CLOUDFLARE_ACCOUNT_ID);
+const cfHeaders = () => ({ Authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}`, "Content-Type": "application/json" });
+const isDaily = (s: string) => /daily free allocation|neurons/i.test(s);
+
+/** Còn quota ảnh Cloudflare không — hỏi thẳng bằng 1 ảnh 1 bước (rất ít neuron). Quota reset không đúng nửa đêm nên không đoán theo giờ. */
+export async function cloudflareReady() {
+  if (!hasCloudflare()) return true;
+  const res = await fetch(cfUrl(), {
+    method: "POST",
+    headers: cfHeaders(),
+    body: JSON.stringify({ prompt: "a dot", steps: 1 }),
+    signal: AbortSignal.timeout(60_000),
+  }).catch(() => null);
+  return !(res?.status === 429 && isDaily(await res.text()));
 }
 
-/** Flux-1-schnell trên Cloudflare Workers AI: ảnh vuông 1024×1024 (không nhận seed/kích thước), free ~10k neuron/ngày. */
+/** File ảnh hợp lệ (JPEG/PNG/WebP, > 10KB) — chặn file lỗi/HTML bị lưu nhầm làm hỏng ffmpeg ở lần sau. */
+async function validImage(file: string) {
+  const buf = await readFile(file).catch(() => null);
+  if (!buf || buf.length < 10_000) return false;
+  const jpg = buf[0] === 0xff && buf[1] === 0xd8;
+  const png = buf.subarray(1, 4).toString("ascii") === "PNG";
+  const webp = buf.subarray(8, 12).toString("ascii") === "WEBP";
+  return jpg || png || webp;
+}
+
+async function saveImage(file: string, buf: Buffer) {
+  await writeFile(file, buf);
+  if (!(await validImage(file))) {
+    await rm(file, { force: true });
+    throw new Error("ảnh trả về không hợp lệ");
+  }
+}
+
+/**
+ * Vẽ 1 ảnh. Có Cloudflare thì CHỈ dùng Cloudflare: hết quota ngày → QuotaExhaustedError để video chờ lượt sau
+ * (ảnh đã vẽ được cache), không chèn ảnh Pollinations free xấu vào giữa video.
+ */
+export async function drawImage(prompt: string, outFile: string, opts: { width: number; height: number; seed: number }) {
+  if (await validImage(outFile)) return;
+  await rm(outFile, { force: true });
+  return hasCloudflare() ? cloudflareFlux(prompt, outFile) : pollinations(prompt, outFile, opts);
+}
+
+/** Flux trên Cloudflare Workers AI: ảnh vuông 1024×1024, free 10k neuron/ngày (~1 video). */
 async function cloudflareFlux(prompt: string, outFile: string) {
-  if (await access(outFile).then(() => true, () => false)) return;
-  const url = `https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/ai/run/@cf/black-forest-labs/flux-1-schnell`;
   let last = "";
-  for (let attempt = 0; attempt < 4; attempt++) {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: prompt.slice(0, 2000), steps: 4 }),
-      signal: AbortSignal.timeout(120_000),
-    });
-    const body = await res.json().catch(() => ({}));
-    const image = body?.result?.image;
-    if (res.ok && image) {
-      await writeFile(outFile, Buffer.from(image, "base64"));
-      return;
-    }
-    last = `${res.status} ${JSON.stringify(body?.errors ?? body).slice(0, 200)}`;
-    if (res.status === 429 && /daily|neuron|limit/i.test(last)) {
-      await markCloudflareExhausted();
-      break;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      const res = await fetch(cfUrl(), {
+        method: "POST",
+        headers: cfHeaders(),
+        body: JSON.stringify({ prompt: prompt.slice(0, 2000), steps: 4 }),
+        signal: AbortSignal.timeout(120_000),
+      });
+      const body = await res.json().catch(() => ({}));
+      const image = body?.result?.image;
+      if (res.ok && image) {
+        await saveImage(outFile, Buffer.from(image, "base64"));
+        return;
+      }
+      last = `${res.status} ${JSON.stringify(body?.errors ?? body).slice(0, 200)}`;
+      if (res.status === 429 && isDaily(last)) throw new QuotaExhaustedError("Hết quota ảnh Cloudflare — video chờ lượt sau.");
+    } catch (e) {
+      if (e instanceof QuotaExhaustedError) throw e;
+      last = String(e);
     }
     await sleep(5_000 * (attempt + 1));
   }
@@ -94,7 +88,6 @@ function pollinations(prompt: string, outFile: string, opts: { width: number; he
 }
 
 async function fetchImage(prompt: string, outFile: string, opts: { width: number; height: number; seed: number }) {
-  if (await access(outFile).then(() => true, () => false)) return;
   const url = new URL(`https://image.pollinations.ai/prompt/${encodeURIComponent(prompt.slice(0, 900))}`);
   url.searchParams.set("width", String(opts.width));
   url.searchParams.set("height", String(opts.height));
@@ -113,7 +106,7 @@ async function fetchImage(prompt: string, outFile: string, opts: { width: number
       const res = await fetch(url, { headers, signal: AbortSignal.timeout(120_000) });
       const type = res.headers.get("content-type") ?? "";
       if (res.ok && type.startsWith("image/")) {
-        await writeFile(outFile, Buffer.from(await res.arrayBuffer()));
+        await saveImage(outFile, Buffer.from(await res.arrayBuffer()));
         return;
       }
       const body = await res.text();

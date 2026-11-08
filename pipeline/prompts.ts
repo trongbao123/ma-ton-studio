@@ -2,8 +2,9 @@ import { z } from "zod";
 import type { Chapter, Series } from "@/db/schema";
 import { textProvider } from "@/lib/ai";
 
+// Phong cách donghua 3D (hoạt hình tiên hiệp 3D Trung Quốc) — kiểu khán giả kênh tu tiên quen mắt.
 const ART_STYLE =
-  "chinese xianxia fantasy, ancient china, beautiful handsome characters with detailed symmetrical faces, fully clothed in elegant hanfu robes, cinematic lighting, sharp focus, masterpiece, highly detailed digital painting, rich colors with crimson accents, epic atmosphere, no text, no watermark, no nudity";
+  "Chinese 3D donghua CG animation still, xianxia cultivation world, premium 3D anime render, Unreal Engine 5, octane render, beautiful handsome characters with flawless detailed faces and long flowing hair, fully clothed in ornate layered hanfu robes with embroidery, glowing spiritual energy and qi aura, floating immortal mountains, sea of clouds, volumetric god rays, cinematic composition, depth of field, ultra detailed, 8k, no text, no watermark, no nudity";
 
 const metaSchema = z.object({
   title: z.string().describe("Tiêu đề YouTube 60–90 ký tự, viết hoa chữ cái đầu như câu thường (KHÔNG in hoa toàn bộ), gây tò mò, có tên truyện và số chương"),
