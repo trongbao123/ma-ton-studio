@@ -45,15 +45,29 @@ export const STATUS_LABEL: Record<Video["status"], [string, string]> = {
 
 const RENDER_STEPS =["agent", "tts", "images", "video"] as const;
 
+const WEEKDAYS = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
+const pad = (n: number) => String(n).padStart(2, "0");
+
+/** Giờ Việt Nam (UTC+7, không đổi giờ). Tự định dạng vì ICU của Node và trình duyệt ra chữ khác nhau → lỗi hydration. */
+function vn(iso: string) {
+  const d = new Date(Date.parse(iso) + 7 * 3600_000);
+  return {
+    hm: `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`,
+    dm: `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)}`,
+    wd: WEEKDAYS[d.getUTCDay()],
+  };
+}
+
+/** "19:00 · T5 12/11" */
 export function formatSlot(iso: string) {
-  return new Date(iso).toLocaleString("vi-VN", {
-    timeZone: "Asia/Ho_Chi_Minh",
-    weekday: "short",
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const t = vn(iso);
+  return `${t.hm} · ${t.wd} ${t.dm}`;
+}
+
+/** "14:32 09/11" */
+export function formatTime(iso: string) {
+  const t = vn(iso);
+  return `${t.hm} ${t.dm}`;
 }
 
 function clock(sec: number) {

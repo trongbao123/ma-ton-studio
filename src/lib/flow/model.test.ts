@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildFlow, formatSlot, type FlowData, type NodeId } from "./model";
+import { buildFlow, formatSlot, formatTime, type FlowData, type NodeId } from "./model";
 
 type VideoOverrides = Partial<FlowData["video"]>;
 
@@ -87,10 +87,15 @@ describe("buildFlow", () => {
   });
 });
 
-describe("formatSlot", () => {
-  it("đổi sang giờ Việt Nam", () => {
-    const s = formatSlot("2026-11-12T12:00:00.000Z");
-    expect(s).toContain("19:00");
-    expect(s).toContain("12/11");
+describe("formatSlot / formatTime", () => {
+  // Không dùng Intl cho thứ: ICU của Node và trình duyệt ra chữ khác nhau → lỗi hydration.
+  it("lịch đăng theo giờ Việt Nam, chuỗi cố định", () => {
+    expect(formatSlot("2026-11-12T12:00:00.000Z")).toBe("19:00 · T5 12/11");
+  });
+  it("qua nửa đêm VN thì sang ngày sau, Chủ nhật là CN", () => {
+    expect(formatSlot("2026-11-14T17:30:00.000Z")).toBe("00:30 · CN 15/11");
+  });
+  it("formatTime có giờ và ngày", () => {
+    expect(formatTime("2026-11-09T07:32:00.000Z")).toBe("14:32 09/11");
   });
 });

@@ -7,17 +7,19 @@ import {
   Controls,
   ReactFlow,
   ReactFlowProvider,
+  useNodesInitialized,
   useNodesState,
   useReactFlow,
   type Edge,
   type Node,
 } from "@xyflow/react";
 import Link from "next/link";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { rerenderAction, resetFlowLayoutAction, saveFlowLayoutAction } from "@/app/actions";
 import { ActionForm } from "@/components/action-form";
 import { DEFAULT_POSITIONS, MAIN_ORDER, SUB_NODES, type CanvasNodeId, type Pos } from "@/lib/flow/layout";
-import { buildFlow, formatSlot, STATUS_LABEL, type FlowData, type NodeId, type StepView } from "@/lib/flow/model";
+import { buildFlow, formatSlot, formatTime, STATUS_LABEL, type FlowData, type NodeId, type StepView } from "@/lib/flow/model";
+import { Inspector } from "./inspector";
 import { nodeTypes } from "./nodes";
 
 type Props = { data: FlowData; layout: Record<CanvasNodeId, Pos> };
@@ -70,21 +72,29 @@ function firstOpen(steps: Record<NodeId, StepView>): NodeId {
   return MAIN_ORDER.find((id) => steps[id].state !== "done") ?? "video";
 }
 
-const time = (iso: string) =>
-  new Date(iso).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
-
 function Studio({ data, layout }: Props) {
   const { steps, notice } = useMemo(() => buildFlow(data), [data]);
   const [selected, setSelected] = useState<NodeId>(() => firstOpen(steps));
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [nodes, setNodes, onNodesChange] = useNodesState(buildNodes(steps, layout, selected));
   const edges = useMemo(() => buildEdges(steps), [steps]);
   const { fitView, getNodes } = useReactFlow();
   const [, startTransition] = useTransition();
+  const measured = useNodesInitialized();
+  // fitView ban đầu có thể chạy trước khi node đo xong kích thước (hay gặp trên điện thoại) → fit lại, và fit khi xoay/đổi cỡ màn hình.
+  useEffect(() => {
+    if (!measured) return;
+    const fit = () => void fitView({ padding: 0.15 });
+    fit();
+    addEventListener("resize", fit);
+    return () => removeEventListener("resize", fit);
+  }, [measured, fitView]);
   const v = data.video;
   const [label, tone] = STATUS_LABEL[v.status];
 
   const select = (id: NodeId) => {
     setSelected(id);
+    setSheetOpen(true);
     setNodes((ns) => ns.map((n) => (MAIN_ORDER.includes(n.id as NodeId) ? { ...n, data: { ...n.data, selected: n.id === id } } : n)));
   };
 
@@ -102,7 +112,7 @@ function Studio({ data, layout }: Props) {
   return (
     <div className="flex h-full flex-col">
       <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-[#111115] px-4 py-2.5">
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 basis-full sm:basis-0 sm:flex-1">
           <Link href={`/series/${data.series.id}`} className="block truncate text-xs text-muted hover:text-foreground">
             {data.series.title} › Video #{v.id}
           </Link>
@@ -120,7 +130,7 @@ function Studio({ data, layout }: Props) {
           </a>
         )}
         <button type="button" onClick={resetLayout} className="btn-secondary !px-3 !py-1.5 text-xs">
-          ⤢ Sắp xếp lại
+          ⤢<span className="hidden sm:inline"> Sắp xếp lại</span>
         </button>
         {(v.status === "failed" || v.status === "ready" || v.status === "queued") && (
           <ActionForm action={rerenderAction.bind(null, v.id)} submitLabel="↻ Render lại" variant="secondary" />
@@ -134,7 +144,7 @@ function Studio({ data, layout }: Props) {
       )}
 
       <div className="grid min-h-0 flex-1 md:grid-cols-[1fr_380px]">
-        <div className="relative min-h-0">
+        <div className="relative min-h-0 pb-14 md:pb-0">
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -145,7 +155,7 @@ function Studio({ data, layout }: Props) {
             nodesConnectable={false}
             fitView
             fitViewOptions={{ padding: 0.15 }}
-            minZoom={0.3}
+            minZoom={0.15}
             maxZoom={2}
             colorMode="dark"
             proOptions={{ hideAttribution: true }}
@@ -155,15 +165,15 @@ function Studio({ data, layout }: Props) {
             <Controls showInteractive={false} />
           </ReactFlow>
         </div>
-        <aside data-selected={selected} className="hidden border-l border-border bg-[#141418] md:block" />
+        <Inspector data={data} steps={steps} selected={selected} open={sheetOpen} onToggle={setSheetOpen} />
       </div>
 
-      <footer className="flex gap-5 overflow-x-auto whitespace-nowrap border-t border-border bg-[#111115] px-4 py-2 text-xs text-muted">
+      <footer className="hidden gap-5 overflow-x-auto whitespace-nowrap border-t border-border bg-[#111115] px-4 py-2 text-xs text-muted md:flex">
         <span>
-          <b className="text-foreground">{time(v.createdAt)}</b> Tạo video
+          <b className="text-foreground">{formatTime(v.createdAt)}</b> Tạo video
         </span>
         <span>
-          <b className="text-foreground">{time(v.updatedAt)}</b> {label}
+          <b className="text-foreground">{formatTime(v.updatedAt)}</b> {label}
         </span>
         {v.error && <span className="text-red-400">{v.error.slice(0, 120)}</span>}
         <span className="opacity-60">Nhật ký từng bước sẽ có ở bản cập nhật pipeline</span>

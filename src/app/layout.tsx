@@ -19,7 +19,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="vi" className={`${font.variable} h-full antialiased`}>
       <body className="flex min-h-full flex-col font-sans">
         <header className="h-12 border-b border-border">
-          <nav className="mx-auto flex h-full max-w-5xl items-center gap-6 px-4">
+          <nav className="mx-auto flex h-full max-w-5xl items-center gap-4 overflow-x-auto whitespace-nowrap px-4 sm:gap-6">
             <Link href="/" className="font-bold text-accent">
               Ma Tôn Studio
             </Link>
