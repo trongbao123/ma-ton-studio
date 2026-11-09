@@ -8,6 +8,7 @@ const ART_STYLE =
 
 const metaSchema = z.object({
   title: z.string().describe("Tiêu đề YouTube 60–90 ký tự, viết hoa chữ cái đầu như câu thường (KHÔNG in hoa toàn bộ), gây tò mò, có tên truyện và số chương"),
+  titleAlternatives: z.array(z.string()).describe("2 phương án tiêu đề khác theo cùng yêu cầu, góc gây tò mò khác nhau"),
   description: z.string().describe("Mô tả 3 đoạn: tóm tắt hấp dẫn không spoil kết, kêu gọi đăng ký/like, hashtag"),
   tags: z.array(z.string()).describe("15–25 tag tiếng Việt và không dấu"),
   shortTitle: z.string().describe("Tiêu đề Short ≤ 70 ký tự, có #shorts"),
@@ -19,16 +20,19 @@ const metaSchema = z.object({
 });
 
 /** System + prompt gửi AI — tách ra để màn flow hiện lại đúng thứ đã gửi. */
-export function metaRequest(s: Series, c: Chapter) {
+export function metaRequest(s: Series, c: Chapter, seo?: string | null) {
+  const keywords = seo
+    ? `\n\nDữ liệu từ khóa YouTube thật (vidIQ) — ưu tiên đưa từ khóa có lượt tìm cao, cạnh tranh thấp vào tiêu đề, đoạn đầu mô tả và tag; không nhồi nhét:\n${seo}`
+    : "";
   return {
     system: "Bạn là chuyên gia YouTube kênh truyện audio tiên hiệp Việt Nam, tối ưu CTR và retention.",
-    prompt: `Truyện: ${s.title}\nCốt truyện: ${s.premise}\nNhân vật/bối cảnh:\n${s.bible.slice(0, 3000)}\n\nChương ${c.number}: ${c.title}\n${c.content}`,
+    prompt: `Truyện: ${s.title}\nCốt truyện: ${s.premise}\nNhân vật/bối cảnh:\n${s.bible.slice(0, 3000)}\n\nChương ${c.number}: ${c.title}\n${c.content}${keywords}`,
   };
 }
 
-export async function videoMeta(s: Series, c: Chapter) {
+export async function videoMeta(s: Series, c: Chapter, seo?: string | null) {
   return textProvider().generateJson({
-    ...metaRequest(s, c),
+    ...metaRequest(s, c, seo),
     schema: metaSchema,
     temperature: 0.8,
     tier: "cheap",

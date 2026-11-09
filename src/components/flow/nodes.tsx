@@ -15,6 +15,7 @@ const TINT: Record<string, string> = {
   summary: "text-zinc-300",
   label: "text-rose-300",
   model: "text-violet-300",
+  vidiq: "text-emerald-300",
 };
 
 /** Icon node: logo hãng thật (YouTube, Claude, OpenAI, Gemini, Cloudflare) khi biết, không thì icon nét. */

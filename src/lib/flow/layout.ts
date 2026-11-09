@@ -1,6 +1,6 @@
 import type { NodeId } from "./model";
 
-export type SubNodeId = "model" | "bible" | "summary" | "imageModel" | "label";
+export type SubNodeId = "model" | "bible" | "summary" | "vidiq" | "imageModel" | "label";
 export type CanvasNodeId = NodeId | SubNodeId;
 export type Pos = { x: number; y: number };
 
@@ -10,6 +10,7 @@ export const SUB_NODES: { id: SubNodeId; parent: NodeId; slot?: "model" | "memor
   { id: "model", parent: "agent", slot: "model", title: "Chat model", subtitle: "Claude · GPT · Gemini" },
   { id: "bible", parent: "agent", slot: "memory", title: "Memory", subtitle: "Story bible" },
   { id: "summary", parent: "agent", slot: "memory", title: "Tóm tắt", subtitle: "chương trước" },
+  { id: "vidiq", parent: "agent", slot: "tool", title: "vidIQ", subtitle: "từ khóa · chấm tiêu đề" },
   { id: "imageModel", parent: "images", title: "Cloudflare", subtitle: "FLUX" },
   { id: "label", parent: "youtube", title: "Nhãn AI", subtitle: "+ lịch đăng" },
 ];
@@ -21,9 +22,10 @@ export const DEFAULT_POSITIONS: Record<CanvasNodeId, Pos> = {
   images: { x: 650, y: 150 },
   video: { x: 810, y: 150 },
   youtube: { x: 970, y: 150 },
-  model: { x: 176, y: 360 },
-  bible: { x: 259, y: 360 },
-  summary: { x: 342, y: 360 },
+  model: { x: 130, y: 370 },
+  bible: { x: 220, y: 370 },
+  summary: { x: 310, y: 370 },
+  vidiq: { x: 400, y: 370 },
   imageModel: { x: 666, y: 360 },
   label: { x: 986, y: 360 },
 };

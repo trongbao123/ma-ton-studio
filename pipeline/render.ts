@@ -11,6 +11,7 @@ import { Tracker } from "./progress";
 import { metaRequest, scenePrompts, scenesRequest, videoMeta } from "./prompts";
 import { ensureRelease, uploadAsset } from "./release";
 import { keepOrNextSlot } from "./schedule";
+import { keywordResearch, scoreTitles } from "./vidiq";
 import { autoPublishEligible, publishToYoutube } from "./youtube";
 
 type ScenePrompt = Awaited<ReturnType<typeof scenePrompts>>[number];
@@ -303,12 +304,31 @@ export async function renderVideo(videoId: number) {
 
     // ── AI Agent: tiêu đề, mô tả, kịch bản Short. Prompt ảnh làm sau khi có giọng đọc (chia cảnh theo thời gian).
     track.start("agent", { long: 2, ...(wantShort ? { short: 1 } : {}) });
-    track.set({ prompts: { meta: clip(metaRequest(s, c)) } });
-    const m = await cached(path.join(dir, "meta.json"), () => videoMeta(s, c));
+    // vidIQ (nếu có key): từ khóa thật cho tiêu đề/mô tả/tag. Cache để chạy lại không tốn credit.
+    const seo = process.env.VIDIQ_API_KEY
+      ? await cached(path.join(dir, "vidiq-keywords.json"), async () => {
+          track.log("agent", "vidIQ: nghiên cứu từ khóa");
+          return keywordResearch(`${s.title} ${s.genre}`);
+        })
+      : null;
+    if (seo) track.log("agent", "vidIQ: đã có dữ liệu từ khóa");
+    track.set({ prompts: { meta: clip(metaRequest(s, c, seo)) } });
+    const m = await cached(path.join(dir, "meta.json"), () => videoMeta(s, c, seo));
     track.model("agent", textProvider().lastModel);
-    track.tick("agent", "long", `Tiêu đề: ${m.title}`);
+    // vidIQ chấm điểm tiêu đề gốc + 2 phương án, lấy tiêu đề điểm cao nhất.
+    let title = m.title;
+    const options = [m.title, ...(m.titleAlternatives ?? [])].filter(Boolean);
+    if (process.env.VIDIQ_API_KEY && options.length > 1) {
+      const scores = await cached(path.join(dir, "vidiq-titles.json"), () => scoreTitles(options));
+      if (scores) {
+        const best = scores.reduce<number>((b, x, i) => ((x ?? -1) > (scores[b] ?? -1) ? i : b), 0);
+        title = options[best];
+        track.log("agent", `vidIQ chấm tiêu đề: ${options.map((t, i) => `${scores[i] ?? "?"} — ${t}`).join(" | ")}`.slice(0, 600));
+      }
+    }
+    track.tick("agent", "long", `Tiêu đề: ${title}`);
     const meta: VideoMeta = {
-      title: m.title.length > 100 ? `${m.title.slice(0, 97)}…` : m.title,
+      title: title.length > 100 ? `${title.slice(0, 97)}…` : title,
       description: `${m.description}\n\n(Nội dung có sử dụng AI hỗ trợ giọng đọc và hình ảnh.)`,
       tags: m.tags,
       shortTitle: m.shortTitle,

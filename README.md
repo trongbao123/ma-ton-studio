@@ -37,3 +37,12 @@ App dùng được cùng lúc **Claude** (`ANTHROPIC_API_KEY`), **ChatGPT** (`OP
 3. Vào **Cài đặt AI** trên web: bấm **Thử** để kiểm tra key, rồi sắp thứ tự AI cho từng việc — viết truyện, tóm tắt, tiêu đề/mô tả YouTube, prompt ảnh. AI đầu lỗi / hết tiền / từ chối thì tự chuyển AI sau.
 
 Mặc định: viết truyện Claude → ChatGPT → Gemini; việc phụ dùng Gemini free trước, hết lượt mới sang AI trả phí.
+
+## vidIQ (SEO YouTube)
+Có `VIDIQ_API_KEY` thì trước khi viết tiêu đề/mô tả/tag, job render tra **từ khóa thật** trên vidIQ rồi đưa vào prompt; AI đề xuất 3 tiêu đề, vidIQ **chấm điểm** và app lấy tiêu đề cao nhất. Mỗi video tốn khoảng 20 credit vidIQ (1 lượt từ khóa + 3 lượt chấm). Tắt phần chấm tiêu đề: đặt `VIDIQ_SCORE_TITLES=0`.
+
+1. app.vidiq.com → Account Settings → **MCP** → tạo API key.
+2. GitHub → Settings → Secrets → Actions → thêm `VIDIQ_API_KEY` (chỉ job render dùng, không cần đặt ở Vercel).
+3. Muốn hỏi vidIQ trực tiếp trong Claude Code: repo đã có `.mcp.json` — mở Claude Code trong thư mục này, đồng ý bật server `vidiq`, gõ `/mcp` để đăng nhập.
+
+vidIQ lỗi hoặc hết credit thì video vẫn ra bình thường, chỉ không có dữ liệu từ khóa.

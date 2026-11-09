@@ -11,6 +11,7 @@ import {
   NotebookText,
   ScrollText,
   Tag,
+  TrendingUp,
   type LucideIcon,
 } from "lucide-react";
 
@@ -59,4 +60,5 @@ export const STEP_ICONS: Record<string, LucideIcon> = {
   bible: ScrollText,
   summary: NotebookText,
   label: Tag,
+  vidiq: TrendingUp,
 };
