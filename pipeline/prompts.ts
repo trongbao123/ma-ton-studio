@@ -18,25 +18,38 @@ const metaSchema = z.object({
   characterLook: z.string().describe("English: mô tả ngoại hình nhân vật chính để giữ nhất quán giữa các ảnh"),
 });
 
-export async function videoMeta(s: Series, c: Chapter) {
-  return textProvider().generateJson({
+/** System + prompt gửi AI — tách ra để màn flow hiện lại đúng thứ đã gửi. */
+export function metaRequest(s: Series, c: Chapter) {
+  return {
     system: "Bạn là chuyên gia YouTube kênh truyện audio tiên hiệp Việt Nam, tối ưu CTR và retention.",
     prompt: `Truyện: ${s.title}\nCốt truyện: ${s.premise}\nNhân vật/bối cảnh:\n${s.bible.slice(0, 3000)}\n\nChương ${c.number}: ${c.title}\n${c.content}`,
+  };
+}
+
+export async function videoMeta(s: Series, c: Chapter) {
+  return textProvider().generateJson({
+    ...metaRequest(s, c),
     schema: metaSchema,
     temperature: 0.8,
     tier: "cheap",
   });
 }
 
-/** Một prompt ảnh (tiếng Anh) cho mỗi phân cảnh, theo đúng thứ tự. */
-export async function scenePrompts(characterLook: string, scenes: string[]) {
-  const { scenes: out } = await textProvider().generateJson({
+export function scenesRequest(characterLook: string, scenes: string[]) {
+  return {
     system: "You write prompts for an image model illustrating a Chinese xianxia audio story.",
     prompt: `Main character look (keep consistent): ${characterLook}
 
 For EACH numbered scene below write one vivid English image prompt (subject, dynamic pose, setting, mood, cinematic camera angle) and mark action=true if the scene is a fight, chase, explosion, technique release or other intense moment. Exactly ${scenes.length} items, same order.
 
 ${scenes.map((t, i) => `${i + 1}. ${t.slice(0, 600)}`).join("\n\n")}`,
+  };
+}
+
+/** Một prompt ảnh (tiếng Anh) cho mỗi phân cảnh, theo đúng thứ tự. */
+export async function scenePrompts(characterLook: string, scenes: string[]) {
+  const { scenes: out } = await textProvider().generateJson({
+    ...scenesRequest(characterLook, scenes),
     schema: z.object({ scenes: z.array(z.object({ prompt: z.string(), action: z.boolean() })) }),
     temperature: 0.7,
     tier: "cheap",

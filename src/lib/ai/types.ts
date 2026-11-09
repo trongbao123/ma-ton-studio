@@ -16,6 +16,8 @@ export interface JsonRequest<T> extends TextRequest {
 /** Mọi nhà cung cấp LLM đi qua interface này — đổi provider chỉ cần đổi `TEXT_PROVIDER`. */
 export interface TextProvider {
   readonly name: string;
+  /** Model trả lời lần gọi thành công gần nhất — màn flow hiện model thật đã chạy. */
+  readonly lastModel?: string;
   generateText(req: TextRequest): Promise<string>;
   generateJson<T>(req: JsonRequest<T>): Promise<T>;
 }

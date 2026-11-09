@@ -1,21 +1,20 @@
-import { execFile } from "node:child_process";
 import { access, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { promisify } from "node:util";
 import { and, eq, gte, isNotNull } from "drizzle-orm";
 import { db } from "@/db";
 import { chapters, series, videos, type VideoMeta } from "@/db/schema";
-import { QuotaExhaustedError } from "@/lib/ai";
+import { QuotaExhaustedError, textProvider } from "@/lib/ai";
 import { escapeHtml, notify, WEB_URL } from "@/lib/notify";
 import { cloudflareReady, drawImage } from "./images";
 import { duration, ffmpeg, filterPath, pool } from "./ffmpeg";
-import { scenePrompts, videoMeta } from "./prompts";
+import { Tracker } from "./progress";
+import { metaRequest, scenePrompts, scenesRequest, videoMeta } from "./prompts";
+import { ensureRelease, uploadAsset } from "./release";
 
 type ScenePrompt = Awaited<ReturnType<typeof scenePrompts>>[number];
 import { cuesForChunk, packChunks, sentences, toAss, type Cue } from "./text";
 import { speak } from "./tts";
 
-const run = promisify(execFile);
 const FONT_DIR = path.resolve("pipeline/fonts");
 const FONT = path.join(FONT_DIR, "BeVietnamPro-Bold.ttf");
 /** Máy local thiếu libass/drawtext thì đặt BURN_TEXT=0 để test phần còn lại. */
@@ -46,13 +45,17 @@ export async function nextPublishSlot(now = new Date()) {
   return slot;
 }
 
-/** Đọc toàn bộ văn bản thành 1 file WAV + cue phụ đề. */
-async function narrate(text: string, dir: string, maxChars = 4000): Promise<Narration> {
-  const chunks = packChunks(sentences(text), maxChars);
+const MAX_TTS_CHARS = 4000;
+const ttsChunks = (text: string) => packChunks(sentences(text), MAX_TTS_CHARS);
+
+/** Đọc toàn bộ văn bản thành 1 file WAV + cue phụ đề. File cache có tên giọng: đổi giọng thì đọc lại. */
+async function narrate(text: string, dir: string, voice: string, onChunk?: (i: number, total: number) => void): Promise<Narration> {
+  const chunks = ttsChunks(text);
   const files = await pool(chunks, 3, async (chunk, i) => {
-    const f = path.join(dir, `tts-${String(i).padStart(3, "0")}.wav`);
-    await speak(chunk.join(" "), f);
+    const f = path.join(dir, `tts-${voice}-${String(i).padStart(3, "0")}.wav`);
+    await speak(chunk.join(" "), f, voice);
     console.log(`  TTS ${i + 1}/${chunks.length}`);
+    onChunk?.(i, chunks.length);
     return f;
   });
   const cues: Cue[] = [];
@@ -148,8 +151,10 @@ export async function crossfadeGroup(clips: { file: string; seconds: number; fad
 async function buildVideo(opts: {
   dir: string; name: string; narration: Narration; prompts: ScenePrompt[]; scenes: { start: number; end: number }[];
   w: number; h: number; imgW: number; imgH: number; fontSize: number; marginV: number; titleCard?: string;
+  /** Báo tiến độ cho màn flow: ảnh vẽ xong (lần đầu), tổng số shot, từng shot xong, việc ghép. */
+  on?: { image?: (i: number, file: string) => Promise<void>; shots?: (n: number) => void; shot?: () => void; log?: (text: string) => void };
 }) {
-  const { dir, name, narration, prompts, scenes, w, h } = opts;
+  const { dir, name, narration, prompts, scenes, w, h, on } = opts;
   // Mỗi ảnh (1 scene) tách thành nhiều cảnh ~10s với kiểu máy quay khác nhau.
   const shots = scenes.flatMap((sc, i) => {
     const action = prompts[i].action;
@@ -162,18 +167,32 @@ async function buildVideo(opts: {
       fx: "fade",
     }));
   });
+  on?.shots?.(shots.length);
   const GROUP = 12;
+  // Mỗi ảnh chỉ vẽ một lần dù nhiều shot dùng chung (các shot chạy song song).
+  const drawn = new Map<number, Promise<void>>();
+  const draw = (i: number, img: string) => {
+    if (!drawn.has(i)) {
+      drawn.set(i, (async () => {
+        await drawImage(prompts[i].prompt, img, { width: opts.imgW, height: opts.imgH, seed: 1000 + i * 7 });
+        await on?.image?.(i, img);
+      })());
+    }
+    return drawn.get(i)!;
+  };
   const files = await pool(shots, 4, async (sh, j) => {
     const img = path.join(dir, `${name}-img-${sh.image}.jpg`);
-    await drawImage(prompts[sh.image].prompt, img, { width: opts.imgW, height: opts.imgH, seed: 1000 + sh.image * 7 });
+    await draw(sh.image, img);
     // Cảnh nào sẽ crossfade với cảnh sau thì kéo dài thêm FADE để tổng thời lượng vẫn khớp giọng đọc.
     const fadesNext = j % GROUP !== GROUP - 1 && j !== shots.length - 1;
     const seconds = sh.seconds + (fadesNext ? shots[j + 1].fade : 0);
     const file = path.join(dir, `${name}-shot-${String(j).padStart(3, "0")}.mp4`);
     await shot(img, file, seconds, w, h, sh.motion);
     if (j % 10 === 0) console.log(`  ${name} cảnh ${j + 1}/${shots.length}`);
+    on?.shot?.();
     return { file, seconds, fade: sh.fade, fx: sh.fx };
   });
+  on?.log?.("Ghép các cảnh (crossfade)");
 
   const groups: string[] = [];
   for (let g = 0; g * GROUP < files.length; g++) {
@@ -197,6 +216,7 @@ async function buildVideo(opts: {
         ? `,drawtext=fontfile=${filterPath(FONT)}:text='${escText(opts.titleCard)}':fontsize=${Math.round(w / 22)}:fontcolor=white:borderw=5:bordercolor=black@0.8:x=(w-tw)/2:y=(h-th)/2:alpha='if(lt(t,0.6),t/0.6,if(lt(t,4),1,max(0,(5-t))))':enable='lt(t,5)'`
         : "")
     : "";
+  on?.log?.("Trộn giọng đọc, nhạc nền, phụ đề");
   const music = await pickMusic();
   const audio = music
     ? ["-stream_loop", "-1", "-i", music, "-filter_complex", "[2:a]volume=0.10[m];[1:a][m]amix=inputs=2:duration=first:normalize=0[a]", "-map", "0:v", "-map", "[a]"]
@@ -234,18 +254,23 @@ async function thumbnail(dir: string, prompt: string, text: string, chapterNo: n
   return out;
 }
 
-async function publishRelease(videoId: number, files: string[]) {
-  const repo = process.env.GITHUB_REPOSITORY;
-  if (!repo) {
-    console.log("Không chạy trong GitHub Actions — bỏ qua upload release. File ở:", files);
-    return {};
-  }
-  const tag = `video-${videoId}`;
-  await run("gh", ["release", "delete", tag, "--repo", repo, "--yes", "--cleanup-tag"]).catch(() => {});
-  await run("gh", ["release", "create", tag, ...files, "--repo", repo, "--title", tag, "--notes", "Ma Tôn Studio render"]);
-  const { stdout } = await run("gh", ["api", `repos/${repo}/releases/tags/${tag}`, "--jq", "[.assets[] | {name, id}]"]);
-  return Object.fromEntries((JSON.parse(stdout) as { name: string; id: number }[]).map((a) => [a.name, a.id]));
+/** Giọng đọc nén nhẹ (mono 64k) để nghe thử trên màn flow — file WAV gốc quá nặng. */
+async function previewAudio(wav: string, out: string) {
+  await ffmpeg(["-i", wav, "-ac", "1", "-c:a", "aac", "-b:a", "64k", out]);
+  return out;
 }
+
+/** Upload phụ (ảnh cảnh, giọng nghe thử): lỗi chỉ cảnh báo, không làm hỏng render. */
+async function uploadPreview(videoId: number, releaseId: number | null, file: string) {
+  await uploadAsset(videoId, releaseId, file).catch((e) => console.warn("⚠ Upload xem trước lỗi:", e instanceof Error ? e.message : e));
+}
+
+/** Prompt đã gửi AI, cắt gọn để lưu vào tiến độ. */
+function clip(req: { system: string; prompt: string }) {
+  return `[system] ${req.system}\n\n${req.prompt}`.slice(0, 4000);
+}
+
+const SHORT_SCENES = 5;
 
 export async function renderVideo(videoId: number) {
   const [v] = await db().select().from(videos).where(eq(videos.id, videoId));
@@ -255,16 +280,30 @@ export async function renderVideo(videoId: number) {
   const runUrl = process.env.GITHUB_RUN_ID
     ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
     : null;
-  await db().update(videos).set({ status: "rendering", error: null, runUrl, updatedAt: new Date() }).where(eq(videos.id, videoId));
+  await db()
+    .update(videos)
+    .set({ status: "rendering", error: null, runUrl, progress: { steps: {} }, updatedAt: new Date() })
+    .where(eq(videos.id, videoId));
 
+  const track = new Tracker(videoId);
   // Giữ thư mục giữa các lần chạy (được cache trên Actions) để không tốn lại quota TTS/ảnh đã làm.
   const dir = path.resolve(`.render/video-${videoId}`);
-  await mkdir(path.join(dir, "short"), { recursive: true });
+  const shortDir = path.join(dir, "short");
+  await mkdir(shortDir, { recursive: true });
   try {
     console.log(`▶ Video #${videoId}: ${s.title} — chương ${c.number}`);
     // Hết quota ảnh đẹp thì chờ 7h sáng (lần chạy 00:17 UTC) thay vì ra video ảnh mờ Pollinations.
     if (!(await cloudflareReady())) throw new QuotaExhaustedError("Hết quota ảnh Cloudflare hôm nay — chờ reset 7h sáng.");
+    // Video đã lên YouTube thì giữ release cũ (thay dần từng file); chưa thì làm sạch để xem tiến độ từ đầu.
+    const releaseId = await ensureRelease(videoId, !v.youtubeVideoId);
+    const wantShort = s.makeShort;
+
+    // ── AI Agent: tiêu đề, mô tả, kịch bản Short. Prompt ảnh làm sau khi có giọng đọc (chia cảnh theo thời gian).
+    track.start("agent", { long: 2, ...(wantShort ? { short: 1 } : {}) });
+    track.set({ prompts: { meta: clip(metaRequest(s, c)) } });
     const m = await cached(path.join(dir, "meta.json"), () => videoMeta(s, c));
+    track.model("agent", textProvider().lastModel);
+    track.tick("agent", "long", `Tiêu đề: ${m.title}`);
     const meta: VideoMeta = {
       title: m.title.length > 100 ? `${m.title.slice(0, 97)}…` : m.title,
       description: `${m.description}\n\n(Nội dung có sử dụng AI hỗ trợ giọng đọc và hình ảnh.)`,
@@ -272,57 +311,120 @@ export async function renderVideo(videoId: number) {
       shortTitle: m.shortTitle,
       shortDescription: m.shortDescription,
     };
+    await db().update(videos).set({ meta }).where(eq(videos.id, videoId));
 
-    console.log("● Video dài: đọc giọng");
+    // ── Giọng đọc
     const intro = `${s.title}. Chương ${c.number}: ${c.title}.`;
-    const long = await narrate(`${intro}\n${c.content}`, dir);
+    const longText = `${intro}\n${c.content}`;
+    track.start("tts", { long: ttsChunks(longText).length, ...(wantShort ? { short: ttsChunks(m.shortScript).length } : {}) });
+    track.log("tts", `Giọng ${s.ttsVoice}`);
+    console.log("● Video dài: đọc giọng");
+    const long = await narrate(longText, dir, s.ttsVoice, (i, total) => track.tick("tts", "long", `Đoạn ${i + 1}/${total}`));
+    await uploadPreview(videoId, releaseId, await previewAudio(long.audio, path.join(dir, "narration.m4a")));
+    let short: Narration | null = null;
+    if (wantShort) {
+      try {
+        short = await narrate(m.shortScript, shortDir, s.ttsVoice, () => track.tick("tts", "short"));
+        await uploadPreview(videoId, releaseId, await previewAudio(short.audio, path.join(shortDir, "short-narration.m4a")));
+      } catch (e) {
+        if (e instanceof QuotaExhaustedError) throw e;
+        track.warn("tts", `Short lỗi giọng đọc: ${e instanceof Error ? e.message : e}`);
+      }
+    }
+    track.finish("tts");
+
+    // ── AI Agent: prompt ảnh từng cảnh.
     // 1 ảnh ~25s (tách ~2–3 cảnh), tối đa 30 ảnh để vừa quota Cloudflare free 1 ngày.
     const n = Math.min(30, Math.max(6, Math.round(long.seconds / 25)));
     const longScenes = splitScenes(long.cues, n, long.seconds);
+    track.set({ prompts: { meta: clip(metaRequest(s, c)), scenes: clip(scenesRequest(m.characterLook, longScenes.map((x) => x.text))) } });
     const longPrompts = await cached(path.join(dir, `long-scenes-${n}.json`), () => scenePrompts(m.characterLook, longScenes.map((x) => x.text)));
+    track.tick("agent", "long", `${n} prompt cảnh video dài`);
+    const shortScenes = short ? splitScenes(short.cues, SHORT_SCENES, short.seconds) : [];
+    let shortPrompts: ScenePrompt[] = [];
+    if (short) {
+      const raw = await cached(path.join(shortDir, "scenes.json"), () => scenePrompts(m.characterLook, shortScenes.map((x) => x.text)));
+      shortPrompts = raw.map((p) => ({ ...p, prompt: `${p.prompt}, vertical portrait composition` }));
+      track.tick("agent", "short", `${SHORT_SCENES} prompt cảnh Short`);
+    }
+    track.model("agent", textProvider().lastModel);
+    track.finish("agent");
+
+    const scene = (sc: { start: number; end: number; text: string }, p: ScenePrompt, i: number) => ({
+      i, start: sc.start, end: sc.end, text: sc.text.slice(0, 400), prompt: p.prompt, action: p.action,
+    });
+    track.set({
+      scenes: { long: longScenes.map((sc, i) => scene(sc, longPrompts[i], i)), short: shortScenes.map((sc, i) => scene(sc, shortPrompts[i], i)) },
+    });
+
+    // ── Vẽ ảnh + dựng video chạy đan xen: shot nào có ảnh là dựng luôn.
+    track.start("images", { long: n, ...(short ? { short: SHORT_SCENES } : {}) });
+    track.start("video");
+    const hooks = (which: "long" | "short") => {
+      const label = which === "long" ? "Dài" : "Short";
+      return {
+        image: async (i: number, file: string) => {
+          await uploadPreview(videoId, releaseId, file);
+          track.sceneFile(which, i, path.basename(file));
+          track.tick("images", which, `${label} · ảnh ${i + 1} xong`);
+        },
+        shots: (count: number) => track.total("video", which, count),
+        shot: () => track.tick("video", which),
+        log: (text: string) => track.log("video", `${label}: ${text}`),
+      };
+    };
     const longVideo = await buildVideo({
       dir, name: "long", narration: long, prompts: longPrompts, scenes: longScenes,
       w: 1920, h: 1080, imgW: 1280, imgH: 768, fontSize: 62, marginV: 70,
       titleCard: `${s.title}\n\nChương ${c.number}: ${c.title}`,
+      on: hooks("long"),
     });
 
     // Short và thumbnail là phụ: lỗi thì vẫn xuất video dài thay vì bỏ cả lần render.
     const extras: string[] = [];
-    try {
-      console.log("● Short");
-      const shortDir = path.join(dir, "short");
-      const short = await narrate(m.shortScript, shortDir);
-      const shortScenes = splitScenes(short.cues, 5, short.seconds);
-      const shortPrompts = await cached(path.join(shortDir, "scenes.json"), () => scenePrompts(m.characterLook, shortScenes.map((x) => x.text)));
-      const shortVideo = await buildVideo({
-        dir: shortDir, name: "short", narration: short, prompts: shortPrompts.map((p) => ({ ...p, prompt: `${p.prompt}, vertical portrait composition` })), scenes: shortScenes,
-        w: 1080, h: 1920, imgW: 768, imgH: 1408, fontSize: 72, marginV: 520,
-      });
-      extras.push(shortVideo.out);
-    } catch (e) {
-      if (e instanceof QuotaExhaustedError) throw e;
-      console.warn("⚠ Bỏ qua Short:", e instanceof Error ? e.message : e);
-    }
+    if (short) {
+      try {
+        console.log("● Short");
+        const shortVideo = await buildVideo({
+          dir: shortDir, name: "short", narration: short, prompts: shortPrompts, scenes: shortScenes,
+          w: 1080, h: 1920, imgW: 768, imgH: 1408, fontSize: 72, marginV: 520,
+          on: hooks("short"),
+        });
+        extras.push(shortVideo.out);
+      } catch (e) {
+        if (e instanceof QuotaExhaustedError) throw e;
+        console.warn("⚠ Bỏ qua Short:", e instanceof Error ? e.message : e);
+        track.warn("video", `Bỏ qua Short: ${e instanceof Error ? e.message : e}`);
+      }
+    } else if (!wantShort) track.log("video", "Bộ truyện đang tắt làm Short");
 
     console.log("● Thumbnail");
+    track.log("images", "Vẽ thumbnail");
     const thumb = await thumbnail(dir, `${m.thumbnailPrompt}, ${m.characterLook}`, m.thumbnailText, c.number).catch(async (e) => {
       console.warn("⚠ Thumbnail AI lỗi, dùng ảnh đầu video:", e instanceof Error ? e.message : e);
+      track.warn("images", "Thumbnail AI lỗi — dùng ảnh đầu video");
       await writeFile(path.join(dir, "thumb-src.jpg"), await readFile(path.join(dir, "long-img-0.jpg")));
       return thumbnail(dir, "", m.thumbnailText, c.number);
     });
+    track.finish("images");
     const metaFile = path.join(dir, "youtube.txt");
     await writeFile(metaFile, `${meta.title}\n\n${meta.description}\n\nTags: ${meta.tags.join(", ")}\n\n--- SHORT ---\n${meta.shortTitle}\n\n${meta.shortDescription}\n`);
 
-    const assets = await publishRelease(videoId, [longVideo.out, ...extras, thumb, metaFile]);
-    const publishAt = v.publishAt ?? (await nextPublishSlot());
+    track.log("video", "Upload file lên kho");
+    for (const f of [longVideo.out, ...extras, thumb, metaFile]) await uploadAsset(videoId, releaseId, f);
+    track.finish("video");
+    await track.flush();
+
+    // Lịch cũ đã qua (render lại muộn) thì lấy khung giờ mới.
+    const publishAt = v.publishAt && v.publishAt.getTime() > Date.now() + 15 * 60_000 ? v.publishAt : await nextPublishSlot();
     await db()
       .update(videos)
-      .set({ status: "ready", meta, assets, durationSec: Math.round(long.seconds), publishAt, updatedAt: new Date() })
+      .set({ status: "ready", meta, durationSec: Math.round(long.seconds), publishAt, updatedAt: new Date() })
       .where(eq(videos.id, videoId));
     await notify(
-      `🎬 <b>Video sẵn sàng đăng</b>\n${escapeHtml(meta.title)}\n` +
+      `🎬 <b>Video sẵn sàng</b>\n${escapeHtml(meta.title)}\n` +
         `⏱ ${Math.round(long.seconds / 60)} phút${extras.length ? " + Short" : ""}\n` +
-        `📅 Lên lịch: ${publishAt.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", weekday: "long", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}\n` +
+        `📅 Lịch đăng: ${publishAt.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", weekday: "long", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}\n` +
         `👉 ${WEB_URL}/videos/${videoId}`,
     );
     if (process.env.GITHUB_ACTIONS) await rm(dir, { recursive: true, force: true });
@@ -331,6 +433,7 @@ export async function renderVideo(videoId: number) {
     const msg = e instanceof Error ? e.message : String(e);
     // Hết quota thì trả về hàng đợi — job 3 tiếng/lần sẽ làm tiếp từ phần đã cache.
     const status = e instanceof QuotaExhaustedError ? "queued" : "failed";
+    await (status === "queued" ? track.pause(msg) : track.fail(msg));
     await db().update(videos).set({ status, error: msg.slice(0, 2000), updatedAt: new Date() }).where(eq(videos.id, videoId));
     if (status === "failed") {
       await notify(`❌ <b>Render lỗi</b> video #${videoId} — chương ${c.number}\n${escapeHtml(msg.slice(0, 300))}\n${runUrl ?? ""}\n👉 ${WEB_URL}/videos/${videoId}`);

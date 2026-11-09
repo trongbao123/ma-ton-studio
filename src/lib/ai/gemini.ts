@@ -15,6 +15,7 @@ type Format = { type: "text"; mime_type: "application/json"; schema: Record<stri
  */
 export class GeminiProvider implements TextProvider {
   readonly name = "gemini";
+  lastModel?: string;
   private readonly client: GoogleGenAI;
 
   private readonly exhausted = new Set<string>();
@@ -53,7 +54,10 @@ export class GeminiProvider implements TextProvider {
           });
           void recordUsage(model, false);
           const text = res.output_text?.trim();
-          if (text) return text;
+          if (text) {
+            this.lastModel = model;
+            return text;
+          }
           lastError = new Error(`${model} trả về rỗng.`);
         } catch (e) {
           lastError = e;
