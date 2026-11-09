@@ -2,9 +2,8 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { appSettings, chapters, series, videos } from "@/db/schema";
 import { LAYOUT_KEY, mergeLayout } from "./layout";
-import type { FileName, FlowData } from "./model";
-
-const FILES: FileName[] = ["long.mp4", "short.mp4", "thumbnail.jpg", "youtube.txt"];
+import { getYoutubeAuth } from "@/lib/youtube";
+import type { FlowData } from "./model";
 
 export async function loadFlowData(videoId: number): Promise<FlowData | null> {
   const [row] = await db()
@@ -15,10 +14,13 @@ export async function loadFlowData(videoId: number): Promise<FlowData | null> {
     .where(eq(videos.id, videoId));
   if (!row) return null;
   const { v, c, s } = row;
-  const [prev] = await db()
-    .select({ summary: chapters.summary })
-    .from(chapters)
-    .where(and(eq(chapters.seriesId, s.id), eq(chapters.number, c.number - 1)));
+  const [[prev], yt] = await Promise.all([
+    db()
+      .select({ summary: chapters.summary })
+      .from(chapters)
+      .where(and(eq(chapters.seriesId, s.id), eq(chapters.number, c.number - 1))),
+    getYoutubeAuth(),
+  ]);
   const content = c.content.trim();
 
   return {
@@ -31,9 +33,14 @@ export async function loadFlowData(videoId: number): Promise<FlowData | null> {
       durationSec: v.durationSec,
       youtubeUrl: v.youtubeUrl,
       meta: v.meta,
-      files: Object.fromEntries(FILES.filter((f) => v.assets[f]).map((f) => [f, `/api/videos/${v.id}/${f}`])),
+      files: Object.fromEntries(Object.keys(v.assets).map((f) => [f, `/api/videos/${v.id}/${f}`])),
       createdAt: v.createdAt.toISOString(),
       updatedAt: v.updatedAt.toISOString(),
+      progress: v.progress,
+      uploadStatus: v.uploadStatus,
+      uploadError: v.uploadError,
+      youtubeVideoId: v.youtubeVideoId,
+      youtubeShortId: v.youtubeShortId,
     },
     chapter: {
       id: c.id,
@@ -43,8 +50,17 @@ export async function loadFlowData(videoId: number): Promise<FlowData | null> {
       opening: content.slice(0, 400),
       approvedAt: c.updatedAt.toISOString(),
     },
-    series: { id: s.id, title: s.title, bibleExcerpt: s.bible.slice(0, 600), voiceStyle: s.voiceStyle },
+    series: {
+      id: s.id,
+      title: s.title,
+      bibleExcerpt: s.bible.slice(0, 600),
+      voiceStyle: s.voiceStyle,
+      ttsVoice: s.ttsVoice,
+      makeShort: s.makeShort,
+      autoPublish: s.autoPublish,
+    },
     prevSummary: prev?.summary || null,
+    youtube: { connected: Boolean(yt), channel: yt?.channel ?? null },
   };
 }
 

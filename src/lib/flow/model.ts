@@ -1,4 +1,5 @@
 import type { Video, VideoMeta } from "@/db/schema";
+import type { StepProgress, VideoProgress } from "./progress";
 
 export type FileName = "long.mp4" | "short.mp4" | "thumbnail.jpg" | "youtube.txt";
 export type NodeId = "trigger" | "agent" | "tts" | "images" | "video" | "youtube";
@@ -17,13 +18,20 @@ export type FlowData = {
     durationSec: number | null;
     youtubeUrl: string | null;
     meta: VideoMeta | null;
-    files: Partial<Record<FileName, string>>;
+    /** Tên asset → URL tải. Ngoài các file chính còn ảnh cảnh ("long-img-3.jpg") và giọng đọc ("narration.m4a"). */
+    files: Partial<Record<FileName, string>> & Record<string, string>;
     createdAt: string;
     updatedAt: string;
+    progress: VideoProgress;
+    uploadStatus: Video["uploadStatus"];
+    uploadError: string | null;
+    youtubeVideoId: string | null;
+    youtubeShortId: string | null;
   };
   chapter: { id: number; number: number; title: string; words: number; opening: string; approvedAt: string };
-  series: { id: number; title: string; bibleExcerpt: string; voiceStyle: string };
+  series: { id: number; title: string; bibleExcerpt: string; voiceStyle: string; ttsVoice: string; makeShort: boolean; autoPublish: boolean };
   prevSummary: string | null;
+  youtube: { connected: boolean; channel: string | null };
 };
 
 export const TITLES: Record<NodeId, string> = {
@@ -43,7 +51,7 @@ export const STATUS_LABEL: Record<Video["status"], [string, string]> = {
   published: ["Đã đăng", "bg-zinc-800 text-zinc-400"],
 };
 
-const RENDER_STEPS =["agent", "tts", "images", "video"] as const;
+const RENDER_STEPS = ["agent", "tts", "images", "video"] as const;
 
 const WEEKDAYS = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -88,6 +96,13 @@ function doneSubtitle(id: (typeof RENDER_STEPS)[number], v: FlowData["video"]) {
   }
 }
 
+/** "Dài 18/30 · Short 3/5" khi pipeline có đếm tiến độ. */
+function progressSubtitle(p: StepProgress) {
+  const parts = [p.long && `Dài ${p.long.done}/${p.long.total}`, p.short && `Short ${p.short.done}/${p.short.total}`].filter(Boolean);
+  if (p.state === "error" && p.error) return "lỗi";
+  return parts.length ? parts.join(" · ") : undefined;
+}
+
 /**
  * Suy trạng thái từng node từ trạng thái chung của video. Chưa có tiến độ từng bước
  * nên cả nhóm render cùng một trạng thái — bản cập nhật pipeline sẽ thay bằng dữ liệu thật.
@@ -110,7 +125,21 @@ export function buildFlow(d: FlowData): { steps: Record<NodeId, StepView>; notic
     else steps[id] = step(id, "wait", "chờ");
   }
 
-  if (v.status === "published") steps.youtube = step("youtube", "done", "đã đăng");
+  // Có tiến độ thật từ pipeline thì dùng thay cho trạng thái suy ra.
+  const tracked = v.progress?.steps ?? {};
+  const hasProgress = Object.keys(tracked).length > 0;
+  for (const id of RENDER_STEPS) {
+    const p = tracked[id];
+    if (p) steps[id] = step(id, p.state, progressSubtitle(p) ?? steps[id].subtitle, p.warning ?? steps[id].warning);
+    // Bước chưa tới lượt: chờ, hoặc bỏ qua nếu render đã lỗi ở bước trước.
+    else if (hasProgress && !finished) steps[id] = step(id, v.status === "failed" ? "skip" : "wait", "chưa chạy");
+  }
+
+  if (v.uploadStatus === "uploading") steps.youtube = step("youtube", "run", "đang upload");
+  else if (v.uploadStatus === "scheduled")
+    steps.youtube = step("youtube", "done", v.publishAt ? `đã lên lịch · ${formatSlot(v.publishAt)}` : "đã lên lịch");
+  else if (v.uploadStatus === "failed") steps.youtube = step("youtube", "error", "upload lỗi", v.uploadError ?? undefined);
+  else if (v.status === "published") steps.youtube = step("youtube", "done", "đã đăng");
   else if (v.status === "failed") steps.youtube = step("youtube", "skip", "không đăng vì render lỗi");
   else if (v.status === "ready") steps.youtube = step("youtube", "wait", v.publishAt ? `chờ đăng · ${formatSlot(v.publishAt)}` : "chờ đăng tay");
   else steps.youtube = step("youtube", "wait", "chờ render xong");

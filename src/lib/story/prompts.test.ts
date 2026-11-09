@@ -14,6 +14,9 @@ const s: Series = {
   autoApprove: false,
   chaptersPerDay: 2,
   voiceStyle: "",
+  ttsVoice: "Algenib",
+  makeShort: true,
+  autoPublish: true,
   createdAt: new Date(0),
 };
 

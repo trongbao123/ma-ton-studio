@@ -17,11 +17,17 @@ function data(v: VideoOverrides = {}): FlowData {
       files: { "long.mp4": "/api/videos/31/long.mp4", "short.mp4": "/api/videos/31/short.mp4", "thumbnail.jpg": "/api/videos/31/thumbnail.jpg" },
       createdAt: "2026-11-09T07:00:00.000Z",
       updatedAt: "2026-11-09T07:30:00.000Z",
+      progress: { steps: {} },
+      uploadStatus: "none",
+      uploadError: null,
+      youtubeVideoId: null,
+      youtubeShortId: null,
       ...v,
     },
     chapter: { id: 7, number: 12, title: "Huyết Ma Điện", words: 5840, opening: "Gió tanh…", approvedAt: "2026-11-09T07:00:00.000Z" },
-    series: { id: 1, title: "Ma Tôn Truyện", bibleExcerpt: "bible", voiceStyle: "giọng nam trầm" },
+    series: { id: 1, title: "Ma Tôn Truyện", bibleExcerpt: "bible", voiceStyle: "giọng nam trầm", ttsVoice: "Algenib", makeShort: true, autoPublish: true },
     prevSummary: null,
+    youtube: { connected: false, channel: null },
   };
 }
 

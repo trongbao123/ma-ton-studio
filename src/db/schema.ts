@@ -1,4 +1,5 @@
 import { boolean, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, unique } from "drizzle-orm/pg-core";
+import type { VideoProgress } from "@/lib/flow/progress";
 
 export const chapterStatus = pgEnum("chapter_status", ["outline", "draft", "approved"]);
 export const videoStatus = pgEnum("video_status", ["queued", "rendering", "ready", "failed", "published"]);
@@ -20,6 +21,11 @@ export const series = pgTable("series", {
   /** Số chương tối đa autopilot viết mỗi ngày (còn bị chặn bởi quota free). */
   chaptersPerDay: integer("chapters_per_day").notNull().default(2),
   /** Chỉ dẫn giọng đọc cho TTS. */
+  /** Giọng Gemini TTS — chỉnh trên node Giọng đọc, áp dụng từ lần render sau. */
+  ttsVoice: text("tts_voice").notNull().default("Algenib"),
+  makeShort: boolean("make_short").notNull().default(true),
+  /** Render xong thì tự upload + lên lịch trên YouTube (cần kết nối YouTube). */
+  autoPublish: boolean("auto_publish").notNull().default(true),
   voiceStyle: text("voice_style").notNull().default("giọng nam trầm, kể chuyện kiếm hiệp cổ trang, nhịp vừa, nhấn nhá ở đoạn cao trào"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
@@ -66,7 +72,13 @@ export const videos = pgTable("videos", {
   error: text("error"),
   runUrl: text("run_url"),
   youtubeUrl: text("youtube_url"),
-  /** Khung giờ đăng đề xuất — người dùng đặt "Lên lịch" trong YouTube Studio đúng giờ này. */
+  /** Tiến độ từng bước do pipeline ghi — màn flow đọc để hiện node, ảnh cảnh, nhật ký. */
+  progress: jsonb("progress").$type<VideoProgress>().notNull().default({ steps: {} }),
+  youtubeVideoId: text("youtube_video_id"),
+  youtubeShortId: text("youtube_short_id"),
+  uploadStatus: text("upload_status").$type<"none" | "uploading" | "scheduled" | "failed">().notNull().default("none"),
+  uploadError: text("upload_error"),
+  /** Khung giờ đăng — tự đăng YouTube lên lịch đúng giờ này (hoặc người dùng đặt tay trong Studio). */
   publishAt: timestamp("publish_at", { withTimezone: true }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
