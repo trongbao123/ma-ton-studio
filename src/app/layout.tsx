@@ -32,6 +32,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             <Link href="/series/new" className="text-sm text-muted hover:text-foreground">
               + Truyện mới
             </Link>
+            <Link href="/settings/ai" className="text-sm text-muted hover:text-foreground">
+              Cài đặt AI
+            </Link>
           </nav>
         </header>
         <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8">{children}</main>

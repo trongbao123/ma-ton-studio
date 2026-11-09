@@ -10,6 +10,8 @@ import { draftBible, planChapters, writeChapterStep, type WriteMode } from "@/li
 import { dispatchPublish, dispatchRender, queueVideo } from "@/lib/story/videos";
 import { saveYoutubeAuth } from "@/lib/youtube";
 import { VOICES } from "@/lib/flow/voices";
+import { availableProviders, providerFor } from "@/lib/ai";
+import { normalizeRouting, ROUTING_KEY, type ProviderId, type Routing } from "@/lib/ai/routing";
 
 export type ActionState = { error?: string; ok?: string };
 
@@ -202,5 +204,34 @@ export async function disconnectYoutubeAction(): Promise<ActionState> {
     await saveYoutubeAuth(null);
     revalidatePath("/videos", "layout");
     return "Đã ngắt kết nối YouTube.";
+  });
+}
+
+/** Lưu thứ tự AI cho từng việc (trang Cài đặt AI). Job đang chạy nhận cấu hình mới trong ≤ 60 giây. */
+export async function saveAiRoutingAction(routing: Routing): Promise<ActionState> {
+  return attempt(async () => {
+    const value = normalizeRouting(routing);
+    await db()
+      .insert(appSettings)
+      .values({ key: ROUTING_KEY, value })
+      .onConflictDoUpdate({ target: appSettings.key, set: { value, updatedAt: new Date() } });
+    revalidatePath("/settings/ai");
+    return "Đã lưu cài đặt AI.";
+  });
+}
+
+/** Gọi thử 1 AI với câu hỏi ngắn để kiểm tra key và model. */
+export async function testAiAction(provider: ProviderId, model: string): Promise<ActionState> {
+  return attempt(async () => {
+    if (!availableProviders().includes(provider)) throw new Error("Chưa có API key trên Vercel cho AI này.");
+    const started = Date.now();
+    const p = providerFor({ provider, model });
+    const text = await p.generateText({
+      system: "Trả lời thật ngắn bằng tiếng Việt.",
+      prompt: "Chào một câu theo giọng ma tôn trong truyện tiên hiệp.",
+      maxOutputTokens: 2000,
+      tier: "cheap",
+    });
+    return `${p.lastModel ?? model} · ${((Date.now() - started) / 1000).toFixed(1)}s — “${text.slice(0, 120)}”`;
   });
 }

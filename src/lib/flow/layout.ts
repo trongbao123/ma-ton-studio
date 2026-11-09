@@ -7,7 +7,7 @@ export type Pos = { x: number; y: number };
 export const MAIN_ORDER: NodeId[] = ["trigger", "agent", "tts", "images", "video", "youtube"];
 
 export const SUB_NODES: { id: SubNodeId; parent: NodeId; slot?: "model" | "memory" | "tool"; title: string; subtitle: string }[] = [
-  { id: "model", parent: "agent", slot: "model", title: "Chat model", subtitle: "Gemini" },
+  { id: "model", parent: "agent", slot: "model", title: "Chat model", subtitle: "Claude · GPT · Gemini" },
   { id: "bible", parent: "agent", slot: "memory", title: "Memory", subtitle: "Story bible" },
   { id: "summary", parent: "agent", slot: "memory", title: "Tóm tắt", subtitle: "chương trước" },
   { id: "imageModel", parent: "images", title: "Cloudflare", subtitle: "FLUX" },

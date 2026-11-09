@@ -32,6 +32,7 @@ export async function videoMeta(s: Series, c: Chapter) {
     schema: metaSchema,
     temperature: 0.8,
     tier: "cheap",
+    task: "meta",
   });
 }
 
@@ -53,6 +54,7 @@ export async function scenePrompts(characterLook: string, scenes: string[]) {
     schema: z.object({ scenes: z.array(z.object({ prompt: z.string(), action: z.boolean() })) }),
     temperature: 0.7,
     tier: "cheap",
+    task: "scenes",
   });
   const pick = (i: number) => out[i] ?? out[i % Math.max(out.length, 1)];
   return scenes.map((_, i) => {

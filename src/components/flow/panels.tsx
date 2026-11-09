@@ -171,8 +171,15 @@ function Agent({ data, tab }: PanelProps) {
   const model = data.video.progress?.steps.agent?.model;
   return (
     <>
-      <Sec title="Chat model">
-        <p className="text-xs">{model ?? <span className="text-muted">Gemini (chưa ghi model cụ thể)</span>}</p>
+      <Sec
+        title="Chat model"
+        right={
+          <Link href="/settings/ai" className="text-[11px] text-sky-400 hover:underline">
+            Đổi AI →
+          </Link>
+        }
+      >
+        <p className="text-xs">{model ?? <span className="text-muted">Chưa ghi model cụ thể (video cũ)</span>}</p>
       </Sec>
       {!m ? (
         <Empty text="AI Agent chưa trả kết quả cho video này." />

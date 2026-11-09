@@ -28,3 +28,12 @@ Render xong là app tự upload video dài + Short, đặt thumbnail, bật nhã
 > **Quan trọng — audit của Google:** project tạo sau 28/7/2020 chưa qua kiểm duyệt thì mọi video upload bằng API bị **khoá ở chế độ riêng tư**, kể cả đã lên lịch. Nộp đơn miễn phí tại [YouTube API Services audit form](https://support.google.com/youtube/contact/yt_api_form) (thường mất vài tuần). Trong lúc chờ: app vẫn upload + lên lịch, bạn vào YouTube Studio bấm công khai.
 
 Upload lỗi (token hết hạn, hết quota API…) thì Telegram báo, video vẫn ở trạng thái *sẵn sàng*: bấm **Kết nối lại** rồi **Đăng lại** trên node Đăng YouTube (chạy workflow `publish.yml`, không render lại).
+
+## Nhiều AI (Claude, ChatGPT, Gemini)
+App dùng được cùng lúc **Claude** (`ANTHROPIC_API_KEY`), **ChatGPT** (`OPENAI_API_KEY`) và **Gemini** (`GEMINI_API_KEY`). Key nào có thì AI đó chạy, không có thì tự bỏ qua.
+
+1. Lấy key: [console.anthropic.com](https://console.anthropic.com/) (Claude), [platform.openai.com](https://platform.openai.com/api-keys) (ChatGPT). Đây là API trả theo lượt dùng — **khác** gói Claude Pro / ChatGPT Plus.
+2. Thêm key vào **Vercel** (Environment Variables → redeploy) **và** GitHub → Settings → Secrets → Actions (để job tự viết + render dùng được).
+3. Vào **Cài đặt AI** trên web: bấm **Thử** để kiểm tra key, rồi sắp thứ tự AI cho từng việc — viết truyện, tóm tắt, tiêu đề/mô tả YouTube, prompt ảnh. AI đầu lỗi / hết tiền / từ chối thì tự chuyển AI sau.
+
+Mặc định: viết truyện Claude → ChatGPT → Gemini; việc phụ dùng Gemini free trước, hết lượt mới sang AI trả phí.

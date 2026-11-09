@@ -14,7 +14,7 @@ import {
 } from "./prompts";
 
 export async function draftBible(idea: string, genre: string) {
-  return textProvider().generateJson({ ...biblePrompt(idea, genre), schema: bibleSchema, temperature: 1 });
+  return textProvider().generateJson({ ...biblePrompt(idea, genre), schema: bibleSchema, temperature: 1, task: "story" });
 }
 
 /** Thêm `count` chương ở trạng thái `outline` nối tiếp chương cuối hiện có. */
@@ -25,6 +25,7 @@ export async function planChapters(seriesId: number, count: number) {
     ...outlinePrompt(s, previous, count),
     schema: outlineSchema,
     temperature: 0.9,
+    task: "story",
   });
 
   const startAt = (previous.at(-1)?.number ?? 0) + 1;
@@ -55,7 +56,7 @@ export async function writeChapterStep(chapterId: number, mode: WriteMode) {
   let content = chapter.content;
 
   if (mode === "finish") {
-    const summary = await ai.generateText({ ...summaryPrompt(chapter, content), temperature: 0.3, tier: "cheap" });
+    const summary = await ai.generateText({ ...summaryPrompt(chapter, content), temperature: 0.3, tier: "cheap", task: "summary" });
     await db().update(chapters).set({ summary, status: "draft", updatedAt: new Date() }).where(eq(chapters.id, chapterId));
   } else {
     const base = chapterPrompt(s, await previousChapters(chapter), chapter);
@@ -63,6 +64,7 @@ export async function writeChapterStep(chapterId: number, mode: WriteMode) {
       ...(mode === "start" ? base : continuePrompt(base, content, s.targetWords)),
       maxOutputTokens: 16000,
       temperature: 0.9,
+      task: "story",
     });
     content = mode === "start" ? part : `${content}\n\n${part}`;
     await db()
