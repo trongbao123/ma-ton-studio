@@ -9,17 +9,25 @@ export type Routing = Record<AiTask, Route[]>;
 
 export const TASKS: { id: AiTask; label: string; note: string }[] = [
   { id: "story", label: "Viết truyện", note: "Story bible, dàn ý, viết chương — văn hay nhất: Claude" },
-  { id: "summary", label: "Tóm tắt chương", note: "Việc nhẹ — Gemini cho đỡ lượt của Claude/ChatGPT" },
+  { id: "summary", label: "Tóm tắt chương", note: "Việc nhẹ — Gemini API free cho đỡ lượt của Claude/ChatGPT" },
   { id: "meta", label: "Tiêu đề / mô tả YouTube", note: "Ngắn nhưng quyết định lượt bấm — ChatGPT / Claude" },
-  { id: "scenes", label: "Prompt ảnh", note: "Prompt tiếng Anh nhiều cảnh — Gemini nhanh" },
+  { id: "scenes", label: "Prompt ảnh", note: "Prompt tiếng Anh nhiều cảnh — Gemini API free" },
 ];
 
-export type ProviderInfo = { id: ProviderId; label: string; env: string; models: string[]; brand: "claude" | "openai" | "gemini"; cli?: string };
+export type ProviderInfo = { id: ProviderId; label: string; env: string; models: string[]; brand: "claude" | "openai" | "gemini"; cli?: string; note?: string };
 
 export const PROVIDERS: ProviderInfo[] = [
-  { id: "claude-cli", label: "Claude (gói Pro)", env: "CLAUDE_CODE_OAUTH_TOKEN", models: ["opus", "sonnet", "haiku"], brand: "claude", cli: "claude" },
-  { id: "codex-cli", label: "ChatGPT (gói Plus)", env: "CODEX_AUTH_JSON", models: [], brand: "openai", cli: "codex" },
-  { id: "gemini-cli", label: "Gemini (gói Google)", env: "GEMINI_OAUTH_CREDS", models: [], brand: "gemini", cli: "gemini" },
+  { id: "claude-cli", label: "Claude (gói Pro)", env: "CLAUDE_CODE_OAUTH_TOKEN", models: ["haiku", "sonnet", "opus"], brand: "claude", cli: "claude" },
+  { id: "codex-cli", label: "ChatGPT (gói Plus)", env: "CODEX_AUTH_JSON", models: ["gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra"], brand: "openai", cli: "codex" },
+  {
+    id: "gemini-cli",
+    label: "Gemini (gói Google)",
+    env: "GEMINI_OAUTH_CREDS",
+    models: [],
+    brand: "gemini",
+    cli: "gemini",
+    note: "Google đã ngừng cho tài khoản cá nhân dùng Gemini CLI (chỉ còn qua Antigravity) — Gemini chạy bằng Gemini API free.",
+  },
   { id: "anthropic", label: "Claude API", env: "ANTHROPIC_API_KEY", models: ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5-1"], brand: "claude" },
   { id: "openai", label: "ChatGPT API", env: "OPENAI_API_KEY", models: ["gpt-5", "gpt-5-mini", "gpt-5-nano"], brand: "openai" },
   { id: "gemini", label: "Gemini API", env: "GEMINI_API_KEY", models: ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.1-flash-lite"], brand: "gemini" },
@@ -40,16 +48,22 @@ const ALL = PROVIDERS.map((p) => p.id);
 const r = (provider: ProviderId, model = ""): Route => ({ provider, model });
 
 /**
- * Mặc định: gói Pro/Plus (CLI, không tốn credit) đứng trước, chia việc ra 3 gói cho đỡ hết lượt một gói —
- * truyện cho Claude, tiêu đề/mô tả cho ChatGPT, việc nhẹ cho Gemini. Sau đó mới tới API trả phí, cuối cùng Gemini API free.
+ * Mặc định: gói Pro/Plus (CLI, không tốn credit) đứng trước, chia việc cho đỡ hết lượt một gói —
+ * truyện cho Claude, tiêu đề/mô tả cho ChatGPT, việc nhẹ (tóm tắt, prompt ảnh) cho Gemini API free.
+ * Gemini CLI không nằm trong mặc định: Google đã ngừng cho tài khoản cá nhân dùng (IneligibleTierError UNSUPPORTED_CLIENT).
  * Gemini API để trống model = tự chọn theo hạng việc (quality / cheap). AI chưa có key / không chạy được ở nơi này thì tự bỏ qua.
  */
+/** Model rẻ nhất của từng gói — mặc định dùng cho mọi việc để đỡ hết lượt gói (người dùng chọn). */
+export const PLAN_MODEL = { claude: "haiku", codex: "gpt-6-luna" } as const;
+
 export function defaultRouting(): Routing {
+  const claude = r("claude-cli", PLAN_MODEL.claude);
+  const codex = r("codex-cli", PLAN_MODEL.codex);
   return {
-    story: [r("claude-cli", "opus"), r("codex-cli"), r("gemini-cli"), r("anthropic", "claude-opus-5-5"), r("openai", "gpt-5"), r("gemini")],
-    meta: [r("codex-cli"), r("claude-cli", "sonnet"), r("gemini-cli"), r("anthropic", "claude-sonnet-5-5"), r("openai", "gpt-5"), r("gemini")],
-    summary: [r("gemini-cli"), r("gemini"), r("codex-cli"), r("claude-cli", "haiku"), r("openai", "gpt-5-nano"), r("anthropic", "claude-haiku-5-5")],
-    scenes: [r("gemini-cli"), r("gemini"), r("codex-cli"), r("claude-cli", "haiku"), r("openai", "gpt-5-mini"), r("anthropic", "claude-haiku-5-5")],
+    story: [claude, codex, r("anthropic", "claude-opus-5-5"), r("openai", "gpt-5"), r("gemini")],
+    meta: [codex, claude, r("anthropic", "claude-sonnet-5-5"), r("openai", "gpt-5"), r("gemini")],
+    summary: [r("gemini"), codex, claude, r("openai", "gpt-5-nano"), r("anthropic", "claude-haiku-5-5")],
+    scenes: [r("gemini"), codex, claude, r("openai", "gpt-5-mini"), r("anthropic", "claude-haiku-5-5")],
   };
 }
 

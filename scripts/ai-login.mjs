@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Kết nối gói Claude Pro / ChatGPT Plus / Gemini cho job GitHub Actions — một lệnh, không copy/dán:
-//   node scripts/ai-login.mjs            → cả 3 gói (bỏ qua gói nào lỗi)
+//   node scripts/ai-login.mjs            → Claude + ChatGPT (bỏ qua gói nào lỗi)
 //   node scripts/ai-login.mjs gemini claude → chỉ các gói chỉ định (claude | codex | gemini)
 // Mỗi gói: mở trình duyệt để bạn bấm "Cho phép" → lấy thông tin đăng nhập → lưu thẳng vào GitHub Secrets
 // (gh secret set, mã hoá phía GitHub; không in token ra màn hình) → chạy workflow ai-check gọi thử và báo kết quả.
@@ -18,7 +18,8 @@ const SECRET = { claude: "CLAUDE_CODE_OAUTH_TOKEN", codex: "CODEX_AUTH_JSON", ge
 const NAME = { claude: "Claude Pro", codex: "ChatGPT Plus", gemini: "Gemini" };
 const win = process.platform === "win32";
 const picked = process.argv.slice(2).filter((a) => PKG[a]);
-const kinds = picked.length ? picked : ["codex", "gemini", "claude"];
+// Gemini CLI: Google đã ngừng cho tài khoản cá nhân (IneligibleTierError UNSUPPORTED_CLIENT) → mặc định chỉ Claude + ChatGPT.
+const kinds = picked.length ? picked : ["codex", "claude"];
 
 // Không để key API trong môi trường: CLI sẽ dùng key (tốn tiền) thay vì đăng nhập gói.
 const cleanEnv = (extra = {}) => {

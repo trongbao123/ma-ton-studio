@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { availableProviders, canRun, providerFor } from "@/lib/ai";
 import { saveCliStatus, type CliStatus } from "@/lib/ai/cli-status";
-import { isCli, PROVIDERS } from "@/lib/ai/routing";
+import { defaultRouting, isCli, PROVIDERS } from "@/lib/ai/routing";
 import { loadSecrets } from "@/lib/secrets";
 
 async function main() {
@@ -23,7 +23,9 @@ async function main() {
       failed++;
       continue;
     }
-    const ai = providerFor({ provider: p.id, model: "" });
+    // Gọi đúng model mặc định đang dùng (model rẻ của gói).
+    const model = defaultRouting().story.find((x) => x.provider === p.id)?.model ?? "";
+    const ai = providerFor({ provider: p.id, model });
     const started = Date.now();
     try {
       const out = await ai.generateJson({
