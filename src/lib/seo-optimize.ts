@@ -22,7 +22,7 @@ const withNote = (d: string) => `${strip(d)}\n\n${AI_NOTE}`;
 
 /**
  * "Magic fill": điểm SEO tổng dưới mục tiêu thì đưa AI sửa đúng các tiêu chí đang mất điểm, chấm lại, lặp tối đa `rounds` lượt.
- * Chỉ nhận bản mới khi điểm tăng; giữ bản tốt nhất. Đổi tiêu đề thì bỏ điểm vidIQ cũ (không còn đúng tiêu đề).
+ * Chỉ nhận bản mới khi điểm tăng; giữ bản tốt nhất. Tiêu đề có điểm vidIQ thì giữ nguyên.
  */
 export async function optimizeMeta(meta: VideoMeta, ctx: Ctx, opts: { target?: number; rounds?: number; log?: (s: string) => void } = {}) {
   const target = opts.target ?? SEO_TARGET;
@@ -30,6 +30,8 @@ export async function optimizeMeta(meta: VideoMeta, ctx: Ctx, opts: { target?: n
   let bestScore = totalScore(scoreMeta(best, ctx.seriesTitle));
   const start = bestScore;
   let used = 0;
+  // Tiêu đề do vidIQ chấm/chọn (điểm CTR thật) thì khoá lại, chỉ sửa mô tả / tag / Short.
+  const lockTitle = meta.seo?.titleScore != null;
   for (let i = 0; i < (opts.rounds ?? 3) && bestScore < target; i++) {
     used++;
     const scores = scoreMeta(best, ctx.seriesTitle);
@@ -46,7 +48,7 @@ ${JSON.stringify({ title: best.title, description: strip(best.description), tags
 Các tiêu chí đang mất điểm — sửa đúng những điểm này, phần đã đạt thì giữ:
 ${seoFeedback(scores)}
 
-Giữ nguyên nội dung câu chuyện và tên nhân vật. Trả về đủ 5 trường.`,
+Giữ nguyên nội dung câu chuyện và tên nhân vật.${lockTitle ? " Tiêu đề đã được vidIQ chọn — GIỮ NGUYÊN tiêu đề, chỉ sửa mô tả, tag và Short." : ""} Trả về đủ 5 trường.`,
         schema: fixSchema,
         temperature: 0.6,
         tier: "quality",
@@ -59,7 +61,7 @@ Giữ nguyên nội dung câu chuyện và tên nhân vật. Trả về đủ 5 
     }
     const next: VideoMeta = {
       ...best,
-      title: out.title.length > 100 ? `${out.title.slice(0, 97)}…` : out.title,
+      title: lockTitle ? best.title : out.title.length > 100 ? `${out.title.slice(0, 97)}…` : out.title,
       description: withNote(out.description),
       tags: out.tags,
       shortTitle: out.shortTitle,

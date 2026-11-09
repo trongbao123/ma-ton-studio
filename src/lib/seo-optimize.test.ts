@@ -17,7 +17,6 @@ const weak: VideoMeta = {
   tags: ["a"],
   shortTitle: "Đoạn hay",
   shortDescription: "",
-  seo: { titleScore: 40 },
 };
 const tags = [
   "than ma tang co", "thon thien luc", "truyen tien hiep", "lam uyen", "truyen audio", "tien hiep",
@@ -39,7 +38,7 @@ const strong = {
 beforeEach(() => generateJson.mockReset());
 
 describe("optimizeMeta", () => {
-  it("điểm thấp → AI sửa theo tiêu chí mất điểm, dừng khi ≥ 90, giữ dòng ghi chú AI, bỏ điểm vidIQ cũ", async () => {
+  it("điểm thấp → AI sửa theo tiêu chí mất điểm, dừng khi ≥ 90, giữ dòng ghi chú AI", async () => {
     generateJson.mockResolvedValueOnce(strong);
     const r = await optimizeMeta(weak, ctx);
     expect(r.from).toBeLessThan(50);
@@ -47,10 +46,18 @@ describe("optimizeMeta", () => {
     expect(r.rounds).toBe(1);
     expect(r.meta.description.endsWith(AI_NOTE)).toBe(true);
     expect(r.meta.description.split(AI_NOTE)).toHaveLength(2);
-    expect(r.meta.seo?.titleScore).toBeNull();
     const prompt = generateJson.mock.calls[0][0].prompt as string;
     expect(prompt).toContain("Thiếu tên truyện");
     expect(prompt).not.toContain(AI_NOTE);
+  });
+  it("tiêu đề có điểm vidIQ thì giữ nguyên, chỉ sửa phần còn lại", async () => {
+    generateJson.mockResolvedValue(strong);
+    const vidiqTitle = "Thần Ma Táng Cổ - Chương 2: Lâm Uyên rèn đúc giữa vòng vây";
+    const r = await optimizeMeta({ ...weak, title: vidiqTitle, seo: { titleScore: 88 } }, ctx);
+    expect(r.meta.title).toBe(vidiqTitle);
+    expect(r.meta.seo?.titleScore).toBe(88);
+    expect(r.meta.tags).toEqual(strong.tags);
+    expect(generateJson.mock.calls[0][0].prompt).toContain("GIỮ NGUYÊN tiêu đề");
   });
   it("đã đạt thì không gọi AI", async () => {
     const good = { ...strong, description: `${strong.description}\n\n${AI_NOTE}` };

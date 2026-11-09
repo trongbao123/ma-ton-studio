@@ -12,7 +12,7 @@ import { metaRequest, scenePrompts, scenesRequest, videoMeta } from "./prompts";
 import { ensureRelease, uploadAsset } from "./release";
 import { keepOrNextSlot } from "./schedule";
 import { loadSecrets } from "@/lib/secrets";
-import { keywordResearch, scoreTitles } from "./vidiq";
+import { generateTitles, keywordResearch, scoreTitles } from "./vidiq";
 import { AI_NOTE, optimizeMeta } from "@/lib/seo-optimize";
 import { autoPublishEligible, publishToYoutube } from "./youtube";
 
@@ -372,17 +372,19 @@ export async function renderVideo(videoId: number) {
     track.set({ prompts: { meta: clip(metaRequest(s, c, seo)) } });
     const m = await cached(path.join(dir, "meta.json"), () => videoMeta(s, c, seo));
     track.model("agent", textProvider().lastModel);
-    // vidIQ chấm điểm tiêu đề gốc + 2 phương án, lấy tiêu đề điểm cao nhất.
+    // vidIQ chấm điểm tiêu đề gốc + 2 phương án, cộng thêm 3 tiêu đề vidIQ tự nghĩ (đã có điểm) → lấy tiêu đề điểm cao nhất.
     let title = m.title;
     let seoInfo: VideoMeta["seo"];
     const options = [m.title, ...(m.titleAlternatives ?? [])].filter(Boolean);
     if (process.env.VIDIQ_API_KEY && options.length > 1) {
       const scores = await cached(path.join(dir, "vidiq-titles.json"), () => scoreTitles(options));
-      if (scores) {
-        const best = scores.reduce<number>((b, x, i) => ((x ?? -1) > (scores[b] ?? -1) ? i : b), 0);
-        title = options[best];
-        seoInfo = { titleScore: scores[best], titleOptions: options.map((t, i) => ({ title: t, score: scores[i] ?? null })) };
-        track.log("agent", `vidIQ chấm tiêu đề: ${options.map((t, i) => `${scores[i] ?? "?"} — ${t}`).join(" | ")}`.slice(0, 600));
+      const ideas = await cached(path.join(dir, "vidiq-generated-titles.json"), () => generateTitles(m.title, m.description));
+      const all = [...options.map((t, i) => ({ title: t, score: scores?.[i] ?? null })), ...ideas.filter((x) => !options.includes(x.title))];
+      if (all.some((x) => x.score != null)) {
+        const best = all.reduce((b, x) => ((x.score ?? -1) > (b.score ?? -1) ? x : b));
+        title = best.title;
+        seoInfo = { titleScore: best.score, titleOptions: all };
+        track.log("agent", `vidIQ chấm tiêu đề: ${all.map((x) => `${x.score ?? "?"} — ${x.title}`).join(" | ")}`.slice(0, 600));
       }
     }
     track.tick("agent", "long", `Tiêu đề: ${title}`);

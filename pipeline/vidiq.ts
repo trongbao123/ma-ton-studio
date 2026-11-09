@@ -92,6 +92,53 @@ export async function scoreTitles(titles: string[]): Promise<(number | null)[] |
   return out.some((x) => x != null) ? out : null;
 }
 
+/** Lấy cặp {tiêu đề, điểm} từ kết quả vidiq_generate_titles (JSON nếu có, không thì đọc từng dòng "Tiêu đề — 87"). */
+export function parseScoredTitles(text: string): { title: string; score: number | null }[] {
+  const out: { title: string; score: number | null }[] = [];
+  const walk = (v: unknown) => {
+    if (Array.isArray(v)) return v.forEach(walk);
+    if (!v || typeof v !== "object") return;
+    const o = v as Record<string, unknown>;
+    const title = typeof o.title === "string" ? o.title : typeof o.text === "string" ? o.text : null;
+    const raw = o.score ?? o.overallScore ?? o.titleScore;
+    if (title) out.push({ title: title.trim(), score: typeof raw === "number" ? raw : Number.isFinite(Number(raw)) ? Number(raw) : null });
+    else Object.values(o).forEach(walk);
+  };
+  try {
+    walk(JSON.parse(text));
+  } catch {
+    for (const line of text.split("\n")) {
+      const m = line.match(/^\s*(?:\d+[.)]|[-*•])\s*["“]?(.+?)["”]?\s*(?:[—–-]|\(|\|)\s*(?:score|điểm)?\s*:?\s*(\d{1,3})(?:\s*\/\s*100)?\)?\s*$/i);
+      if (m) out.push({ title: m[1].replace(/\*\*/g, "").trim(), score: Number(m[2]) });
+    }
+  }
+  return out.filter((x) => x.title.length >= 10 && x.title.length <= 100 && (x.score == null || x.score <= 100));
+}
+
+/**
+ * vidIQ tự nghĩ tiêu đề kèm điểm (phần "Magic Fill" cho tiêu đề — vidIQ MCP không có Magic Fill mô tả/tag).
+ * ~5 credit/lượt. Lỗi / không có tool thì trả [] để pipeline chạy tiếp như thường.
+ */
+export async function generateTitles(title: string, description: string): Promise<{ title: string; score: number | null }[]> {
+  const s = await connect();
+  if (!s || process.env.VIDIQ_SCORE_TITLES === "0") return [];
+  const tool = pick(s.tools, (n) => n.includes("generate") && n.includes("title"));
+  if (!tool) return [];
+  try {
+    const props = tool.inputSchema?.properties ?? {};
+    const args: Record<string, unknown> = { title, description: description.slice(0, 2000) };
+    if ("numTitles" in props) args.numTitles = 3;
+    if ("language" in props) args.language = "vi";
+    if ("regionCode" in props) args.regionCode = "VN";
+    const res = await s.client.callTool({ name: tool.name, arguments: args });
+    if ((res as { isError?: boolean }).isError) throw new Error(textOf(res).slice(0, 200));
+    return parseScoredTitles(textOf(res));
+  } catch (e) {
+    console.warn("⚠ vidIQ gợi ý tiêu đề lỗi:", e instanceof Error ? e.message : e);
+    return [];
+  }
+}
+
 /** Tên + mô tả các tool vidIQ đang mở (không tốn credit) — để xem có tool kiểu Magic Fill không. */
 export async function listVidiqTools() {
   const s = await connect();
