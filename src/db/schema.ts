@@ -76,6 +76,13 @@ export type Series = typeof series.$inferSelect;
 export type Video = typeof videos.$inferSelect;
 export type Chapter = typeof chapters.$inferSelect;
 
+/** Cài đặt chung dạng key → JSON, vd bố cục node màn flow (dùng chung mọi video, mọi thiết bị). */
+export const appSettings = pgTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").notNull(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 /** Đếm lượt gọi AI theo ngày (giờ Pacific — Google reset quota free lúc 0h Pacific). */
 export const aiUsage = pgTable(
   "ai_usage",

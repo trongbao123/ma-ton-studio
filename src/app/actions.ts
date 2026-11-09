@@ -4,7 +4,8 @@ import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
-import { chapters, series, videos } from "@/db/schema";
+import { appSettings, chapters, series, videos } from "@/db/schema";
+import { LAYOUT_KEY, mergeLayout, type Pos } from "@/lib/flow/layout";
 import { draftBible, planChapters, writeChapterStep, type WriteMode } from "@/lib/story/service";
 import { dispatchRender, queueVideo } from "@/lib/story/videos";
 
@@ -116,6 +117,26 @@ export async function rerenderAction(videoId: number): Promise<ActionState> {
     await dispatchRender(videoId);
     revalidatePath("/videos");
     return "Đã xếp hàng render lại.";
+  });
+}
+
+/** Lưu vị trí node màn flow — một bố cục chung cho mọi video. Không revalidate: client đã giữ vị trí. */
+export async function saveFlowLayoutAction(positions: Record<string, Pos>): Promise<ActionState> {
+  return attempt(async () => {
+    const value = mergeLayout(positions);
+    await db()
+      .insert(appSettings)
+      .values({ key: LAYOUT_KEY, value })
+      .onConflictDoUpdate({ target: appSettings.key, set: { value, updatedAt: new Date() } });
+    return "Đã lưu bố cục.";
+  });
+}
+
+export async function resetFlowLayoutAction(): Promise<ActionState> {
+  return attempt(async () => {
+    await db().delete(appSettings).where(eq(appSettings.key, LAYOUT_KEY));
+    revalidatePath("/videos", "layout");
+    return "Đã sắp xếp lại.";
   });
 }
 
