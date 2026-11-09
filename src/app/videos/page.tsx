@@ -2,38 +2,28 @@ import { desc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
-import { markPublishedAction, rerenderAction } from "@/app/actions";
-import { ActionForm } from "@/components/action-form";
-import { CopyButton } from "@/components/copy-button";
 import { db } from "@/db";
-import { chapters, series, videos, type Video } from "@/db/schema";
-
-const STATUS: Record<Video["status"], [string, string]> = {
-  queued: ["Chờ render", "text-zinc-400"],
-  rendering: ["Đang render…", "text-sky-500"],
-  ready: ["Sẵn sàng đăng", "text-emerald-500"],
-  failed: ["Lỗi", "text-red-500"],
-  published: ["Đã đăng", "text-muted"],
-};
+import { chapters, series, videos } from "@/db/schema";
+import { formatSlot, STATUS_LABEL } from "@/lib/flow/model";
 
 export default function VideosPage() {
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Video</h1>
-      <p className="text-sm text-muted">
-        Tải video + thumbnail → YouTube Studio → dán tiêu đề/mô tả/tag → bật nhãn “nội dung đã chỉnh sửa/tổng hợp” → chọn “Lên lịch” đúng giờ bên dưới → bấm “Đã đăng”.
-      </p>
+      <div>
+        <h1 className="text-2xl font-bold">Video</h1>
+        <p className="mt-1 text-sm text-muted">Bấm vào video để xem flow: ảnh, video, lịch đăng và các nút đăng tay.</p>
+      </div>
       <Suspense fallback={<p className="text-muted">Đang tải…</p>}>
-        <VideoList />
+        <VideoGrid />
       </Suspense>
     </div>
   );
 }
 
-async function VideoList() {
+async function VideoGrid() {
   await connection();
   const rows = await db()
-    .select({ v: videos, chapterNo: chapters.number, chapterTitle: chapters.title, chapterId: chapters.id, seriesTitle: series.title })
+    .select({ v: videos, chapterNo: chapters.number, chapterTitle: chapters.title, seriesTitle: series.title })
     .from(videos)
     .innerJoin(chapters, eq(chapters.id, videos.chapterId))
     .innerJoin(series, eq(series.id, chapters.seriesId))
@@ -43,74 +33,36 @@ async function VideoList() {
   if (!rows.length) return <p className="card text-muted">Chưa có video. Duyệt một chương là video tự render (10–20 phút).</p>;
 
   return (
-    <ul className="space-y-4">
-      {rows.map(({ v, chapterNo, chapterTitle, chapterId, seriesTitle }) => {
-        const [label, tone] = STATUS[v.status];
-        const file = (name: string) => (v.assets[name] ? `/api/videos/${v.id}/${name}` : null);
+    <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {rows.map(({ v, chapterNo, chapterTitle, seriesTitle }) => {
+        const [label, tone] = STATUS_LABEL[v.status];
         return (
-          <li key={v.id} className="card space-y-3">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <Link href={`/chapters/${chapterId}`} className="font-bold hover:text-accent">
-                {seriesTitle} — Chương {chapterNo}: {chapterTitle}
-              </Link>
-              <span className={`text-sm font-medium ${tone}`}>
-                {label}
-                {v.durationSec ? ` · ${Math.round(v.durationSec / 60)} phút` : ""}
-              </span>
-            </div>
-
-            {v.error && <p className="whitespace-pre-wrap text-xs text-red-500">{v.error.slice(0, 600)}</p>}
-            {v.runUrl && (
-              <a href={v.runUrl} target="_blank" className="text-xs text-muted underline">
-                Xem log render
-              </a>
-            )}
-
-            {v.meta && (
-              <div className="space-y-2 text-sm">
-                <p className="font-medium">{v.meta.title}</p>
-                {v.publishAt && v.status === "ready" && (
-                  <p className="text-amber-500">
-                    Lên lịch đăng:{" "}
-                    {v.publishAt.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", weekday: "long", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
-                    {" "}(Short đăng cùng lúc hoặc sau 2 giờ)
-                  </p>
+          <li key={v.id}>
+            <Link href={`/videos/${v.id}`} className="group block overflow-hidden rounded-xl border border-border bg-card transition hover:border-accent">
+              <div className="relative aspect-video overflow-hidden bg-gradient-to-br from-red-950 to-slate-950">
+                {v.assets["thumbnail.jpg"] ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- file từ GitHub Release qua redirect, không tối ưu được bằng next/image
+                  <img src={`/api/videos/${v.id}/thumbnail.jpg`} alt="" loading="lazy" className="h-full w-full object-cover transition group-hover:scale-105" />
+                ) : (
+                  <span className="absolute inset-0 grid place-items-center text-3xl font-bold text-white/70">Ch. {chapterNo}</span>
                 )}
-                <div className="flex flex-wrap gap-2">
-                  {[
-                    ["long.mp4", "⬇ Video dài"],
-                    ["short.mp4", "⬇ Short"],
-                    ["thumbnail.jpg", "⬇ Thumbnail"],
-                  ].map(([name, text]) =>
-                    file(name) ? (
-                      <a key={name} href={file(name)!} className="btn-primary">
-                        {text}
-                      </a>
-                    ) : null,
-                  )}
-                  <CopyButton text={v.meta.title} label="Copy tiêu đề" />
-                  <CopyButton text={v.meta.description} label="Copy mô tả" />
-                  <CopyButton text={v.meta.tags.join(", ")} label="Copy tag" />
-                  <CopyButton text={`${v.meta.shortTitle}\n\n${v.meta.shortDescription}`} label="Copy tiêu đề Short" />
-                </div>
+                <span className={`absolute left-2 top-2 rounded-full px-2.5 py-0.5 text-[11px] font-semibold backdrop-blur ${tone}`}>{label}</span>
+                {v.durationSec && (
+                  <span className="absolute bottom-2 right-2 rounded bg-black/80 px-1.5 text-[11px] font-semibold text-white">
+                    {Math.floor(v.durationSec / 60)}:{String(v.durationSec % 60).padStart(2, "0")}
+                  </span>
+                )}
+                {v.status === "rendering" && <span className="absolute inset-x-0 bottom-0 h-1 animate-pulse bg-sky-400" />}
               </div>
-            )}
-
-            <div className="flex flex-wrap gap-3">
-              {(v.status === "failed" || v.status === "ready" || v.status === "queued") && (
-                <ActionForm action={rerenderAction.bind(null, v.id)} submitLabel="Render lại" variant="secondary" />
-              )}
-              {v.status === "ready" && (
-                <ActionForm action={markPublishedAction.bind(null, v.id)} submitLabel="Đã đăng" className="flex flex-wrap items-center gap-2">
-                  <input name="youtubeUrl" placeholder="Link YouTube (tuỳ chọn)" className="field w-64" />
-                </ActionForm>
-              )}
-              {v.youtubeUrl && (
-                <a href={v.youtubeUrl} target="_blank" className="text-sm underline">
-                  Xem trên YouTube
-                </a>
-              )}
-            </div>
+              <div className="space-y-1 p-3">
+                <p className="truncate text-xs text-muted">{seriesTitle}</p>
+                <p className="line-clamp-2 text-sm font-semibold">
+                  Chương {chapterNo}: {chapterTitle}
+                </p>
+                {v.publishAt && v.status === "ready" && <p className="text-xs text-amber-500">📅 {formatSlot(v.publishAt.toISOString())}</p>}
+                {v.status === "failed" && v.error && <p className="truncate text-xs text-red-500">{v.error}</p>}
+              </div>
+            </Link>
           </li>
         );
       })}

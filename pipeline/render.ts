@@ -323,7 +323,7 @@ export async function renderVideo(videoId: number) {
       `🎬 <b>Video sẵn sàng đăng</b>\n${escapeHtml(meta.title)}\n` +
         `⏱ ${Math.round(long.seconds / 60)} phút${extras.length ? " + Short" : ""}\n` +
         `📅 Lên lịch: ${publishAt.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", weekday: "long", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}\n` +
-        `👉 ${WEB_URL}/videos`,
+        `👉 ${WEB_URL}/videos/${videoId}`,
     );
     if (process.env.GITHUB_ACTIONS) await rm(dir, { recursive: true, force: true });
     console.log(`✔ Xong video #${videoId} (${Math.round(long.seconds / 60)} phút)`);
@@ -333,7 +333,7 @@ export async function renderVideo(videoId: number) {
     const status = e instanceof QuotaExhaustedError ? "queued" : "failed";
     await db().update(videos).set({ status, error: msg.slice(0, 2000), updatedAt: new Date() }).where(eq(videos.id, videoId));
     if (status === "failed") {
-      await notify(`❌ <b>Render lỗi</b> video #${videoId} — chương ${c.number}\n${escapeHtml(msg.slice(0, 300))}\n${runUrl ?? ""}\n👉 ${WEB_URL}/videos`);
+      await notify(`❌ <b>Render lỗi</b> video #${videoId} — chương ${c.number}\n${escapeHtml(msg.slice(0, 300))}\n${runUrl ?? ""}\n👉 ${WEB_URL}/videos/${videoId}`);
     }
     throw e;
   }

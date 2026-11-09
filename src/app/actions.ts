@@ -115,7 +115,7 @@ export async function rerenderAction(videoId: number): Promise<ActionState> {
   return attempt(async () => {
     await db().update(videos).set({ status: "queued", error: null, updatedAt: new Date() }).where(eq(videos.id, videoId));
     await dispatchRender(videoId);
-    revalidatePath("/videos");
+    revalidatePath("/videos", "layout");
     return "Đã xếp hàng render lại.";
   });
 }
@@ -146,7 +146,7 @@ export async function markPublishedAction(videoId: number, _: ActionState, form:
       .update(videos)
       .set({ status: "published", youtubeUrl: String(form.get("youtubeUrl") ?? "") || null, updatedAt: new Date() })
       .where(eq(videos.id, videoId));
-    revalidatePath("/videos");
+    revalidatePath("/videos", "layout");
     return "Đã đánh dấu đã đăng.";
   });
 }

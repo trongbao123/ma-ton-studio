@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
@@ -10,7 +10,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { WriteButton } from "@/components/write-button";
 import { manualPrompt } from "@/lib/story/service";
 import { db } from "@/db";
-import { chapters, series } from "@/db/schema";
+import { chapters, series, videos } from "@/db/schema";
 import { parseId } from "@/lib/params";
 
 export const maxDuration = 300;
@@ -28,10 +28,11 @@ async function ChapterDetail({ params }: { params: Promise<{ id: string }> }) {
   const id = parseId((await params).id);
   const [c] = await db().select().from(chapters).where(eq(chapters.id, id));
   if (!c) notFound();
-  const [[s], [prev], [next]] = await Promise.all([
+  const [[s], [prev], [next], [video]] = await Promise.all([
     db().select({ id: series.id, title: series.title }).from(series).where(eq(series.id, c.seriesId)),
     neighbour(c.seriesId, c.number - 1),
     neighbour(c.seriesId, c.number + 1),
+    db().select({ id: videos.id }).from(videos).where(eq(videos.chapterId, c.id)).orderBy(desc(videos.id)).limit(1),
   ]);
   const words = c.content.trim() ? c.content.trim().split(/\s+/).length : 0;
   const approved = c.status === "approved";
@@ -56,6 +57,11 @@ async function ChapterDetail({ params }: { params: Promise<{ id: string }> }) {
               <WriteButton chapterId={c.id} label={c.content ? "AI viết lại" : "AI viết chương"} />
               <CopyButton text={await manualPrompt(c)} label="Copy prompt (dán vào ChatGPT)" />
             </>
+          )}
+          {approved && video && (
+            <Link href={`/videos/${video.id}`} className="btn-secondary">
+              Xem flow →
+            </Link>
           )}
           {c.content && (
             <ActionForm action={setApprovedAction.bind(null, c.id, !approved)} submitLabel={approved ? "Bỏ duyệt" : "Duyệt"} />
