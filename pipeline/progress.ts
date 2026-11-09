@@ -5,6 +5,7 @@ import type { NodeId } from "@/lib/flow/model";
 import { LOG_KEEP, type StepProgress, type VideoProgress } from "@/lib/flow/progress";
 
 const FLUSH_MS = 2000;
+const HEARTBEAT_MS = 60_000;
 
 /**
  * Ghi tiến độ render vào `videos.progress` cho màn flow xem gần như realtime.
@@ -21,6 +22,16 @@ export class Tracker {
     initial?: VideoProgress,
   ) {
     this.p = initial ? structuredClone(initial) : { steps: {} };
+    // Nhịp tim: bước dài không có tiến độ (ghép video ~30 phút) vẫn cập nhật updatedAt mỗi phút,
+    // để web và job daily không tưởng nhầm video đang chạy là bị kẹt.
+    setInterval(() => {
+      if (!Object.values(this.p.steps).some((s) => s?.state === "run")) return;
+      db()
+        .update(videos)
+        .set({ updatedAt: new Date() })
+        .where(eq(videos.id, this.videoId))
+        .catch(() => {});
+    }, HEARTBEAT_MS).unref();
   }
 
   private step(id: NodeId): StepProgress {

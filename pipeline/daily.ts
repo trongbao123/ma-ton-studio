@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, ne } from "drizzle-orm";
+import { and, asc, eq, gte, lt, ne } from "drizzle-orm";
 import { db } from "@/db";
 import { chapters, series, videos } from "@/db/schema";
 import { QuotaExhaustedError } from "@/lib/ai";
@@ -44,7 +44,21 @@ async function notifyQuotaOnce(message: string) {
   if (mark) await notify(`⏸ Hết lượt AI free hôm nay — tự chạy tiếp khi quota reset (~14–15h).\n${escapeHtml(message.slice(0, 200))}`);
 }
 
+/**
+ * Video kẹt "đang render" (job bị huỷ/hết giờ giữa chừng): render đang chạy có nhịp tim mỗi phút,
+ * nên 30 phút im lặng là chắc chắn kẹt → trả về hàng đợi để render lại (phần đã làm nằm trong cache .render).
+ */
+async function requeueStuck() {
+  const stuck = await db()
+    .update(videos)
+    .set({ status: "queued", updatedAt: new Date() })
+    .where(and(eq(videos.status, "rendering"), lt(videos.updatedAt, new Date(Date.now() - 30 * 60_000))))
+    .returning({ id: videos.id });
+  for (const v of stuck) console.log(`↻ Video #${v.id} kẹt "đang render" — xếp hàng render lại`);
+}
+
 async function renderQueue(failures: string[]) {
+  await requeueStuck();
   for (const v of await db().select().from(videos).where(eq(videos.status, "queued")).orderBy(asc(videos.id))) {
     try {
       await renderVideo(v.id);
