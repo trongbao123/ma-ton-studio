@@ -7,6 +7,8 @@ import { ActionForm } from "@/components/action-form";
 import { BrandIcon, type BrandId } from "@/components/brand-icons";
 import { DEFAULT_MODEL, IMAGE_PROVIDERS, isCli, PROVIDERS, TASKS, type AiTask, type ImageRoute, type ProviderId, type Routing } from "@/lib/ai/routing";
 import { SECRET_KEYS, type SecretKey, type SecretStatus } from "@/lib/secret-keys";
+import type { CliCheck, CliStatus } from "@/lib/ai/cli-status";
+import { CopyButton } from "@/components/copy-button";
 
 const BRAND: Record<string, BrandId> = {
   ...Object.fromEntries(PROVIDERS.map((p) => [p.id, p.brand])),
@@ -106,11 +108,13 @@ export function AiRoutingEditor({
   initialImages,
   available,
   secrets,
+  cli,
 }: {
   initial: Routing;
   initialImages: ImageRoute[];
   available: ProviderId[];
   secrets: SecretStatus[];
+  cli: CliStatus;
 }) {
   const [routing, setRouting] = useState(initial);
   const [images, setImages] = useState(initialImages);
@@ -131,8 +135,19 @@ export function AiRoutingEditor({
           Dán key một lần ở đây là web và job render trên GitHub đều dùng được ngay, không cần deploy lại. Key được mã hoá trước khi lưu và không bao giờ hiện lại đầy
           đủ, chỉ 4 ký tự cuối.
         </p>
+        <h3 className="pt-2 font-semibold">Gói Pro / Plus — không tốn credit API</h3>
         <ul className="grid gap-3 md:grid-cols-3">
-          {SECRET_KEYS.filter((k) => k.group === "ai").map((k) => (
+          {PROVIDERS.filter((p) => p.cli).map((p) => (
+            <PlanCard key={p.id} id={p.id} label={p.label} brand={p.brand} check={cli[p.id]} />
+          ))}
+        </ul>
+        <p className="flex flex-wrap items-center gap-2 text-xs text-muted">
+          Kết nối hoặc đăng nhập lại cả 3 gói: chạy trên máy bạn <code className="rounded bg-white/[.06] px-1.5 py-0.5 text-zinc-200">{LOGIN_CMD}</code>
+          <CopyButton text={LOGIN_CMD} label="Copy lệnh" /> — chỉ cần bấm Cho phép trên trình duyệt, còn lại tự lưu và tự kiểm tra.
+        </p>
+        <h3 className="pt-2 font-semibold">API (trả theo lượng dùng)</h3>
+        <ul className="grid gap-3 md:grid-cols-3">
+          {SECRET_KEYS.filter((k) => k.group === "ai" && !isCli(providerOf(k.env) ?? "gemini")).map((k) => (
             <SecretCard key={k.env} k={k} status={secrets.find((x) => x.env === k.env)!} testModel={routing.story.find((r) => r.provider === providerOf(k.env))?.model ?? ""} />
           ))}
         </ul>
@@ -214,6 +229,37 @@ export function AiRoutingEditor({
 }
 
 const providerOf = (env: string) => PROVIDERS.find((p) => p.env === env)?.id;
+
+const LOGIN_CMD = "node scripts/ai-login.mjs";
+const when = (iso: string) => new Date(iso).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+
+/** Một gói Pro/Plus: đăng nhập nằm ở GitHub Secrets, trạng thái lấy từ lần gọi thử gần nhất (workflow ai-check). */
+function PlanCard({ label, brand, check }: { id: ProviderId; label: string; brand: BrandId; check?: CliCheck }) {
+  return (
+    <li className="space-y-2 rounded-xl border border-border bg-card p-4">
+      <div className="flex items-center gap-3">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/[.04]">
+          <BrandIcon id={brand} size={22} />
+        </span>
+        <p className="min-w-0 flex-1 truncate font-semibold">{label}</p>
+        {check ? (
+          <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs ${check.ok ? "bg-jade/15 text-jade" : "bg-red-500/15 text-red-300"}`}>
+            {check.ok ? "Đã kết nối" : "Lỗi"}
+          </span>
+        ) : (
+          <span className="shrink-0 rounded-full bg-white/[.05] px-2.5 py-1 text-xs text-muted">Chưa kết nối</span>
+        )}
+      </div>
+      <p className="text-xs text-muted">
+        {check?.ok
+          ? `${check.model ?? "model mặc định"} · kiểm tra ${when(check.at)}`
+          : check
+            ? `${check.error ?? "lỗi"} · ${when(check.at)}`
+            : "Chạy lệnh bên dưới trên máy bạn để kết nối."}
+      </p>
+    </li>
+  );
+}
 
 const SOURCE: Record<string, [string, string]> = {
   web: ["Đã lưu", "bg-jade/15 text-jade"],

@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { AiRoutingEditor } from "@/components/ai-routing-editor";
 import { availableProviders, loadImageRouting, loadRouting } from "@/lib/ai";
 import { secretStatus } from "@/lib/secrets";
+import { loadCliStatus, withCliStatus } from "@/lib/ai/cli-status";
 
 export default function AiSettingsPage() {
   return (
@@ -23,6 +24,6 @@ export default function AiSettingsPage() {
 async function Editor() {
   await connection();
   const secrets = await secretStatus();
-  const [routing, images] = await Promise.all([loadRouting(true), loadImageRouting()]);
-  return <AiRoutingEditor initial={routing} initialImages={images} available={availableProviders()} secrets={secrets} />;
+  const [routing, images, cli] = await Promise.all([loadRouting(true), loadImageRouting(), loadCliStatus()]);
+  return <AiRoutingEditor initial={routing} initialImages={images} available={withCliStatus(availableProviders(), cli)} secrets={secrets} cli={cli} />;
 }

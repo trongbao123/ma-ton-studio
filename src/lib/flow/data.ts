@@ -4,6 +4,7 @@ import { appSettings, chapters, series, videos } from "@/db/schema";
 import { LAYOUT_KEY, mergeLayout } from "./layout";
 import { DEFAULT_IMAGE_MODEL, IMAGE_ROUTING_KEY, normalizeImageRouting } from "@/lib/ai/routing";
 import { availableProviders, loadRouting } from "@/lib/ai";
+import { loadCliStatus, withCliStatus } from "@/lib/ai/cli-status";
 import { loadSecrets } from "@/lib/secrets";
 import { getYoutubeAuth } from "@/lib/youtube";
 import type { FlowData } from "./model";
@@ -17,7 +18,7 @@ export async function loadFlowData(videoId: number): Promise<FlowData | null> {
     .where(eq(videos.id, videoId));
   if (!row) return null;
   const { v, c, s } = row;
-  const [[prev], yt, [img], routing] = await Promise.all([
+  const [[prev], yt, [img], routing, , cli] = await Promise.all([
     db()
       .select({ summary: chapters.summary })
       .from(chapters)
@@ -26,6 +27,7 @@ export async function loadFlowData(videoId: number): Promise<FlowData | null> {
     db().select({ value: appSettings.value }).from(appSettings).where(eq(appSettings.key, IMAGE_ROUTING_KEY)),
     loadRouting(true),
     loadSecrets(),
+    loadCliStatus(),
   ]);
   const firstImage = normalizeImageRouting(img?.value)[0];
   const content = c.content.trim();
@@ -72,7 +74,7 @@ export async function loadFlowData(videoId: number): Promise<FlowData | null> {
     ai: {
       imageModel: firstImage.model || DEFAULT_IMAGE_MODEL[firstImage.provider],
       text: { meta: routing.meta, scenes: routing.scenes },
-      available: availableProviders(),
+      available: withCliStatus(availableProviders(), cli),
     },
   };
 }

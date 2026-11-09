@@ -37,15 +37,13 @@ App dùng được cùng lúc **Claude** (`ANTHROPIC_API_KEY`), **ChatGPT** (`OP
 3. Vào **Cài đặt AI** trên web: bấm **Thử** để kiểm tra key, rồi sắp thứ tự AI cho từng việc — viết truyện, tóm tắt, tiêu đề/mô tả YouTube, prompt ảnh. AI đầu lỗi / hết tiền / từ chối thì tự chuyển AI sau.
 
 ### Dùng gói Claude Pro / ChatGPT Plus / Gemini (không tốn credit API)
-Job GitHub Actions cài **Claude Code**, **Codex** và **Gemini CLI**, rồi gọi chúng bằng đăng nhập gói của bạn. Mỗi gói đăng nhập **một lần** trên máy bạn:
+Job GitHub Actions cài **Claude Code**, **Codex** và **Gemini CLI**, rồi gọi chúng bằng đăng nhập gói của bạn. Kết nối cả 3 gói bằng **một lệnh** trên máy bạn (cần `gh` đã đăng nhập):
 
 ```
-node scripts/ai-login.mjs claude   # mở trình duyệt → copy token sk-ant-oat… in ra cuối
-node scripts/ai-login.mjs codex    # đăng nhập ChatGPT → tự copy vào clipboard
-node scripts/ai-login.mjs gemini   # đăng nhập Google, vào màn chat rồi gõ /quit → tự copy
+node scripts/ai-login.mjs
 ```
 
-Dán vào ô tương ứng ở **Cài đặt AI** (được mã hoá trước khi lưu). Kiểm tra: GitHub → Actions → **ai-check** → Run workflow.
+Script mở trình duyệt cho từng gói — bạn chỉ bấm **Cho phép** — rồi tự lưu vào GitHub Secrets (`CLAUDE_CODE_OAUTH_TOKEN`, `CODEX_AUTH_JSON`, `GEMINI_OAUTH_CREDS`), tự chạy workflow **ai-check** gọi thử và ghi trạng thái lên trang **Cài đặt AI**. Đăng nhập lại 1 gói: `node scripts/ai-login.mjs codex` (claude | codex | gemini).
 
 - Chỉ chạy trong job GitHub Actions (render, viết chương hằng ngày). Nút viết trên web (Vercel) vẫn dùng API.
 - Hạn mức dùng chung với lúc bạn chat. Hết lượt gói thì tự chuyển sang AI kế tiếp (cuối cùng là Gemini API free).
