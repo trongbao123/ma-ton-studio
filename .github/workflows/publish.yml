@@ -19,8 +19,10 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 24, cache: pnpm }
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec tsx pipeline/publish.ts ${{ inputs.video_id }}
+      # id truyền qua env (không chèn thẳng vào lệnh) để tránh chèn lệnh.
+      - run: pnpm exec tsx pipeline/publish.ts "$VIDEO_ID"
         env:
+          VIDEO_ID: ${{ inputs.video_id }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           GH_TOKEN: ${{ github.token }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}

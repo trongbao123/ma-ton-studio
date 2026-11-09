@@ -1,6 +1,6 @@
 "use server";
 
-import { eq } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
@@ -115,6 +115,10 @@ export async function setApprovedAction(chapterId: number, approved: boolean): P
 
 export async function rerenderAction(videoId: number): Promise<ActionState> {
   return attempt(async () => {
+    const [v] = await db().select({ status: videos.status, uploadStatus: videos.uploadStatus }).from(videos).where(eq(videos.id, videoId));
+    if (!v) throw new Error("Không có video.");
+    if (v.status === "published") throw new Error("Video đã đăng — không render lại.");
+    if (v.uploadStatus === "uploading") throw new Error("Đang upload YouTube — chờ xong rồi hãy render lại.");
     await db().update(videos).set({ status: "queued", error: null, updatedAt: new Date() }).where(eq(videos.id, videoId));
     await dispatchRender(videoId);
     revalidatePath("/videos", "layout");
@@ -168,16 +172,28 @@ export async function updateFlowSettingsAction(
   });
 }
 
-/** Đăng lại YouTube sau khi lỗi (vd token hỏng): chạy workflow publish.yml, không render lại. */
+/** Đăng (lại) YouTube cho video đã render: chạy workflow publish.yml, không render lại. */
 export async function retryPublishAction(videoId: number): Promise<ActionState> {
   return attempt(async () => {
-    const [v] = await db().select({ status: videos.status, youtubeVideoId: videos.youtubeVideoId }).from(videos).where(eq(videos.id, videoId));
-    if (v?.status !== "ready") throw new Error("Chỉ đăng lại được video đã render xong và chưa đăng.");
-    if (v.youtubeVideoId) throw new Error("Video đã có trên YouTube — kiểm tra trong YouTube Studio.");
-    await db().update(videos).set({ uploadStatus: "uploading", uploadError: null }).where(eq(videos.id, videoId));
-    if (!(await dispatchPublish(videoId))) throw new Error("Chưa cấu hình GH_TOKEN/GH_REPO trên Vercel — không gọi được GitHub Actions.");
+    // Giữ chỗ nguyên tử: bấm 2 lần hay đang đăng dở thì không chạy thêm job (tránh upload trùng).
+    const claimed = await db()
+      .update(videos)
+      .set({ uploadStatus: "uploading", uploadError: null })
+      .where(and(eq(videos.id, videoId), eq(videos.status, "ready"), isNull(videos.youtubeVideoId), inArray(videos.uploadStatus, ["none", "failed"])))
+      .returning({ id: videos.id });
+    if (!claimed.length) throw new Error("Không đăng được: video chưa render xong, đang đăng, hoặc đã có trên YouTube.");
+    const fail = (msg: string) => db().update(videos).set({ uploadStatus: "failed", uploadError: msg }).where(eq(videos.id, videoId));
+    try {
+      if (!(await dispatchPublish(videoId))) {
+        await fail("Chưa cấu hình GH_TOKEN/GH_REPO trên Vercel — không gọi được GitHub Actions.");
+        throw new Error("Chưa cấu hình GH_TOKEN/GH_REPO trên Vercel.");
+      }
+    } catch (e) {
+      await fail(e instanceof Error ? e.message : String(e));
+      throw e;
+    }
     revalidatePath("/videos", "layout");
-    return "Đang đăng lại…";
+    return "Đang đăng lên YouTube…";
   });
 }
 

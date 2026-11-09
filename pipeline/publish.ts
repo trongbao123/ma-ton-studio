@@ -12,8 +12,6 @@ const run = promisify(execFile);
 
 /** Đăng lại YouTube cho video đã render (vd lần trước token hỏng): tải file từ release về rồi upload, không render lại. */
 async function main(videoId: number) {
-  const [v] = await db().select({ status: videos.status }).from(videos).where(eq(videos.id, videoId));
-  if (!v) throw new Error(`Không có video #${videoId}`);
   const dir = await mkdtemp(path.join(tmpdir(), `publish-${videoId}-`));
   await run("gh", ["release", "download", `video-${videoId}`, "--repo", process.env.GITHUB_REPOSITORY!, "--dir", dir, "--pattern", "*.mp4", "--pattern", "thumbnail.jpg"]);
   const files = await readdir(dir);
@@ -26,10 +24,14 @@ async function main(videoId: number) {
 }
 
 // CLI: tsx pipeline/publish.ts <videoId>
-main(Number(process.argv[2])).then(
+const videoId = Number(process.argv[2]);
+main(videoId).then(
   () => process.exit(0),
-  (e) => {
+  async (e) => {
     console.error(e);
+    // Lỗi trước khi kịp upload (tải release hỏng…) → báo failed để nút "Đăng lại" hiện lại, không kẹt ở "đang upload".
+    const msg = e instanceof Error ? e.message : String(e);
+    await db().update(videos).set({ uploadStatus: "failed", uploadError: msg.slice(0, 1000) }).where(eq(videos.id, videoId)).catch(() => {});
     process.exit(1);
   },
 );

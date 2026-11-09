@@ -490,6 +490,11 @@ function Youtube({ data, tab }: PanelProps) {
             <ActionForm action={retryPublishAction.bind(null, v.id)} submitLabel="↻ Đăng lại" />
           </div>
         )}
+        {v.uploadStatus === "none" && v.status === "ready" && data.youtube.connected && !v.youtubeVideoId && (
+          <div className="mt-3">
+            <ActionForm action={retryPublishAction.bind(null, v.id)} submitLabel="▶ Đăng lên YouTube ngay" />
+          </div>
+        )}
         {v.uploadStatus === "scheduled" && (
           <p className="mt-3 rounded-lg bg-amber-950/40 px-3 py-2 text-[11px] leading-relaxed text-amber-200">
             Nếu project Google chưa qua audit, YouTube khoá video ở chế độ riêng tư dù đã lên lịch — vào YouTube Studio bấm công khai (xem README).

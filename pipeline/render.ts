@@ -1,6 +1,6 @@
 import { access, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { chapters, series, videos, type VideoMeta } from "@/db/schema";
 import { QuotaExhaustedError, textProvider } from "@/lib/ai";
@@ -11,7 +11,7 @@ import { Tracker } from "./progress";
 import { metaRequest, scenePrompts, scenesRequest, videoMeta } from "./prompts";
 import { ensureRelease, uploadAsset } from "./release";
 import { keepOrNextSlot } from "./schedule";
-import { publishToYoutube } from "./youtube";
+import { autoPublishEligible, publishToYoutube } from "./youtube";
 
 type ScenePrompt = Awaited<ReturnType<typeof scenePrompts>>[number];
 import { cuesForChunk, packChunks, sentences, toAss, type Cue } from "./text";
@@ -250,7 +250,13 @@ async function previewAudio(wav: string, out: string) {
 
 /** Upload phụ (ảnh cảnh, giọng nghe thử): lỗi chỉ cảnh báo, không làm hỏng render. */
 async function uploadPreview(videoId: number, releaseId: number | null, file: string) {
-  await uploadAsset(videoId, releaseId, file).catch((e) => console.warn("⚠ Upload xem trước lỗi:", e instanceof Error ? e.message : e));
+  return uploadAsset(videoId, releaseId, file).then(
+    () => true,
+    (e) => {
+      console.warn("⚠ Upload xem trước lỗi:", e instanceof Error ? e.message : e);
+      return false;
+    },
+  );
 }
 
 /** Prompt đã gửi AI, cắt gọn để lưu vào tiến độ. */
@@ -268,10 +274,19 @@ export async function renderVideo(videoId: number) {
   const runUrl = process.env.GITHUB_RUN_ID
     ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
     : null;
-  await db()
+  // Giữ chỗ nguyên tử: job render.yml và job daily có thể cùng nhặt 1 video → chỉ một job được render (tránh đăng trùng YouTube).
+  const claimed = await db()
     .update(videos)
-    .set({ status: "rendering", error: null, runUrl, progress: { steps: {} }, updatedAt: new Date() })
-    .where(eq(videos.id, videoId));
+    .set({
+      status: "rendering", error: null, runUrl, progress: { steps: {} }, updatedAt: new Date(),
+      ...(v.youtubeVideoId ? {} : { uploadStatus: "none" as const, uploadError: null }),
+    })
+    .where(and(eq(videos.id, videoId), eq(videos.status, "queued")))
+    .returning({ id: videos.id });
+  if (!claimed.length) {
+    console.log(`⏭ Video #${videoId} không ở hàng đợi (đang được job khác render hoặc đã xong) — bỏ qua.`);
+    return;
+  }
 
   const track = new Tracker(videoId);
   // Giữ thư mục giữa các lần chạy (được cache trên Actions) để không tốn lại quota TTS/ảnh đã làm.
@@ -328,13 +343,20 @@ export async function renderVideo(videoId: number) {
     track.set({ prompts: { meta: clip(metaRequest(s, c)), scenes: clip(scenesRequest(m.characterLook, longScenes.map((x) => x.text))) } });
     const longPrompts = await cached(path.join(dir, `long-scenes-${n}.json`), () => scenePrompts(m.characterLook, longScenes.map((x) => x.text)));
     track.tick("agent", "long", `${n} prompt cảnh video dài`);
-    const shortScenes = short ? splitScenes(short.cues, SHORT_SCENES, short.seconds) : [];
+    let shortScenes = short ? splitScenes(short.cues, SHORT_SCENES, short.seconds) : [];
     let shortPrompts: ScenePrompt[] = [];
     if (short) {
-      const raw = await cached(path.join(shortDir, "scenes.json"), () => scenePrompts(m.characterLook, shortScenes.map((x) => x.text)));
-      shortPrompts = raw.map((p) => ({ ...p, prompt: `${p.prompt}, vertical portrait composition` }));
-      track.tick("agent", "short", `${SHORT_SCENES} prompt cảnh Short`);
+      try {
+        const raw = await cached(path.join(shortDir, "scenes.json"), () => scenePrompts(m.characterLook, shortScenes.map((x) => x.text)));
+        shortPrompts = raw.map((p) => ({ ...p, prompt: `${p.prompt}, vertical portrait composition` }));
+        track.tick("agent", "short", `${SHORT_SCENES} prompt cảnh Short`);
+      } catch (e) {
+        if (e instanceof QuotaExhaustedError) throw e;
+        track.warn("agent", `Bỏ qua Short — lỗi prompt cảnh: ${e instanceof Error ? e.message : e}`);
+        short = null;
+      }
     }
+    if (!short) shortScenes = [];
     track.model("agent", textProvider().lastModel);
     track.finish("agent");
 
@@ -352,8 +374,7 @@ export async function renderVideo(videoId: number) {
       const label = which === "long" ? "Dài" : "Short";
       return {
         image: async (i: number, file: string) => {
-          await uploadPreview(videoId, releaseId, file);
-          track.sceneFile(which, i, path.basename(file));
+          if (await uploadPreview(videoId, releaseId, file)) track.sceneFile(which, i, path.basename(file));
           track.tick("images", which, `${label} · ảnh ${i + 1} xong`);
         },
         shots: (count: number) => track.total("video", which, count),
@@ -403,11 +424,19 @@ export async function renderVideo(videoId: number) {
     track.finish("video");
     await track.flush();
 
+    // Đã có trên YouTube (render lại sau khi đăng): giữ lịch + trạng thái cũ, YouTube vẫn giữ bản đã upload.
+    const onYoutube = Boolean(v.youtubeVideoId);
+    if (onYoutube) track.log("video", "Video đã có trên YouTube — YouTube giữ bản cũ, bản mới chỉ để tải về");
     // Lịch cũ đã qua (render lại muộn) thì lấy khung giờ mới.
-    const publishAt = await keepOrNextSlot(v.publishAt);
+    const publishAt = onYoutube && v.publishAt ? v.publishAt : await keepOrNextSlot(v.publishAt);
+    const publish = !onYoutube && (await autoPublishEligible(videoId));
+    // `ready` và `uploading` ghi cùng lúc để màn flow không ngừng cập nhật trực tiếp giữa hai bước.
     await db()
       .update(videos)
-      .set({ status: "ready", meta, durationSec: Math.round(long.seconds), publishAt, updatedAt: new Date() })
+      .set({
+        status: onYoutube ? "published" : "ready", meta, durationSec: Math.round(long.seconds), publishAt, updatedAt: new Date(),
+        ...(publish ? { uploadStatus: "uploading" as const, uploadError: null } : {}),
+      })
       .where(eq(videos.id, videoId));
     await notify(
       `🎬 <b>Video sẵn sàng</b>\n${escapeHtml(meta.title)}\n` +
@@ -415,8 +444,8 @@ export async function renderVideo(videoId: number) {
         `📅 Lịch đăng: ${publishAt.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", weekday: "long", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}\n` +
         `👉 ${WEB_URL}/videos/${videoId}`,
     );
-    // Tự đăng (tự bỏ qua nếu tắt/chưa kết nối/đã đăng); lỗi đăng không làm hỏng video đã render.
-    await publishToYoutube(videoId, { long: longVideo.out, short: extras[0], thumb });
+    // Lỗi đăng không làm hỏng video đã render (publishToYoutube tự bắt lỗi → failed).
+    if (publish) await publishToYoutube(videoId, { long: longVideo.out, short: extras[0], thumb });
     if (process.env.GITHUB_ACTIONS) await rm(dir, { recursive: true, force: true });
     console.log(`✔ Xong video #${videoId} (${Math.round(long.seconds / 60)} phút)`);
   } catch (e) {

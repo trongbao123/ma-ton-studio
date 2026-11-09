@@ -61,32 +61,58 @@ const slot = (d: Date) =>
   d.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", weekday: "long", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 
 /**
- * Tự đăng video đã render lên YouTube theo lịch. Bỏ qua khi: tắt tự đăng, chưa kết nối, đã đăng rồi (chống trùng),
- * hoặc không chạy trên GitHub Actions. Lỗi upload không làm hỏng video: giữ `ready` để đăng tay.
+ * Video này có nên tự đăng không: bật tự đăng, đã kết nối YouTube, chưa có trên YouTube, đang chạy trên GitHub Actions.
+ * Render hỏi trước để ghi `ready` + `uploading` cùng lúc (màn flow không ngắt cập nhật trực tiếp giữa chừng).
  */
-export async function publishToYoutube(videoId: number, files: { long: string; short?: string; thumb?: string }) {
+export async function autoPublishEligible(videoId: number) {
+  if (!process.env.GITHUB_ACTIONS) return false;
   const [row] = await db()
-    .select({ v: videos, autoPublish: series.autoPublish })
+    .select({ ytId: videos.youtubeVideoId, autoPublish: series.autoPublish })
     .from(videos)
     .innerJoin(chapters, eq(chapters.id, videos.chapterId))
     .innerJoin(series, eq(series.id, chapters.seriesId))
     .where(eq(videos.id, videoId));
-  const v = row?.v;
-  if (!v || !v.meta || (v.status !== "ready" && v.status !== "published")) return;
-  if (!process.env.GITHUB_ACTIONS || !row.autoPublish || v.youtubeVideoId) return;
-  const auth = await getYoutubeAuth();
-  if (!auth) return console.log("Chưa kết nối YouTube — bỏ qua tự đăng.");
+  return Boolean(row?.autoPublish && !row.ytId && (await getYoutubeAuth()));
+}
 
+/** YouTube từ chối tag tổng > 500 ký tự (tag có dấu cách tính thêm 2 dấu ngoặc) và ký tự < > trong tiêu đề/mô tả. */
+export function cleanTags(tags: string[]) {
+  const out: string[] = [];
+  let used = 0;
+  for (const raw of tags) {
+    const t = raw.replace(/[<>,]/g, "").trim();
+    if (!t) continue;
+    const cost = t.length + (t.includes(" ") ? 2 : 0) + (out.length ? 1 : 0);
+    if (used + cost > 500) break;
+    out.push(t);
+    used += cost;
+  }
+  return out;
+}
+const noAngle = (s: string) => s.replace(/[<>]/g, "");
+
+/**
+ * Đăng video đã render lên YouTube theo lịch. Người gọi đã "giữ chỗ" (`uploadStatus = uploading`):
+ * render sau khi `autoPublishEligible`, hoặc nút "Đăng lại". Mọi lỗi → `failed` + báo Telegram, video vẫn `ready` để đăng tay.
+ */
+export async function publishToYoutube(videoId: number, files: { long: string; short?: string; thumb?: string }) {
+  const [v] = await db().select().from(videos).where(eq(videos.id, videoId));
+  if (!v) return;
   const track = new Tracker(videoId, v.progress);
   track.start("youtube", { long: 1, ...(files.short ? { short: 1 } : {}) });
-  await db().update(videos).set({ uploadStatus: "uploading", uploadError: null }).where(eq(videos.id, videoId));
   try {
+    if (!v.meta) throw new Error("Video chưa có tiêu đề/mô tả.");
+    // Chống đăng trùng: đã có id YouTube thì không upload lại.
+    if (v.youtubeVideoId) throw new Error(`Video đã có trên YouTube (youtu.be/${v.youtubeVideoId}) — không đăng lại.`);
+    const auth = await getYoutubeAuth();
+    if (!auth) throw new YoutubeAuthError("Chưa kết nối YouTube — bấm “Kết nối YouTube” trên node Đăng YouTube.");
     const token = await accessToken(auth.refreshToken);
     const publishAt = await keepOrNextSlot(v.publishAt);
     const meta = v.meta;
 
     track.log("youtube", "Upload video dài");
-    const id = await uploadVideo(token, { file: files.long, title: meta.title, description: meta.description, tags: meta.tags, publishAt });
+    const tags = cleanTags(meta.tags);
+    const id = await uploadVideo(token, { file: files.long, title: noAngle(meta.title), description: noAngle(meta.description), tags, publishAt });
     // Lưu id ngay: lỗi ở bước sau cũng không upload trùng lần nữa.
     await db().update(videos).set({ youtubeVideoId: id, youtubeUrl: `https://youtu.be/${id}`, publishAt }).where(eq(videos.id, videoId));
     track.tick("youtube", "long", `Video dài: youtu.be/${id}`);
@@ -104,9 +130,9 @@ export async function publishToYoutube(videoId: number, files: { long: string; s
         track.log("youtube", "Upload Short");
         shortId = await uploadVideo(token, {
           file: files.short,
-          title: meta.shortTitle,
-          description: meta.shortDescription,
-          tags: meta.tags,
+          title: noAngle(meta.shortTitle),
+          description: noAngle(meta.shortDescription),
+          tags,
           publishAt: new Date(publishAt.getTime() + 2 * 3600_000),
         });
         await db().update(videos).set({ youtubeShortId: shortId }).where(eq(videos.id, videoId));
