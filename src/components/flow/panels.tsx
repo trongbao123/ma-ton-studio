@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { markPublishedAction } from "@/app/actions";
 import { ActionForm } from "@/components/action-form";
 import { CopyButton } from "@/components/copy-button";
@@ -162,11 +163,13 @@ function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
   }, [onClose]);
-  return (
+  // Portal ra body: inspector có `translate` nên `fixed` bên trong bị giam trong khung inspector.
+  return createPortal(
     <div onClick={onClose} className="fixed inset-0 z-50 grid cursor-zoom-out place-items-center bg-black/85 p-4">
       {/* eslint-disable-next-line @next/next/no-img-element -- như trên */}
       <img src={src} alt="" className="max-h-full max-w-full rounded-lg object-contain" />
-    </div>
+    </div>,
+    document.body,
   );
 }
 

@@ -81,6 +81,10 @@ function Studio({ data, layout }: Props) {
   const { fitView, getNodes } = useReactFlow();
   const [, startTransition] = useTransition();
   const measured = useNodesInitialized();
+  // useNodesState chỉ lấy giá trị đầu — dữ liệu mới từ server (render lại, đã đăng, polling) phải đẩy vào node, giữ nguyên vị trí.
+  useEffect(() => {
+    setNodes((ns) => ns.map((n) => (n.id in steps ? { ...n, data: { ...n.data, view: steps[n.id as NodeId] } } : n)));
+  }, [steps, setNodes]);
   // fitView ban đầu có thể chạy trước khi node đo xong kích thước (hay gặp trên điện thoại) → fit lại, và fit khi xoay/đổi cỡ màn hình.
   useEffect(() => {
     if (!measured) return;
@@ -175,7 +179,7 @@ function Studio({ data, layout }: Props) {
         <span>
           <b className="text-foreground">{formatTime(v.updatedAt)}</b> {label}
         </span>
-        {v.error && <span className="text-red-400">{v.error.slice(0, 120)}</span>}
+        {v.status === "failed" && v.error && <span className="text-red-400">{v.error.slice(0, 120)}</span>}
         <span className="opacity-60">Nhật ký từng bước sẽ có ở bản cập nhật pipeline</span>
       </footer>
     </div>
