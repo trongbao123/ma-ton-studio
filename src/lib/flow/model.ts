@@ -1,4 +1,5 @@
 import type { Video, VideoMeta } from "@/db/schema";
+import type { ProviderId, Route } from "@/lib/ai/routing";
 import type { StepProgress, VideoProgress } from "./progress";
 
 export type FileName = "long.mp4" | "short.mp4" | "thumbnail.jpg" | "youtube.txt";
@@ -34,7 +35,13 @@ export type FlowData = {
   prevSummary: string | null;
   youtube: { connected: boolean; channel: string | null };
   /** AI vẽ ảnh đứng đầu danh sách trong Cài đặt AI (để node con hiện đúng logo/model). */
-  ai: { imageModel: string };
+  ai: {
+    imageModel: string;
+    /** Chuỗi AI (theo thứ tự ưu tiên) cho 2 việc của node AI Agent — đổi nhanh ngay trong bảng. */
+    text?: { meta: Route[]; scenes: Route[] };
+    /** Hãng đã có API key. */
+    available?: ProviderId[];
+  };
 };
 
 export const TITLES: Record<NodeId, string> = {

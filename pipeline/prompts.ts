@@ -35,7 +35,8 @@ export async function videoMeta(s: Series, c: Chapter, seo?: string | null) {
     ...metaRequest(s, c, seo),
     schema: metaSchema,
     temperature: 0.8,
-    tier: "cheap",
+    // Tiêu đề/mô tả quyết định lượt bấm → dùng model tốt (Gemini: danh sách quality, không phải flash-lite).
+    tier: "quality",
     task: "meta",
   });
 }

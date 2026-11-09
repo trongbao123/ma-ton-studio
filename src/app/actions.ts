@@ -10,9 +10,9 @@ import { draftBible, planChapters, writeChapterStep, type WriteMode } from "@/li
 import { dispatchPublish, dispatchRender, queueVideo } from "@/lib/story/videos";
 import { saveYoutubeAuth } from "@/lib/youtube";
 import { VOICES } from "@/lib/flow/voices";
-import { availableProviders, providerFor } from "@/lib/ai";
+import { availableProviders, loadRouting, providerFor } from "@/lib/ai";
 import { loadSecrets, saveSecret } from "@/lib/secrets";
-import { IMAGE_ROUTING_KEY, normalizeImageRouting, normalizeRouting, ROUTING_KEY, type ImageRoute, type ProviderId, type Routing } from "@/lib/ai/routing";
+import { IMAGE_ROUTING_KEY, normalizeImageRouting, normalizeRouting, promote, ROUTING_KEY, type AiTask, type ImageRoute, type ProviderId, type Route, type Routing } from "@/lib/ai/routing";
 
 export type ActionState = { error?: string; ok?: string };
 
@@ -222,6 +222,20 @@ export async function saveAiRoutingAction(routing: Routing, images: ImageRoute[]
     }
     revalidatePath("/settings/ai");
     return "Đã lưu cài đặt AI.";
+  });
+}
+
+/** Đổi nhanh AI cho một việc ngay trên màn flow: đưa AI đã chọn lên đầu, các AI khác giữ làm dự phòng. */
+export async function setTaskAiAction(task: AiTask, route: Route): Promise<ActionState> {
+  return attempt(async () => {
+    const value = normalizeRouting(promote(await loadRouting(true), task, route));
+    await db()
+      .insert(appSettings)
+      .values({ key: ROUTING_KEY, value })
+      .onConflictDoUpdate({ target: appSettings.key, set: { value, updatedAt: new Date() } });
+    revalidatePath("/videos", "layout");
+    revalidatePath("/settings/ai");
+    return "Đã đổi — áp dụng từ lần render sau.";
   });
 }
 

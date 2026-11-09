@@ -4,7 +4,9 @@ import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { AudioLines, Check, ChevronDown } from "lucide-react";
-import { disconnectYoutubeAction, markPublishedAction, retryPublishAction, updateFlowSettingsAction } from "@/app/actions";
+import { disconnectYoutubeAction, markPublishedAction, retryPublishAction, setTaskAiAction, updateFlowSettingsAction } from "@/app/actions";
+import { BrandIcon } from "@/components/brand-icons";
+import { PROVIDERS, type ProviderId, type Route } from "@/lib/ai/routing";
 import { ActionForm } from "@/components/action-form";
 import { CopyButton } from "@/components/copy-button";
 import { formatSlot, formatTime, type FlowData, type NodeId } from "@/lib/flow/model";
@@ -222,12 +224,19 @@ function Agent({ data, tab }: PanelProps) {
       <Sec
         title="Chat model"
         right={
-          <Link href="/settings/ai" className="text-[11px] text-sky-400 hover:underline">
-            Đổi AI →
+          <Link href="/settings/ai" className="text-[11px] text-muted hover:text-sky-400">
+            Cài đặt đầy đủ
           </Link>
         }
       >
-        <p className="text-xs">{model ?? <span className="text-muted">Chưa ghi model cụ thể (video cũ)</span>}</p>
+        <div className="space-y-2.5">
+          <AiPicker data={data} task="meta" label="Tiêu đề / mô tả" />
+          <AiPicker data={data} task="scenes" label="Prompt ảnh" />
+          <p className="text-[11px] text-muted">
+            Lần render này dùng: <span className="text-zinc-300">{model ?? "chưa ghi (video cũ)"}</span>. Đổi AI áp dụng từ lần render sau; AI đầu lỗi hoặc hết lượt thì tự
+            sang AI kế tiếp.
+          </p>
+        </div>
       </Sec>
       {!m || !score ? (
         <Empty text="AI Agent chưa trả kết quả cho video này." />
@@ -269,6 +278,56 @@ function Agent({ data, tab }: PanelProps) {
         </>
       )}
     </>
+  );
+}
+
+const BRAND = { anthropic: "claude", openai: "openai", gemini: "gemini" } as const;
+const routeId = (r: Route) => `${r.provider}|${r.model}`;
+const routeLabel = (r: Route) => (r.model ? r.model : r.provider === "gemini" ? "Gemini (tự chọn model)" : PROVIDERS.find((p) => p.id === r.provider)!.label);
+
+/** Chọn AI chạy một việc ngay trong bảng — lưu luôn, không chuyển trang. */
+function AiPicker({ data, task, label }: { data: FlowData; task: "meta" | "scenes"; label: string }) {
+  const chain = data.ai.text?.[task] ?? [];
+  const have = data.ai.available ?? [];
+  const current = chain.find((r) => have.includes(r.provider)) ?? chain[0];
+  const [value, setValue] = useState(current ? routeId(current) : "");
+  const [msg, setMsg] = useState<{ ok?: string; error?: string } | null>(null);
+  const [pending, start] = useTransition();
+  const options: Route[] = PROVIDERS.flatMap((p) => [
+    ...(p.id === "gemini" ? [{ provider: p.id, model: "" }] : []),
+    ...p.models.map((model) => ({ provider: p.id as ProviderId, model })),
+  ]);
+  const picked = value ? (value.split("|") as [ProviderId, string]) : null;
+  const save = (id: string) => {
+    setValue(id);
+    const [provider, model] = id.split("|") as [ProviderId, string];
+    start(async () => setMsg(await setTaskAiAction(task, { provider, model })));
+  };
+  return (
+    <div>
+      <div className="flex items-center gap-2.5">
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/[.04]">
+          {picked && <BrandIcon id={BRAND[picked[0]]} size={17} />}
+        </span>
+        <span className="w-24 shrink-0 text-xs text-muted">{label}</span>
+        <select value={value} onChange={(e) => save(e.target.value)} disabled={pending} aria-label={`AI cho ${label}`} className="field min-w-0 flex-1 !py-1.5 text-xs">
+          {PROVIDERS.map((p) => (
+            <optgroup key={p.id} label={have.includes(p.id) ? p.label : `${p.label} — chưa có key`}>
+              {options
+                .filter((o) => o.provider === p.id)
+                .map((o) => (
+                  <option key={routeId(o)} value={routeId(o)} disabled={!have.includes(o.provider)}>
+                    {routeLabel(o)}
+                  </option>
+                ))}
+            </optgroup>
+          ))}
+        </select>
+      </div>
+      {(pending || msg) && (
+        <p className={`mt-1 pl-[2.6rem] text-[11px] ${msg?.error ? "text-rose-400" : "text-emerald-400"}`}>{pending ? "Đang lưu…" : (msg?.error ?? msg?.ok)}</p>
+      )}
+    </div>
   );
 }
 

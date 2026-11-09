@@ -7,10 +7,10 @@ export type Route = { provider: ProviderId; model: string };
 export type Routing = Record<AiTask, Route[]>;
 
 export const TASKS: { id: AiTask; label: string; note: string }[] = [
-  { id: "story", label: "Viết truyện", note: "Story bible, dàn ý, viết chương — cần AI viết hay nhất" },
-  { id: "summary", label: "Tóm tắt chương", note: "Trí nhớ cho các chương sau" },
-  { id: "meta", label: "Tiêu đề / mô tả YouTube", note: "Tiêu đề, mô tả, tag, kịch bản Short, thumbnail" },
-  { id: "scenes", label: "Prompt ảnh", note: "Mô tả từng cảnh cho AI vẽ ảnh" },
+  { id: "story", label: "Viết truyện", note: "Story bible, dàn ý, viết chương — văn hay nhất: Claude Opus" },
+  { id: "summary", label: "Tóm tắt chương", note: "Việc nhẹ — model rẻ nhất (Gemini lite) cho đỡ token" },
+  { id: "meta", label: "Tiêu đề / mô tả YouTube", note: "Ngắn nhưng quyết định lượt bấm — Claude Sonnet / GPT-5" },
+  { id: "scenes", label: "Prompt ảnh", note: "Prompt tiếng Anh nhiều cảnh — model nhanh, rẻ" },
 ];
 
 export const PROVIDERS: { id: ProviderId; label: string; env: string; models: string[] }[] = [
@@ -22,19 +22,26 @@ export const PROVIDERS: { id: ProviderId; label: string; env: string; models: st
 export const DEFAULT_MODEL: Record<ProviderId, string> = { anthropic: "claude-opus-5-5", openai: "gpt-5", gemini: "" };
 
 const ALL: ProviderId[] = ["anthropic", "openai", "gemini"];
-const order = (ids: ProviderId[]): Route[] => ids.map((provider) => ({ provider, model: "" }));
+const r = (provider: ProviderId, model = ""): Route => ({ provider, model });
 
 /**
- * Mặc định: viết truyện ưu tiên Claude → ChatGPT → Gemini; việc phụ dùng Gemini free trước, hết lượt mới sang AI trả phí.
+ * Mặc định chia việc theo thế mạnh và giá: AI viết hay nhất cho truyện, model tầm trung cho tiêu đề/mô tả,
+ * model rẻ cho tóm tắt và prompt ảnh. Gemini để trống model = tự chọn theo hạng việc (quality / cheap) trong danh sách dự phòng.
  * Nhà cung cấp nào chưa có key thì tự bỏ qua lúc chạy.
  */
 export function defaultRouting(): Routing {
   return {
-    story: order(["anthropic", "openai", "gemini"]),
-    summary: order(["gemini", "anthropic", "openai"]),
-    meta: order(["gemini", "anthropic", "openai"]),
-    scenes: order(["gemini", "anthropic", "openai"]),
+    story: [r("anthropic", "claude-opus-5-5"), r("openai", "gpt-5"), r("gemini")],
+    meta: [r("anthropic", "claude-sonnet-5-5"), r("openai", "gpt-5"), r("gemini")],
+    summary: [r("gemini"), r("openai", "gpt-5-nano"), r("anthropic", "claude-haiku-5-5")],
+    scenes: [r("gemini"), r("openai", "gpt-5-mini"), r("anthropic", "claude-haiku-5-5")],
   };
+}
+
+/** Đưa một AI lên đầu chuỗi của một việc (đổi nhanh trên màn flow); bỏ bản trùng, giữ các AI còn lại làm dự phòng. */
+export function promote(routing: Routing, task: AiTask, route: Route): Routing {
+  const same = (x: Route) => x.provider === route.provider && x.model === route.model;
+  return { ...routing, [task]: [route, ...routing[task].filter((x) => !same(x))].slice(0, 6) };
 }
 
 /** Lọc cấu hình đã lưu: bỏ dòng sai, việc nào trống thì về mặc định. */
