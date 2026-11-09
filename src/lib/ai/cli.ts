@@ -83,6 +83,8 @@ export function buildCommand(kind: CliKind, o: { home: string; model: string; sy
       GEMINI_CLI_HOME: o.home,
       GEMINI_FORCE_FILE_STORAGE: "true",
       GEMINI_DEFAULT_AUTH_TYPE: "oauth-personal",
+      // Chế độ không tương tác chỉ nhận đăng nhập Google khi có biến này (settings.json là dự phòng).
+      GOOGLE_GENAI_USE_GCA: "true",
       GEMINI_CLI_TRUST_WORKSPACE: "true",
       GEMINI_CLI_NO_RELAUNCH: "true",
       // Thay hẳn system prompt "trợ lý lập trình" của CLI bằng system của việc này.

@@ -34,7 +34,7 @@ describe("buildCommand", () => {
   it("gemini: đăng nhập Google, thay system prompt, JSON", () => {
     const c = buildCommand("gemini", o);
     expect(c.args).toEqual(expect.arrayContaining(["-o", "json", "--skip-trust"]));
-    expect(c.env).toMatchObject({ GEMINI_DEFAULT_AUTH_TYPE: "oauth-personal", GEMINI_FORCE_FILE_STORAGE: "true", GEMINI_CLI_HOME: "/tmp/h" });
+    expect(c.env).toMatchObject({ GOOGLE_GENAI_USE_GCA: "true", GEMINI_DEFAULT_AUTH_TYPE: "oauth-personal", GEMINI_FORCE_FILE_STORAGE: "true", GEMINI_CLI_HOME: "/tmp/h" });
     expect(c.env.GEMINI_SYSTEM_MD).toContain("system.md");
   });
 });

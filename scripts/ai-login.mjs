@@ -117,7 +117,7 @@ async function gemini() {
     console.log('Nếu hỏi "Do you want to continue? [Y/n]" → bấm Enter. Trình duyệt mở → chọn tài khoản Google có gói → Allow.');
     // Chế độ không tương tác: đăng nhập xong tự trả lời 1 câu rồi thoát (không cần /quit).
     await npx("gemini", ["-p", "Trả lời đúng một chữ: OK", "-o", "text"], {
-      env: { GEMINI_FORCE_FILE_STORAGE: "true", GEMINI_DEFAULT_AUTH_TYPE: "oauth-personal", GEMINI_CLI_TRUST_WORKSPACE: "true" },
+      env: { GOOGLE_GENAI_USE_GCA: "true", GEMINI_FORCE_FILE_STORAGE: "true", GEMINI_DEFAULT_AUTH_TYPE: "oauth-personal", GEMINI_CLI_TRUST_WORKSPACE: "true" },
     });
     creds = geminiCreds();
   }
