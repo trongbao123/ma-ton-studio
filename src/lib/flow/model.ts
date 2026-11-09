@@ -35,7 +35,15 @@ export const TITLES: Record<NodeId, string> = {
   youtube: "Đăng YouTube",
 };
 
-const RENDER_STEPS = ["agent", "tts", "images", "video"] as const;
+export const STATUS_LABEL: Record<Video["status"], [string, string]> = {
+  queued: ["Chờ render", "bg-zinc-700/60 text-zinc-200"],
+  rendering: ["Đang render…", "bg-sky-900/70 text-sky-300"],
+  ready: ["Sẵn sàng đăng", "bg-emerald-900/70 text-emerald-300"],
+  failed: ["Lỗi", "bg-red-900/70 text-red-300"],
+  published: ["Đã đăng", "bg-zinc-800 text-zinc-400"],
+};
+
+const RENDER_STEPS =["agent", "tts", "images", "video"] as const;
 
 export function formatSlot(iso: string) {
   return new Date(iso).toLocaleString("vi-VN", {

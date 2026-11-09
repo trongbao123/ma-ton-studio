@@ -18,10 +18,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="vi" className={`${font.variable} h-full antialiased`}>
       <body className="flex min-h-full flex-col font-sans">
-        <header className="border-b border-border">
-          <nav className="mx-auto flex max-w-5xl items-center gap-6 px-4 py-3">
+        <header className="h-12 border-b border-border">
+          <nav className="mx-auto flex h-full max-w-5xl items-center gap-6 px-4">
             <Link href="/" className="font-bold text-accent">
               Ma Tôn Studio
+            </Link>
+            <Link href="/" className="text-sm text-muted hover:text-foreground">
+              Truyện
             </Link>
             <Link href="/videos" className="text-sm text-muted hover:text-foreground">
               Video
