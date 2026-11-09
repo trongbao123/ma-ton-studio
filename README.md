@@ -15,3 +15,16 @@ Xưởng viết truyện tự động cho kênh YouTube "Ma Tôn Truyện". Kế
 |---|---|
 | `pnpm test` / `pnpm lint` / `pnpm typecheck` | kiểm tra |
 | `pnpm db:generate` | sinh migration sau khi sửa `src/db/schema.ts` |
+
+## Tự đăng YouTube
+Render xong là app tự upload video dài + Short, đặt thumbnail, bật nhãn nội dung AI và **lên lịch** đúng giờ (19h, Short sau 2 tiếng). Làm một lần:
+
+1. [Google Cloud Console](https://console.cloud.google.com/) → tạo project → **APIs & Services → Library** → bật **YouTube Data API v3**.
+2. **OAuth consent screen**: kiểu *External*, thêm email của bạn. Sau đó bấm **Publish app** để chuyển sang *In production* — để ở *Testing* thì token hết hạn sau 7 ngày. App chưa xác minh vẫn dùng được cho chính bạn, chỉ hiện màn cảnh báo "Google chưa xác minh" → bấm *Nâng cao → Tiếp tục*.
+3. **Credentials → Create credentials → OAuth client ID** → loại *Web application* → *Authorized redirect URIs*: `https://<tên-miền-vercel>/api/youtube/callback`.
+4. Thêm `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET` vào **Vercel** (Environment Variables) **và** GitHub repo → Settings → Secrets → Actions. Redeploy Vercel.
+5. Vào web → mở một video → node **Đăng YouTube** → **Kết nối YouTube** → chọn đúng kênh.
+
+> **Quan trọng — audit của Google:** project tạo sau 28/7/2020 chưa qua kiểm duyệt thì mọi video upload bằng API bị **khoá ở chế độ riêng tư**, kể cả đã lên lịch. Nộp đơn miễn phí tại [YouTube API Services audit form](https://support.google.com/youtube/contact/yt_api_form) (thường mất vài tuần). Trong lúc chờ: app vẫn upload + lên lịch, bạn vào YouTube Studio bấm công khai.
+
+Upload lỗi (token hết hạn, hết quota API…) thì Telegram báo, video vẫn ở trạng thái *sẵn sàng*: bấm **Kết nối lại** rồi **Đăng lại** trên node Đăng YouTube (chạy workflow `publish.yml`, không render lại).

@@ -1,6 +1,6 @@
 import { access, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { and, eq, gte, isNotNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { chapters, series, videos, type VideoMeta } from "@/db/schema";
 import { QuotaExhaustedError, textProvider } from "@/lib/ai";
@@ -10,6 +10,8 @@ import { duration, ffmpeg, filterPath, pool } from "./ffmpeg";
 import { Tracker } from "./progress";
 import { metaRequest, scenePrompts, scenesRequest, videoMeta } from "./prompts";
 import { ensureRelease, uploadAsset } from "./release";
+import { keepOrNextSlot } from "./schedule";
+import { publishToYoutube } from "./youtube";
 
 type ScenePrompt = Awaited<ReturnType<typeof scenePrompts>>[number];
 import { cuesForChunk, packChunks, sentences, toAss, type Cue } from "./text";
@@ -29,20 +31,6 @@ async function cached<T>(file: string, make: () => Promise<T>): Promise<T> {
   const value = await make();
   await writeFile(file, JSON.stringify(value));
   return value;
-}
-
-/** Khung giờ đăng tiếp theo: 19h giờ Việt Nam, mỗi ngày 1 video dài, bắt đầu từ hôm nay (hoặc mai nếu đã qua 17h). */
-export async function nextPublishSlot(now = new Date()) {
-  const taken = await db()
-    .select({ at: videos.publishAt })
-    .from(videos)
-    .where(and(isNotNull(videos.publishAt), gte(videos.publishAt, now)));
-  const days = new Set(taken.map((t) => t.at!.toISOString().slice(0, 10)));
-  // 19h VN = 12h UTC.
-  const slot = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 12));
-  if (slot.getTime() - now.getTime() < 2 * 3600_000) slot.setUTCDate(slot.getUTCDate() + 1);
-  while (days.has(slot.toISOString().slice(0, 10))) slot.setUTCDate(slot.getUTCDate() + 1);
-  return slot;
 }
 
 const MAX_TTS_CHARS = 4000;
@@ -416,7 +404,7 @@ export async function renderVideo(videoId: number) {
     await track.flush();
 
     // Lịch cũ đã qua (render lại muộn) thì lấy khung giờ mới.
-    const publishAt = v.publishAt && v.publishAt.getTime() > Date.now() + 15 * 60_000 ? v.publishAt : await nextPublishSlot();
+    const publishAt = await keepOrNextSlot(v.publishAt);
     await db()
       .update(videos)
       .set({ status: "ready", meta, durationSec: Math.round(long.seconds), publishAt, updatedAt: new Date() })
@@ -427,6 +415,8 @@ export async function renderVideo(videoId: number) {
         `📅 Lịch đăng: ${publishAt.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", weekday: "long", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}\n` +
         `👉 ${WEB_URL}/videos/${videoId}`,
     );
+    // Tự đăng (tự bỏ qua nếu tắt/chưa kết nối/đã đăng); lỗi đăng không làm hỏng video đã render.
+    await publishToYoutube(videoId, { long: longVideo.out, short: extras[0], thumb });
     if (process.env.GITHUB_ACTIONS) await rm(dir, { recursive: true, force: true });
     console.log(`✔ Xong video #${videoId} (${Math.round(long.seconds / 60)} phút)`);
   } catch (e) {

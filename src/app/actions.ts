@@ -7,7 +7,9 @@ import { db } from "@/db";
 import { appSettings, chapters, series, videos } from "@/db/schema";
 import { LAYOUT_KEY, mergeLayout, type Pos } from "@/lib/flow/layout";
 import { draftBible, planChapters, writeChapterStep, type WriteMode } from "@/lib/story/service";
-import { dispatchRender, queueVideo } from "@/lib/story/videos";
+import { dispatchPublish, dispatchRender, queueVideo } from "@/lib/story/videos";
+import { saveYoutubeAuth } from "@/lib/youtube";
+import { VOICES } from "@/lib/flow/voices";
 
 export type ActionState = { error?: string; ok?: string };
 
@@ -148,5 +150,41 @@ export async function markPublishedAction(videoId: number, _: ActionState, form:
       .where(eq(videos.id, videoId));
     revalidatePath("/videos", "layout");
     return "Đã đánh dấu đã đăng.";
+  });
+}
+
+/** Chỉnh nhanh trên node màn flow — lưu theo bộ truyện, áp dụng từ lần render sau. */
+export async function updateFlowSettingsAction(
+  seriesId: number,
+  patch: { ttsVoice?: string; makeShort?: boolean; autoPublish?: boolean },
+): Promise<ActionState> {
+  return attempt(async () => {
+    if (patch.ttsVoice !== undefined && !VOICES.some((v) => v.id === patch.ttsVoice)) throw new Error("Giọng không hợp lệ.");
+    const set = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined));
+    if (!Object.keys(set).length) return "Không có gì thay đổi.";
+    await db().update(series).set(set).where(eq(series.id, seriesId));
+    revalidatePath("/videos", "layout");
+    return "Đã lưu — áp dụng từ lần render sau.";
+  });
+}
+
+/** Đăng lại YouTube sau khi lỗi (vd token hỏng): chạy workflow publish.yml, không render lại. */
+export async function retryPublishAction(videoId: number): Promise<ActionState> {
+  return attempt(async () => {
+    const [v] = await db().select({ status: videos.status, youtubeVideoId: videos.youtubeVideoId }).from(videos).where(eq(videos.id, videoId));
+    if (v?.status !== "ready") throw new Error("Chỉ đăng lại được video đã render xong và chưa đăng.");
+    if (v.youtubeVideoId) throw new Error("Video đã có trên YouTube — kiểm tra trong YouTube Studio.");
+    await db().update(videos).set({ uploadStatus: "uploading", uploadError: null }).where(eq(videos.id, videoId));
+    if (!(await dispatchPublish(videoId))) throw new Error("Chưa cấu hình GH_TOKEN/GH_REPO trên Vercel — không gọi được GitHub Actions.");
+    revalidatePath("/videos", "layout");
+    return "Đang đăng lại…";
+  });
+}
+
+export async function disconnectYoutubeAction(): Promise<ActionState> {
+  return attempt(async () => {
+    await saveYoutubeAuth(null);
+    revalidatePath("/videos", "layout");
+    return "Đã ngắt kết nối YouTube.";
   });
 }

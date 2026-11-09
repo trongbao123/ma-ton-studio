@@ -8,11 +8,20 @@ export async function queueVideo(chapterId: number) {
   return v.id;
 }
 
-export async function dispatchRender(videoId: number) {
+export function dispatchRender(videoId: number) {
+  return dispatch("render.yml", videoId);
+}
+
+/** Đăng lại YouTube từ file đã render (workflow publish.yml). */
+export function dispatchPublish(videoId: number) {
+  return dispatch("publish.yml", videoId);
+}
+
+async function dispatch(workflow: string, videoId: number) {
   const token = process.env.GH_TOKEN;
   const repo = process.env.GH_REPO;
   if (!token || !repo || process.env.GITHUB_ACTIONS) return false;
-  const res = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/render.yml/dispatches`, {
+  const res = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/${workflow}/dispatches`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" },
     body: JSON.stringify({ ref: "main", inputs: { video_id: String(videoId) } }),

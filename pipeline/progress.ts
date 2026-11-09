@@ -11,11 +11,17 @@ const FLUSH_MS = 2000;
  * Ghi thưa (≤ 1 lần / 2s, đổi trạng thái thì ghi ngay) và nối tiếp nhau; lỗi DB chỉ cảnh báo, không làm hỏng render.
  */
 export class Tracker {
-  private p: VideoProgress = { steps: {} };
+  private p: VideoProgress;
   private timer: NodeJS.Timeout | null = null;
   private writing: Promise<void> = Promise.resolve();
 
-  constructor(private readonly videoId: number) {}
+  /** `initial`: nối thêm vào tiến độ đã có (vd bước đăng YouTube sau render) thay vì ghi đè. */
+  constructor(
+    private readonly videoId: number,
+    initial?: VideoProgress,
+  ) {
+    this.p = initial ? structuredClone(initial) : { steps: {} };
+  }
 
   private step(id: NodeId): StepProgress {
     return (this.p.steps[id] ??= { state: "wait", log: [] });
