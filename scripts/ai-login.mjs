@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Kết nối gói Claude Pro / ChatGPT Plus / Gemini cho job GitHub Actions — một lệnh, không copy/dán:
 //   node scripts/ai-login.mjs            → cả 3 gói (bỏ qua gói nào lỗi)
-//   node scripts/ai-login.mjs codex      → chỉ 1 gói (claude | codex | gemini)
+//   node scripts/ai-login.mjs gemini claude → chỉ các gói chỉ định (claude | codex | gemini)
 // Mỗi gói: mở trình duyệt để bạn bấm "Cho phép" → lấy thông tin đăng nhập → lưu thẳng vào GitHub Secrets
 // (gh secret set, mã hoá phía GitHub; không in token ra màn hình) → chạy workflow ai-check gọi thử và báo kết quả.
 // Cần: Node, GitHub CLI (gh) đã đăng nhập. Phiên bản CLI khớp với workflow.
@@ -17,8 +17,8 @@ const PKG = { claude: "@anthropic-ai/claude-code@2.1.311", codex: "@openai/codex
 const SECRET = { claude: "CLAUDE_CODE_OAUTH_TOKEN", codex: "CODEX_AUTH_JSON", gemini: "GEMINI_OAUTH_CREDS" };
 const NAME = { claude: "Claude Pro", codex: "ChatGPT Plus", gemini: "Gemini" };
 const win = process.platform === "win32";
-const arg = process.argv[2];
-const kinds = arg && PKG[arg] ? [arg] : ["codex", "gemini", "claude"];
+const picked = process.argv.slice(2).filter((a) => PKG[a]);
+const kinds = picked.length ? picked : ["codex", "gemini", "claude"];
 
 // Không để key API trong môi trường: CLI sẽ dùng key (tốn tiền) thay vì đăng nhập gói.
 const cleanEnv = (extra = {}) => {
@@ -27,19 +27,50 @@ const cleanEnv = (extra = {}) => {
   return env;
 };
 
-function npx(kind, args, { env = {}, pipeOut = false } = {}) {
+// Mở trang đăng nhập bằng Chrome (máy đặt Edge mặc định thì CLI vẫn mở thêm tab Edge — đóng tab đó là được).
+const CHROME = [
+  path.join(process.env.PROGRAMFILES ?? "C:\\Program Files", "Google", "Chrome", "Application", "chrome.exe"),
+  path.join(process.env["PROGRAMFILES(X86)"] ?? "C:\\Program Files (x86)", "Google", "Chrome", "Application", "chrome.exe"),
+  path.join(process.env.LOCALAPPDATA ?? "", "Google", "Chrome", "Application", "chrome.exe"),
+].find((p) => existsSync(p));
+const AUTH_HOST = /^https:\/\/(auth\.openai\.com|accounts\.google\.com|claude\.ai|console\.anthropic\.com|platform\.claude\.com)\//;
+const opened = new Set();
+
+/** Tìm URL đăng nhập trong output (bỏ mã màu; nối lại nếu bị xuống dòng giữa chừng) và mở bằng Chrome. */
+function openAuthUrls(text) {
+  if (!CHROME) return;
+  const lines = text.replace(/\u001b\[[0-9;?]*[A-Za-z]/g, "").split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/https:\/\/\S+/);
+    if (!m) continue;
+    let url = m[0];
+    for (let j = i + 1; j < lines.length && /^\s*\S+\s*$/.test(lines[j]) && !/^\s*https?:/.test(lines[j]); j++) url += lines[j].trim();
+    if (!AUTH_HOST.test(url) || opened.has(url) || !/[?&](state|code_challenge|client_id)=/.test(url)) continue;
+    opened.add(url);
+    spawn(CHROME, [url], { detached: true, stdio: "ignore" }).unref();
+  }
+}
+
+function npx(kind, args, { env = {} } = {}) {
   return new Promise((resolve) => {
     const child = spawn(win ? "npx.cmd" : "npx", ["-y", PKG[kind], ...args], {
-      stdio: ["inherit", pipeOut ? "pipe" : "inherit", "inherit"],
+      stdio: ["inherit", "pipe", "inherit"],
       env: cleanEnv(env),
       shell: win,
     });
     let out = "";
-    child.stdout?.on("data", (d) => {
+    let timer;
+    child.stdout.on("data", (d) => {
       process.stdout.write(d);
       out += d;
+      // URL có thể in thành nhiều đợt — đợi chút cho đủ rồi mới mở.
+      clearTimeout(timer);
+      timer = setTimeout(() => openAuthUrls(out), 700);
     });
-    child.on("close", (code) => resolve({ code, out }));
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      resolve({ code, out });
+    });
   });
 }
 
@@ -109,7 +140,7 @@ function findClaudeToken(text) {
 
 async function claude() {
   console.log("Trình duyệt sẽ mở → đăng nhập Claude (tài khoản có gói Pro/Max) → Authorize. Nếu trang hiện mã, dán mã vào cửa sổ này.");
-  const { out } = await npx("claude", ["setup-token"], { pipeOut: true });
+  const { out } = await npx("claude", ["setup-token"]);
   let token = findClaudeToken(out);
   if (!token || token.length < 60) {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
