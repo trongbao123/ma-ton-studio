@@ -108,7 +108,7 @@ export class Tracker {
     this.timer = null;
     const snapshot = structuredClone(this.p);
     this.writing = this.writing
-      .then(() => db().update(videos).set({ progress: snapshot }).where(eq(videos.id, this.videoId)))
+      .then(() => db().update(videos).set({ progress: snapshot, updatedAt: new Date() }).where(eq(videos.id, this.videoId)))
       .then(() => undefined)
       .catch((e) => console.warn("⚠ Không ghi được tiến độ:", e instanceof Error ? e.message : e));
     return this.writing;

@@ -53,6 +53,16 @@ export const STATUS_LABEL: Record<Video["status"], [string, string]> = {
 
 const RENDER_STEPS = ["agent", "tts", "images", "video"] as const;
 
+/**
+ * Video kẹt "đang render" (job bị huỷ/hết giờ giữa chừng): pipeline mới ghi tiến độ ~2s/lần nên 30 phút im lặng là kẹt;
+ * video chạy bằng pipeline cũ (không có tiến độ) thì chờ 4 giờ — bằng giới hạn job daily.
+ */
+export function isStale(v: FlowData["video"], now = Date.now()) {
+  if (v.status !== "rendering") return false;
+  const quiet = now - Date.parse(v.updatedAt);
+  return quiet > (Object.keys(v.progress?.steps ?? {}).length ? 30 : 240) * 60_000;
+}
+
 const WEEKDAYS = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
 const pad = (n: number) => String(n).padStart(2, "0");
 

@@ -14,11 +14,11 @@ import {
   type Node,
 } from "@xyflow/react";
 import Link from "next/link";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore, useTransition } from "react";
 import { rerenderAction, resetFlowLayoutAction, saveFlowLayoutAction } from "@/app/actions";
 import { ActionForm } from "@/components/action-form";
 import { DEFAULT_POSITIONS, MAIN_ORDER, SUB_NODES, type CanvasNodeId, type Pos } from "@/lib/flow/layout";
-import { buildFlow, formatSlot, formatTime, STATUS_LABEL, TITLES, type FlowData, type NodeId, type StepView } from "@/lib/flow/model";
+import { buildFlow, formatSlot, formatTime, isStale, STATUS_LABEL, TITLES, type FlowData, type NodeId, type StepView } from "@/lib/flow/model";
 import { Inspector } from "./inspector";
 import { nodeTypes } from "./nodes";
 
@@ -80,6 +80,7 @@ function firstOpen(steps: Record<NodeId, StepView>): NodeId {
 }
 
 const POLL_MS = 2000;
+const noopSubscribe = () => () => {};
 
 /** 6 dòng nhật ký mới nhất của mọi bước, mới nhất trước — chạy ở thanh dưới cùng. */
 function recentLog(d: FlowData) {
@@ -91,7 +92,7 @@ function recentLog(d: FlowData) {
 
 /** Video còn đang chạy (render / chờ máy nhận job / upload YouTube) thì cần cập nhật trực tiếp. */
 const isLive = (d: FlowData) =>
-  d.video.status === "rendering" || d.video.uploadStatus === "uploading" || (d.video.status === "queued" && !d.video.error);
+  (d.video.status === "rendering" && !isStale(d.video)) || d.video.uploadStatus === "uploading" || (d.video.status === "queued" && !d.video.error);
 
 /**
  * Dữ liệu màn flow cập nhật gần realtime: hỏi `/api/flow/[id]` mỗi 2s khi video đang chạy và tab đang mở.
@@ -147,6 +148,9 @@ function Studio({ data: initial, layout }: Props) {
   }, [measured, fitView]);
   const v = data.video;
   const [label, tone] = STATUS_LABEL[v.status];
+  // Chỉ tính trên client (cần giờ hiện tại) để HTML server và lần hydrate đầu giống nhau.
+  const onClient = useSyncExternalStore(noopSubscribe, () => true, () => false);
+  const stale = onClient && isStale(v);
 
   const select = (id: NodeId) => {
     setSelected(id);
@@ -191,7 +195,7 @@ function Studio({ data: initial, layout }: Props) {
         <button type="button" onClick={resetLayout} className="btn-secondary !px-3 !py-1.5 text-xs">
           ⤢<span className="hidden sm:inline"> Sắp xếp lại</span>
         </button>
-        {(v.status === "failed" || v.status === "ready" || v.status === "queued") && (
+        {(v.status === "failed" || v.status === "ready" || v.status === "queued" || stale) && (
           <ActionForm action={rerenderAction.bind(null, v.id)} submitLabel="↻ Render lại" variant="secondary" />
         )}
       </header>
