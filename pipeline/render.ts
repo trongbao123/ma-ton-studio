@@ -119,7 +119,8 @@ export async function shot(img: string, out: string, seconds: number, w: number,
     "-vf",
     `${LOGO_CROP}scale=${w * 2}:${h * 2}:force_original_aspect_ratio=increase:flags=lanczos,crop=${w * 2}:${h * 2}:(iw-ow)/2:(ih-oh)*0.3,unsharp=5:5:1.0,` +
       `zoompan=z='${z}':x='${x}':y='${y}':d=1:s=${w}x${h}:fps=${FPS},format=yuv420p`,
-    "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-r", String(FPS), out,
+    // File tạm (còn mã hoá lại ở bước cuối) → nén nhanh hơn, crf thấp hơn để không mất chất lượng; đỡ phút GitHub Actions.
+    "-c:v", "libx264", "-preset", "superfast", "-crf", "18", "-r", String(FPS), out,
   ]);
 }
 
@@ -137,7 +138,7 @@ export async function crossfadeGroup(clips: { file: string; seconds: number; fad
     graph += `${prev}[${i + 1}]xfade=transition=${next.fx}:duration=${next.fade}:offset=${offset.toFixed(3)}${label};`;
     prev = label;
   });
-  await ffmpeg([...inputs, "-filter_complex", graph.slice(0, -1), "-map", "[v]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", out]);
+  await ffmpeg([...inputs, "-filter_complex", graph.slice(0, -1), "-map", "[v]", "-c:v", "libx264", "-preset", "superfast", "-crf", "18", out]);
 }
 
 export async function buildVideo(opts: {
