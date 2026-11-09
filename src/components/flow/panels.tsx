@@ -9,6 +9,7 @@ import { ActionForm } from "@/components/action-form";
 import { CopyButton } from "@/components/copy-button";
 import { formatSlot, formatTime, type FlowData, type NodeId } from "@/lib/flow/model";
 import type { Scene } from "@/lib/flow/progress";
+import { scoreMeta, type SeoScore } from "@/lib/flow/seo";
 import { VOICES } from "@/lib/flow/voices";
 
 export type Tab = "out" | "in" | "log";
@@ -29,6 +30,47 @@ function Sec({ title, children, right }: { title: string; children: ReactNode; r
       </div>
       {children}
     </section>
+  );
+}
+
+const tone = (n: number) => (n >= 80 ? "text-emerald-400" : n >= 50 ? "text-amber-400" : "text-rose-400");
+
+/** Một mục có điểm SEO kiểu vidIQ: số màu ở góc phải, bấm để xem checklist chấm điểm. */
+function ScoredSec({ title, seo, children }: { title: string; seo: SeoScore; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Sec
+      title={title}
+      right={
+        <button
+          type="button"
+          onClick={() => setOpen(!open)}
+          aria-expanded={open}
+          title={seo.source === "vidiq" ? "Điểm vidIQ — bấm xem chi tiết" : "Điểm SEO — bấm xem chi tiết"}
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 hover:bg-white/5"
+        >
+          <span className="text-[10px] uppercase tracking-wider text-muted">{seo.source === "vidiq" ? "vidIQ" : "SEO"}</span>
+          <span className={`text-base font-semibold tabular-nums ${tone(seo.score)}`}>{seo.score}</span>
+          <ChevronDown size={12} className={`text-muted transition ${open ? "rotate-180" : ""}`} />
+        </button>
+      }
+    >
+      {children}
+      {open && (
+        <ul className="mt-2 space-y-1 rounded-xl border border-border bg-card/60 px-3 py-2.5 text-xs">
+          {seo.checks.map((c) => (
+            <li key={c.text} className="flex items-start gap-2">
+              <span className={c.ok ? "text-emerald-400" : c.points > 0 ? "text-amber-400" : "text-rose-400"}>{c.ok ? "✓" : c.points > 0 ? "◐" : "✕"}</span>
+              <span className="min-w-0 flex-1 text-zinc-300">{c.text}</span>
+              <span className="shrink-0 tabular-nums text-muted">
+                {c.points}/{c.max}
+              </span>
+            </li>
+          ))}
+          {seo.source === "vidiq" && <li className="pt-1 text-muted">Số to là điểm vidIQ; checklist trên là app tự kiểm.</li>}
+        </ul>
+      )}
+    </Sec>
   );
 }
 
@@ -174,6 +216,7 @@ function Agent({ data, tab }: PanelProps) {
     );
   if (tab === "log") return <StepLog data={data} id="agent" />;
   const model = data.video.progress?.steps.agent?.model;
+  const score = m ? scoreMeta(m, data.series.title) : null;
   return (
     <>
       <Sec
@@ -186,17 +229,32 @@ function Agent({ data, tab }: PanelProps) {
       >
         <p className="text-xs">{model ?? <span className="text-muted">Chưa ghi model cụ thể (video cũ)</span>}</p>
       </Sec>
-      {!m ? (
+      {!m || !score ? (
         <Empty text="AI Agent chưa trả kết quả cho video này." />
       ) : (
         <>
-          <Sec title="Tiêu đề YouTube">
+          <SeoSummary score={score} />
+          <ScoredSec title="Tiêu đề YouTube" seo={score.title}>
             <Code>{m.title}</Code>
-          </Sec>
-          <Sec title="Mô tả">
+          </ScoredSec>
+          {m.seo?.titleOptions && m.seo.titleOptions.length > 1 && (
+            <Sec title="Các phương án tiêu đề (vidIQ chấm)">
+              <ul className="space-y-1.5">
+                {[...m.seo.titleOptions]
+                  .sort((a, b) => (b.score ?? -1) - (a.score ?? -1))
+                  .map((o) => (
+                    <li key={o.title} className="flex items-start justify-between gap-3 text-xs">
+                      <span className={o.title === m.title ? "text-zinc-100" : "text-muted"}>{o.title}</span>
+                      <span className={`shrink-0 font-semibold tabular-nums ${o.score == null ? "text-muted" : tone(o.score)}`}>{o.score ?? "?"}</span>
+                    </li>
+                  ))}
+              </ul>
+            </Sec>
+          )}
+          <ScoredSec title="Mô tả" seo={score.description}>
             <More text={m.description} />
-          </Sec>
-          <Sec title="Tag">
+          </ScoredSec>
+          <ScoredSec title="Tag" seo={score.tags}>
             <div className="flex flex-wrap gap-1.5">
               {m.tags.map((t) => (
                 <span key={t} className="rounded-full border border-border bg-card px-2.5 py-0.5 text-[11px]">
@@ -204,13 +262,36 @@ function Agent({ data, tab }: PanelProps) {
                 </span>
               ))}
             </div>
-          </Sec>
-          <Sec title="Short">
+          </ScoredSec>
+          <ScoredSec title="Short" seo={score.short}>
             <Code>{m.shortTitle}</Code>
-          </Sec>
+          </ScoredSec>
         </>
       )}
     </>
+  );
+}
+
+/** Điểm SEO tổng (trung bình 4 mục) — như vòng điểm của vidIQ. */
+function SeoSummary({ score }: { score: ReturnType<typeof scoreMeta> }) {
+  const parts = [score.title, score.description, score.tags, score.short];
+  const total = Math.round(parts.reduce((n, p) => n + p.score, 0) / parts.length);
+  const deg = Math.round((total / 100) * 360);
+  const color = total >= 80 ? "#34d399" : total >= 50 ? "#fbbf24" : "#fb7185";
+  return (
+    <div className="mb-7 flex items-center gap-4 rounded-xl border border-border bg-card/60 px-4 py-3">
+      <div className="grid h-14 w-14 shrink-0 place-items-center rounded-full" style={{ background: `conic-gradient(${color} ${deg}deg, #27272a 0)` }}>
+        <div className="grid h-11 w-11 place-items-center rounded-full bg-[#0e0e12]">
+          <span className={`text-lg font-semibold tabular-nums ${tone(total)}`}>{total}</span>
+        </div>
+      </div>
+      <div className="min-w-0 text-xs">
+        <p className="font-medium text-zinc-200">Điểm SEO</p>
+        <p className="mt-0.5 text-muted">
+          {score.title.source === "vidiq" ? "Tiêu đề do vidIQ chấm, còn lại app tự chấm." : "App tự chấm theo checklist kiểu vidIQ."} Bấm số ở từng mục để xem chi tiết.
+        </p>
+      </div>
+    </div>
   );
 }
 

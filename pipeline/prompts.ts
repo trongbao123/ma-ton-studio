@@ -7,12 +7,12 @@ const ART_STYLE =
   "Chinese 3D donghua CG animation still, xianxia cultivation world, premium 3D anime render, Unreal Engine 5, octane render, beautiful handsome characters with flawless detailed faces and long flowing hair, fully clothed in ornate layered hanfu robes with embroidery, glowing spiritual energy and qi aura, floating immortal mountains, sea of clouds, volumetric god rays, cinematic composition, depth of field, ultra detailed, 8k, no text, no watermark, no nudity";
 
 const metaSchema = z.object({
-  title: z.string().describe("Tiêu đề YouTube 60–90 ký tự, viết hoa chữ cái đầu như câu thường (KHÔNG in hoa toàn bộ), gây tò mò, có tên truyện và số chương"),
+  title: z.string().describe("Tiêu đề YouTube 50–70 ký tự (quá 70 bị cắt trên điện thoại), mở đầu bằng tên truyện (tên dài thì dùng phần trước dấu ':'), có số chương, có ít nhất 1 từ khóa trong tag, viết hoa chữ cái đầu như câu thường (KHÔNG in hoa toàn bộ), gây tò mò"),
   titleAlternatives: z.array(z.string()).describe("2 phương án tiêu đề khác theo cùng yêu cầu, góc gây tò mò khác nhau"),
-  description: z.string().describe("Mô tả 3 đoạn: tóm tắt hấp dẫn không spoil kết, kêu gọi đăng ký/like, hashtag"),
-  tags: z.array(z.string()).describe("15–25 tag tiếng Việt và không dấu"),
-  shortTitle: z.string().describe("Tiêu đề Short ≤ 70 ký tự, có #shorts"),
-  shortDescription: z.string(),
+  description: z.string().describe("Mô tả 220–300 từ, chia 3–4 đoạn: câu đầu tiên chứa tên truyện; tóm tắt hấp dẫn không spoil kết; nhắc tên truyện ít nhất 2 lần và lồng tự nhiên ít nhất 1/3 số tag (không nhồi nhét); kêu gọi đăng ký/like/bật chuông; dòng cuối 3–5 hashtag"),
+  tags: z.array(z.string()).describe("15–25 tag tiếng Việt và không dấu, tổng 300–480 ký tự; tag đầu tiên là tên truyện; trộn tag ngắn 1–2 từ và tag dài 3+ từ; không trùng nhau"),
+  shortTitle: z.string().describe("Tiêu đề Short ≤ 60 ký tự, có tên nhân vật chính hoặc tên truyện, có #shorts"),
+  shortDescription: z.string().describe("1–2 câu có tên truyện, mời xem video full trên kênh, kèm #shorts"),
   shortScript: z.string().describe("Lời đọc cho Short 90–130 từ: hook cực mạnh câu đầu, kể đoạn gay cấn nhất, dừng ở cao trào, câu cuối mời xem video full"),
   thumbnailText: z.string().describe("Chữ trên thumbnail, 2–5 từ IN HOA, giật gân"),
   thumbnailPrompt: z.string().describe("English image prompt cho thumbnail: cận cảnh nhân vật chính khoảnh khắc kịch tính nhất"),

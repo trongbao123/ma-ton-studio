@@ -56,6 +56,8 @@ export type VideoMeta = {
   tags: string[];
   shortTitle: string;
   shortDescription: string;
+  /** vidIQ chấm tiêu đề lúc render (nếu có key): điểm tiêu đề đã chọn + các phương án. */
+  seo?: { titleScore?: number | null; titleOptions?: { title: string; score: number | null }[] };
 };
 
 /** Một lần render cho một chương: video dài + 1 Short + thumbnail, lưu ở GitHub Release `video-<id>`. */

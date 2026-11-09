@@ -373,12 +373,14 @@ export async function renderVideo(videoId: number) {
     track.model("agent", textProvider().lastModel);
     // vidIQ chấm điểm tiêu đề gốc + 2 phương án, lấy tiêu đề điểm cao nhất.
     let title = m.title;
+    let seoInfo: VideoMeta["seo"];
     const options = [m.title, ...(m.titleAlternatives ?? [])].filter(Boolean);
     if (process.env.VIDIQ_API_KEY && options.length > 1) {
       const scores = await cached(path.join(dir, "vidiq-titles.json"), () => scoreTitles(options));
       if (scores) {
         const best = scores.reduce<number>((b, x, i) => ((x ?? -1) > (scores[b] ?? -1) ? i : b), 0);
         title = options[best];
+        seoInfo = { titleScore: scores[best], titleOptions: options.map((t, i) => ({ title: t, score: scores[i] ?? null })) };
         track.log("agent", `vidIQ chấm tiêu đề: ${options.map((t, i) => `${scores[i] ?? "?"} — ${t}`).join(" | ")}`.slice(0, 600));
       }
     }
@@ -389,6 +391,7 @@ export async function renderVideo(videoId: number) {
       tags: m.tags,
       shortTitle: m.shortTitle,
       shortDescription: m.shortDescription,
+      ...(seoInfo ? { seo: seoInfo } : {}),
     };
     await db().update(videos).set({ meta }).where(eq(videos.id, videoId));
 
