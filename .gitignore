@@ -44,3 +44,6 @@ next-env.d.ts
 AUTO_HANDOFF.md
 
 .superpowers/
+
+.vercel
+.env*
