@@ -28,10 +28,13 @@ export type FlowData = {
     youtubeVideoId: string | null;
     youtubeShortId: string | null;
   };
-  chapter: { id: number; number: number; title: string; words: number; opening: string; approvedAt: string };
+  /** `content`: toàn bộ chương để đọc ngay trên màn flow; `outline`: dàn ý (đầu vào của AI viết). */
+  chapter: { id: number; number: number; title: string; words: number; content: string; outline: string; approvedAt: string };
   series: { id: number; title: string; bibleExcerpt: string; voiceStyle: string; ttsVoice: string; makeShort: boolean; autoPublish: boolean };
   prevSummary: string | null;
   youtube: { connected: boolean; channel: string | null };
+  /** AI vẽ ảnh đứng đầu danh sách trong Cài đặt AI (để node con hiện đúng logo/model). */
+  ai: { imageModel: string };
 };
 
 export const TITLES: Record<NodeId, string> = {

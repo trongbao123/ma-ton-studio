@@ -4,7 +4,7 @@ import { appSettings } from "@/db/schema";
 import { AnthropicProvider } from "./anthropic";
 import { GeminiProvider, QuotaExhaustedError } from "./gemini";
 import { OpenAIProvider } from "./openai";
-import { DEFAULT_MODEL, normalizeRouting, PROVIDERS, ROUTING_KEY, type ProviderId, type Route, type Routing } from "./routing";
+import { DEFAULT_MODEL, IMAGE_ROUTING_KEY, normalizeImageRouting, normalizeRouting, PROVIDERS, ROUTING_KEY, type ImageRoute, type ProviderId, type Route, type Routing } from "./routing";
 import type { JsonRequest, TextProvider, TextRequest } from "./types";
 
 export type { TextProvider } from "./types";
@@ -50,6 +50,13 @@ export async function loadRouting(fresh = false): Promise<Routing> {
   }
   routingCache = { at: Date.now(), value: normalizeRouting(raw) };
   return routingCache.value;
+}
+
+/** Thứ tự AI vẽ ảnh đã lưu (trang Cài đặt AI). */
+export async function loadImageRouting(): Promise<ImageRoute[]> {
+  if (!process.env.DATABASE_URL) return normalizeImageRouting(null);
+  const [row] = await db().select({ value: appSettings.value }).from(appSettings).where(eq(appSettings.key, IMAGE_ROUTING_KEY)).catch(() => []);
+  return normalizeImageRouting(row?.value ?? null);
 }
 
 /**

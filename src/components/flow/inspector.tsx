@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import type { FlowData, NodeId, StepView } from "@/lib/flow/model";
-import { ICONS } from "./nodes";
+import { brandOfModel } from "@/components/brand-icons";
+import { NodeIcon } from "./nodes";
 import { PANELS, type Tab } from "./panels";
 
 const TABS: [Tab, string][] = [
@@ -40,9 +41,11 @@ export function Inspector({ data, steps, selected, open, onToggle }: Props) {
       }`}
     >
       <button type="button" onClick={() => onToggle(!open)} className="mx-auto mt-2 h-1 w-10 rounded-full bg-zinc-600 md:hidden" aria-label="Kéo lên / thu lại" />
-      <div className="px-4 pt-2 md:pt-4">
+      <div className="px-5 pt-2 md:pt-5">
         <div className="flex items-center gap-3" onClick={() => onToggle(true)}>
-          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-border bg-card text-lg">{ICONS[selected]}</div>
+          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-border bg-card text-lg">
+            <NodeIcon id={selected} brand={selected === "agent" ? brandOfModel(data.video.progress?.steps.agent?.model) : null} size={20} />
+          </div>
           <div className="min-w-0 flex-1">
             <h3 className="truncate text-[15px] font-bold">{view.title}</h3>
             <p className="truncate text-xs text-muted">
@@ -64,7 +67,7 @@ export function Inspector({ data, steps, selected, open, onToggle }: Props) {
             </button>
           )}
         </div>
-        <div className="mt-3 flex gap-1 border-b border-border text-[12.5px]">
+        <div className="mt-4 flex gap-1 border-b border-border text-[13px]">
           {TABS.map(([k, label]) => (
             <button
               key={k}
@@ -77,7 +80,7 @@ export function Inspector({ data, steps, selected, open, onToggle }: Props) {
           ))}
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-5 py-5">
         <Panel data={data} tab={tab} />
       </div>
     </aside>

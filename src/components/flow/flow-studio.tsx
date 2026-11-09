@@ -19,6 +19,7 @@ import { rerenderAction, resetFlowLayoutAction, saveFlowLayoutAction } from "@/a
 import { ActionForm } from "@/components/action-form";
 import { DEFAULT_POSITIONS, MAIN_ORDER, SUB_NODES, type CanvasNodeId, type Pos } from "@/lib/flow/layout";
 import { buildFlow, formatSlot, formatTime, isStale, STATUS_LABEL, TITLES, type FlowData, type NodeId, type StepView } from "@/lib/flow/model";
+import { brandOfModel } from "@/components/brand-icons";
 import { Inspector } from "./inspector";
 import { nodeTypes } from "./nodes";
 
@@ -38,8 +39,15 @@ const EDGE_COLOR = { done: "#2f7d4f", run: "#38bdf8", error: "#7f1d1d", wait: "#
 function subData(id: string, data: FlowData) {
   const s = SUB_NODES.find((x) => x.id === id)!;
   const model = data.video.progress?.steps.agent?.model;
-  return { id: s.id, title: s.title, subtitle: id === "model" && model ? model : s.subtitle };
+  if (id === "model") return { id, title: s.title, subtitle: model ?? s.subtitle, brand: brandOfModel(model) };
+  if (id === "imageModel") {
+    const m = data.ai.imageModel;
+    return { id, title: "AI vẽ ảnh", subtitle: m.replace(/^@cf\/[^/]+\//, ""), brand: brandOfModel(m) };
+  }
+  return { id, title: s.title, subtitle: s.subtitle };
 }
+
+const agentBrand = (data: FlowData) => brandOfModel(data.video.progress?.steps.agent?.model);
 
 function buildNodes(data: FlowData, steps: Record<NodeId, StepView>, layout: Record<CanvasNodeId, Pos>, selected: NodeId): Node[] {
   return [
@@ -47,7 +55,7 @@ function buildNodes(data: FlowData, steps: Record<NodeId, StepView>, layout: Rec
       id,
       type: id === "agent" ? "agent" : "step",
       position: layout[id],
-      data: { view: steps[id], selected: id === selected },
+      data: { view: steps[id], selected: id === selected, brand: id === "agent" ? agentBrand(data) : null },
     })),
     ...SUB_NODES.map((s) => ({ id: s.id, type: "sub", position: layout[s.id], data: subData(s.id, data) })),
   ];
@@ -136,7 +144,7 @@ function Studio({ data: initial, layout }: Props) {
   const measured = useNodesInitialized();
   // useNodesState chỉ lấy giá trị đầu — dữ liệu mới từ server (render lại, đã đăng, polling) phải đẩy vào node, giữ nguyên vị trí.
   useEffect(() => {
-    setNodes((ns) => ns.map((n) => ({ ...n, data: n.id in steps ? { ...n.data, view: steps[n.id as NodeId] } : subData(n.id, data) })));
+    setNodes((ns) => ns.map((n) => ({ ...n, data: n.id in steps ? { ...n.data, view: steps[n.id as NodeId], brand: n.id === "agent" ? agentBrand(data) : null } : subData(n.id, data) })));
   }, [steps, data, setNodes]);
   // fitView ban đầu có thể chạy trước khi node đo xong kích thước (hay gặp trên điện thoại) → fit lại, và fit khi xoay/đổi cỡ màn hình.
   useEffect(() => {
@@ -171,14 +179,30 @@ function Studio({ data: initial, layout }: Props) {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-[#111115] px-4 py-2.5">
-        <div className="min-w-0 basis-full sm:basis-0 sm:flex-1">
-          <Link href={`/series/${data.series.id}`} className="block truncate text-xs text-muted hover:text-foreground">
-            {data.series.title} › Video #{v.id}
+      <header className="flex flex-wrap items-center gap-x-4 gap-y-3 border-b border-border bg-[#111115] px-5 py-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
+        <div className="flex min-w-0 basis-full items-center gap-3 sm:basis-0 sm:flex-1">
+          <Link
+            href="/videos"
+            aria-label="Về danh sách video"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-red-500 to-fuchsia-700 text-sm font-black text-white shadow-[0_4px_14px_rgba(239,68,68,.35)]"
+          >
+            魔
           </Link>
-          <h1 className="truncate text-[15px] font-bold">
-            Chương {data.chapter.number} · {data.chapter.title}
-          </h1>
+          <div className="min-w-0">
+            <p className="truncate text-xs text-muted">
+              <Link href="/videos" className="hover:text-foreground">
+                Video
+              </Link>
+              <span className="mx-1.5 opacity-50">/</span>
+              <Link href={`/series/${data.series.id}`} className="hover:text-foreground">
+                {data.series.title}
+              </Link>
+              <span className="mx-1.5 opacity-50">/</span>#{v.id}
+            </p>
+            <h1 className="truncate text-base font-bold">
+              Chương {data.chapter.number} · {data.chapter.title}
+            </h1>
+          </div>
         </div>
         <span className={`rounded-full px-3 py-1 text-xs font-semibold ${tone}`}>
           <span className={live ? "animate-pulse" : ""}>●</span> {label}
@@ -206,7 +230,8 @@ function Studio({ data: initial, layout }: Props) {
         </p>
       )}
 
-      <div className="grid min-h-0 flex-1 md:grid-cols-[1fr_380px]">
+      {/* minmax(0,1fr): không để canvas đẩy rộng cột làm bảng chi tiết tràn khỏi màn hình. */}
+      <div className="grid min-h-0 flex-1 md:grid-cols-[minmax(0,1fr)_400px]">
         <div className="relative min-h-0 pb-14 md:pb-0">
           <ReactFlow
             nodes={nodes}
@@ -231,7 +256,7 @@ function Studio({ data: initial, layout }: Props) {
         <Inspector data={data} steps={steps} selected={selected} open={sheetOpen} onToggle={setSheetOpen} />
       </div>
 
-      <footer className="hidden gap-5 overflow-x-auto whitespace-nowrap [scrollbar-width:none] border-t border-border bg-[#111115] px-4 py-2 text-xs text-muted md:flex">
+      <footer className="hidden gap-6 overflow-x-auto whitespace-nowrap [scrollbar-width:none] border-t border-border bg-[#111115] px-5 py-2.5 text-xs text-muted md:flex">
         <span>
           <b className="text-foreground">{formatTime(v.createdAt)}</b> Tạo video
         </span>

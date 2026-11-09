@@ -56,3 +56,39 @@ export function normalizeRouting(raw: unknown): Routing {
 }
 
 export const ROUTING_KEY = "ai_routing";
+
+// ── Vẽ ảnh
+
+export type ImageProviderId = "cloudflare" | "gemini" | "openai";
+export type ImageRoute = { provider: ImageProviderId; model: string };
+
+export const IMAGE_PROVIDERS: { id: ImageProviderId; label: string; env: string; models: string[]; note: string }[] = [
+  { id: "cloudflare", label: "Cloudflare FLUX", env: "CLOUDFLARE_API_TOKEN", models: ["@cf/black-forest-labs/flux-1-schnell"], note: "free ~1 video/ngày" },
+  { id: "gemini", label: "Gemini (Nano Banana)", env: "GEMINI_API_KEY", models: ["gemini-nano-banana-2.1", "gemini-3.1-flash-lite-image", "gemini-3-pro-image"], note: "trả phí theo ảnh" },
+  { id: "openai", label: "ChatGPT (GPT Image)", env: "OPENAI_API_KEY", models: ["gpt-image-2"], note: "trả phí theo ảnh" },
+];
+
+export const DEFAULT_IMAGE_MODEL: Record<ImageProviderId, string> = {
+  cloudflare: "@cf/black-forest-labs/flux-1-schnell",
+  gemini: "gemini-nano-banana-2.1",
+  openai: "gpt-image-2",
+};
+
+/** Mặc định chỉ Cloudflare free (hết quota thì video chờ hôm sau) — AI vẽ trả phí do người dùng tự thêm. */
+export function defaultImageRouting(): ImageRoute[] {
+  return [{ provider: "cloudflare", model: "" }];
+}
+
+export function normalizeImageRouting(raw: unknown): ImageRoute[] {
+  const ids = IMAGE_PROVIDERS.map((p) => p.id);
+  const list = Array.isArray(raw) ? raw : [];
+  const routes = list.flatMap((r) => {
+    const x = r as Partial<ImageRoute>;
+    return x && ids.includes(x.provider as ImageProviderId)
+      ? [{ provider: x.provider as ImageProviderId, model: typeof x.model === "string" ? x.model.trim().slice(0, 80) : "" }]
+      : [];
+  });
+  return routes.length ? routes.slice(0, 6) : defaultImageRouting();
+}
+
+export const IMAGE_ROUTING_KEY = "image_routing";

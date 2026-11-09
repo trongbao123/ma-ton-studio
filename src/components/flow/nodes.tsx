@@ -1,12 +1,29 @@
 "use client";
 
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
+import { BrandIcon, STEP_ICONS, type BrandId } from "@/components/brand-icons";
 import type { NodeId, StepState, StepView } from "@/lib/flow/model";
 
-export const ICONS: Record<string, string> = {
-  trigger: "📖", agent: "🧠", tts: "🎙️", images: "🎨", video: "🎬", youtube: "▶️",
-  model: "✦", bible: "📜", summary: "🧾", imageModel: "☁️", label: "🏷️",
+/** Màu nét icon từng bước — dễ phân biệt khi nhìn lướt canvas. */
+const TINT: Record<string, string> = {
+  trigger: "text-emerald-300",
+  agent: "text-violet-300",
+  tts: "text-sky-300",
+  images: "text-pink-300",
+  video: "text-amber-300",
+  bible: "text-amber-200",
+  summary: "text-zinc-300",
+  label: "text-rose-300",
+  model: "text-violet-300",
 };
+
+/** Icon node: logo hãng thật (YouTube, Claude, OpenAI, Gemini, Cloudflare) khi biết, không thì icon nét. */
+export function NodeIcon({ id, brand, size = 30 }: { id: string; brand?: BrandId | null; size?: number }) {
+  if (brand) return <BrandIcon id={brand} size={size} />;
+  if (id === "youtube") return <BrandIcon id="youtube" size={size} />;
+  const Icon = STEP_ICONS[id];
+  return Icon ? <Icon size={size} strokeWidth={1.6} className={TINT[id]} /> : null;
+}
 
 const BORDER: Record<StepState, string> = {
   done: "border-emerald-600/80",
@@ -24,8 +41,8 @@ const BADGE: Partial<Record<StepState, [string, string]>> = {
 
 const handle = "!h-2.5 !w-2.5 !border-2 !border-[#0f0f13] !bg-[#55555f]";
 
-export type StepNodeData = { view: StepView; selected?: boolean };
-export type SubNodeData = { id: string; title: string; subtitle: string };
+export type StepNodeData = { view: StepView; selected?: boolean; brand?: BrandId | null };
+export type SubNodeData = { id: string; title: string; subtitle: string; brand?: BrandId | null };
 
 function Badge({ view }: { view: StepView }) {
   const b = BADGE[view.state];
@@ -55,7 +72,7 @@ export function StepNode({ data }: NodeProps<Node<StepNodeData>>) {
   return (
     <div className="group relative w-[84px] cursor-pointer">
       <div className={`${box} h-[84px] w-[84px] text-3xl ${BORDER[view.state]} ${ring(data.selected)}`}>
-        {ICONS[view.id]}
+        <NodeIcon id={view.id} brand={data.brand} />
         <Badge view={view} />
         {!first && <Handle type="target" position={Position.Left} className={handle} isConnectable={false} />}
         <Handle type="source" position={Position.Right} className={handle} isConnectable={false} />
@@ -88,16 +105,21 @@ export function AgentNode({ data }: NodeProps<Node<StepNodeData>>) {
   return (
     <div className="group relative w-[230px] cursor-pointer">
       <div
-        className={`${box} h-[94px] w-[230px] justify-start gap-3 px-5 text-[28px] ${
+        className={`${box} h-[104px] w-[230px] justify-start gap-3 px-5 pb-4 text-[28px] ${
           view.state === "done" ? "border-violet-500/80" : BORDER[view.state]
         } from-[#2a2140] to-[#19171f] ${ring(data.selected)}`}
       >
-        {ICONS.agent}
+        <NodeIcon id="agent" brand={data.brand} size={30} />
         <div className="min-w-0 text-left">
           <b className="block text-sm text-zinc-100">AI Agent</b>
           <small className="block truncate text-xs text-violet-300">Đạo diễn · {view.subtitle}</small>
         </div>
         <Badge view={view} />
+        <div className="pointer-events-none absolute inset-x-0 bottom-1.5 flex justify-around text-[10px] text-violet-200/55">
+          {AGENT_SLOTS.map((s) => (
+            <span key={s.id}>{s.label}</span>
+          ))}
+        </div>
         <Handle type="target" position={Position.Left} className={handle} isConnectable={false} />
         <Handle type="source" position={Position.Right} className={handle} isConnectable={false} />
         {AGENT_SLOTS.map((s, i) => (
@@ -117,11 +139,7 @@ export function AgentNode({ data }: NodeProps<Node<StepNodeData>>) {
           </div>
         )}
       </div>
-      <div className="pointer-events-none absolute inset-x-0 top-full mt-3 flex justify-around text-[10px] text-zinc-500">
-        {AGENT_SLOTS.map((s) => (
-          <span key={s.id}>{s.label}</span>
-        ))}
-      </div>
+
     </div>
   );
 }
@@ -130,7 +148,7 @@ export function SubNode({ data }: NodeProps<Node<SubNodeData>>) {
   return (
     <div className="group relative w-[52px] cursor-pointer">
       <div className="relative grid h-[52px] w-[52px] place-items-center rounded-full border-[1.5px] border-[#3a3a44] bg-[#1a1a20] text-xl shadow-[0_6px_16px_rgba(0,0,0,.45)] transition-transform group-hover:-translate-y-0.5">
-        {ICONS[data.id]}
+        <NodeIcon id={data.id} brand={data.brand} size={22} />
         <Handle type="target" position={Position.Top} className={handle} isConnectable={false} />
       </div>
       <div className="pointer-events-none absolute left-1/2 top-full mt-2 w-[80px] -translate-x-1/2 text-center leading-tight">

@@ -21,8 +21,8 @@ export function Empty({ text = PENDING }: { text?: string }) {
 
 function Sec({ title, children, right }: { title: string; children: ReactNode; right?: ReactNode }) {
   return (
-    <section className="mb-5">
-      <div className="mb-2 flex items-center justify-between gap-2">
+    <section className="mb-7 last:mb-0">
+      <div className="mb-3 flex items-center justify-between gap-2">
         <h4 className="text-[11px] font-medium uppercase tracking-wider text-muted">{title}</h4>
         {right}
       </div>
@@ -33,15 +33,15 @@ function Sec({ title, children, right }: { title: string; children: ReactNode; r
 
 function Row({ k, v }: { k: string; v: ReactNode }) {
   return (
-    <div className="flex justify-between gap-4 border-b border-dashed border-border py-1.5 text-xs">
+    <div className="flex items-baseline justify-between gap-6 border-b border-border/60 py-2.5 text-[13px]">
       <span className="shrink-0 text-muted">{k}</span>
-      <span className="min-w-0 text-right">{v}</span>
+      <span className="min-w-0 break-words text-right">{v}</span>
     </div>
   );
 }
 
 const Code = ({ children }: { children: ReactNode }) => (
-  <div className="whitespace-pre-wrap break-words rounded-xl border border-border bg-[#0e0e12] px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-zinc-300">
+  <div className="whitespace-pre-wrap break-words rounded-xl border border-border bg-[#0e0e12] px-4 py-3 text-[13px] leading-relaxed text-zinc-300">
     {children}
   </div>
 );
@@ -125,8 +125,9 @@ function StepLog({ data, id, extra }: { data: FlowData; id: NodeId; extra?: Reac
 }
 
 function Trigger({ data, tab }: PanelProps) {
-  if (tab !== "out") return <Empty text="Bước này không có đầu vào hay nhật ký riêng." />;
   const c = data.chapter;
+  if (tab === "in") return <Sec title="Dàn ý chương">{c.outline ? <More text={c.outline} limit={1200} /> : <Empty text="Chương không có dàn ý." />}</Sec>;
+  if (tab === "log") return <Empty text="Bước này không có nhật ký riêng." />;
   return (
     <>
       <Sec title={`Chương ${c.number}`}>
@@ -134,19 +135,22 @@ function Trigger({ data, tab }: PanelProps) {
         <Row k="Độ dài" v={`${c.words.toLocaleString("vi-VN")} chữ`} />
         <Row k="Duyệt lúc" v={formatTime(c.approvedAt)} />
       </Sec>
-      <Sec title="Đoạn mở">
-        {c.opening ? (
-          <Code>
-            {c.opening}
-            {c.opening.length >= 400 ? "…" : ""}
-          </Code>
+      <Sec
+        title="Nội dung chương"
+        right={
+          <Link href={`/chapters/${c.id}`} className="text-[11px] text-sky-400 hover:underline">
+            Sửa chương →
+          </Link>
+        }
+      >
+        {c.content ? (
+          <article className="whitespace-pre-wrap rounded-xl border border-border bg-[#0e0e12] px-4 py-3 font-serif text-[14px] leading-7 text-zinc-200">
+            {c.content}
+          </article>
         ) : (
           <Empty text="Chương chưa có nội dung." />
         )}
       </Sec>
-      <Link href={`/chapters/${c.id}`} className="btn-secondary inline-block">
-        Mở chương →
-      </Link>
     </>
   );
 }

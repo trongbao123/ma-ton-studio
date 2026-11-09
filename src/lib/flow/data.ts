@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { appSettings, chapters, series, videos } from "@/db/schema";
 import { LAYOUT_KEY, mergeLayout } from "./layout";
+import { DEFAULT_IMAGE_MODEL, IMAGE_ROUTING_KEY, normalizeImageRouting } from "@/lib/ai/routing";
 import { getYoutubeAuth } from "@/lib/youtube";
 import type { FlowData } from "./model";
 
@@ -14,13 +15,15 @@ export async function loadFlowData(videoId: number): Promise<FlowData | null> {
     .where(eq(videos.id, videoId));
   if (!row) return null;
   const { v, c, s } = row;
-  const [[prev], yt] = await Promise.all([
+  const [[prev], yt, [img]] = await Promise.all([
     db()
       .select({ summary: chapters.summary })
       .from(chapters)
       .where(and(eq(chapters.seriesId, s.id), eq(chapters.number, c.number - 1))),
     getYoutubeAuth(),
+    db().select({ value: appSettings.value }).from(appSettings).where(eq(appSettings.key, IMAGE_ROUTING_KEY)),
   ]);
+  const firstImage = normalizeImageRouting(img?.value)[0];
   const content = c.content.trim();
 
   return {
@@ -47,7 +50,8 @@ export async function loadFlowData(videoId: number): Promise<FlowData | null> {
       number: c.number,
       title: c.title,
       words: content ? content.split(/\s+/).length : 0,
-      opening: content.slice(0, 400),
+      content,
+      outline: c.outline,
       approvedAt: c.updatedAt.toISOString(),
     },
     series: {
@@ -61,6 +65,7 @@ export async function loadFlowData(videoId: number): Promise<FlowData | null> {
     },
     prevSummary: prev?.summary || null,
     youtube: { connected: Boolean(yt), channel: yt?.channel ?? null },
+    ai: { imageModel: firstImage.model || DEFAULT_IMAGE_MODEL[firstImage.provider] },
   };
 }
 

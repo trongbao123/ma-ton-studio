@@ -7,8 +7,8 @@ import { parseId } from "@/lib/params";
 
 export default function VideoFlowPage({ params }: PageProps<"/videos/[id]">) {
   return (
-    // Phủ đúng vùng dưới header (h-12), thoát khỏi khung max-w của layout để canvas full màn hình.
-    <div className="flow-dark fixed inset-x-0 bottom-0 top-12 z-10 bg-[#0d0d10] text-foreground">
+    // Phủ toàn màn hình (che cả menu site) — màn flow có thanh trên riêng, giống app n8n.
+    <div className="flow-dark fixed inset-0 z-30 bg-[#0d0d10] text-foreground">
       <Suspense fallback={<p className="p-6 text-muted">Đang tải flow…</p>}>
         <VideoFlow params={params} />
       </Suspense>

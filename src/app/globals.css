@@ -1,34 +1,25 @@
 @import "tailwindcss";
 
+/* Bảng màu "mực tàu + chu sa": app luôn tối, đồng bộ với màn flow. */
 :root {
-  --background: #fafaf9;
-  --foreground: #1c1917;
-  --muted: #78716c;
-  --border: #e7e5e4;
-  --card: #ffffff;
-  --accent: #b91c1c;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0c0a09;
-    --foreground: #f5f5f4;
-    --muted: #a8a29e;
-    --border: #292524;
-    --card: #1c1917;
-    --accent: #ef4444;
-  }
-}
-
-/* Màn flow luôn tối kiểu n8n, kể cả khi máy đang theme sáng. */
-.flow-dark {
-  --background: #0c0a09;
-  --foreground: #f5f5f4;
-  --muted: #a8a29e;
-  --border: #2c2c35;
-  --card: #1a1a20;
-  --accent: #ef4444;
+  --background: #0e0f14;
+  --foreground: #e9e6dd;
+  --muted: #8e8b84;
+  --border: #262833;
+  --card: #16171f;
+  --sidebar: #12131a;
+  --accent: #d2463b;
+  --seal: #d2463b;
+  --jade: #4fb39a;
+  --gold: #d4a84b;
   color-scheme: dark;
+}
+
+/* Màn flow: nền canvas sâu hơn một chút. */
+.flow-dark {
+  --background: #0c0d11;
+  --card: #1a1a20;
+  --border: #2c2c35;
 }
 
 @keyframes fadein {
@@ -46,8 +37,13 @@
   --color-muted: var(--muted);
   --color-border: var(--border);
   --color-card: var(--card);
+  --color-sidebar: var(--sidebar);
   --color-accent: var(--accent);
+  --color-seal: var(--seal);
+  --color-jade: var(--jade);
+  --color-gold: var(--gold);
   --font-sans: var(--font-be-vietnam);
+  --font-serif: var(--font-noto-serif);
 }
 
 body {
@@ -55,20 +51,34 @@ body {
   color: var(--foreground);
 }
 
+:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 @layer components {
   .btn-primary {
-    @apply rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50;
+    @apply rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white shadow-[0_4px_14px_rgba(210,70,59,.25)] hover:brightness-110 disabled:opacity-50;
   }
   .btn-secondary {
-    @apply rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-card disabled:opacity-50;
+    @apply rounded-lg border border-border bg-white/[.02] px-4 py-2 text-sm font-medium hover:bg-white/[.05] disabled:opacity-50;
   }
   .field {
-    @apply w-full rounded-md border border-border bg-card px-3 py-2 text-sm outline-none focus:border-accent;
+    @apply w-full rounded-lg border border-border bg-[#101118] px-3 py-2 text-sm outline-none focus:border-gold;
   }
   .label {
-    @apply mb-1 block text-sm font-medium text-muted;
+    @apply mb-1.5 block text-sm font-medium text-muted;
   }
   .card {
-    @apply rounded-lg border border-border bg-card p-5;
+    @apply rounded-xl border border-border bg-card p-6;
   }
 }

@@ -24,10 +24,11 @@ function data(v: VideoOverrides = {}): FlowData {
       youtubeShortId: null,
       ...v,
     },
-    chapter: { id: 7, number: 12, title: "Huyết Ma Điện", words: 5840, opening: "Gió tanh…", approvedAt: "2026-11-09T07:00:00.000Z" },
+    chapter: { id: 7, number: 12, title: "Huyết Ma Điện", words: 5840, content: "Gió tanh…", outline: "dàn ý", approvedAt: "2026-11-09T07:00:00.000Z" },
     series: { id: 1, title: "Ma Tôn Truyện", bibleExcerpt: "bible", voiceStyle: "giọng nam trầm", ttsVoice: "Algenib", makeShort: true, autoPublish: true },
     prevSummary: null,
     youtube: { connected: false, channel: null },
+    ai: { imageModel: "@cf/black-forest-labs/flux-1-schnell" },
   };
 }
 

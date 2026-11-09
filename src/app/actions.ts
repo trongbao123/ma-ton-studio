@@ -11,7 +11,7 @@ import { dispatchPublish, dispatchRender, queueVideo } from "@/lib/story/videos"
 import { saveYoutubeAuth } from "@/lib/youtube";
 import { VOICES } from "@/lib/flow/voices";
 import { availableProviders, providerFor } from "@/lib/ai";
-import { normalizeRouting, ROUTING_KEY, type ProviderId, type Routing } from "@/lib/ai/routing";
+import { IMAGE_ROUTING_KEY, normalizeImageRouting, normalizeRouting, ROUTING_KEY, type ImageRoute, type ProviderId, type Routing } from "@/lib/ai/routing";
 
 export type ActionState = { error?: string; ok?: string };
 
@@ -208,13 +208,17 @@ export async function disconnectYoutubeAction(): Promise<ActionState> {
 }
 
 /** Lưu thứ tự AI cho từng việc (trang Cài đặt AI). Job đang chạy nhận cấu hình mới trong ≤ 60 giây. */
-export async function saveAiRoutingAction(routing: Routing): Promise<ActionState> {
+export async function saveAiRoutingAction(routing: Routing, images: ImageRoute[]): Promise<ActionState> {
   return attempt(async () => {
-    const value = normalizeRouting(routing);
-    await db()
-      .insert(appSettings)
-      .values({ key: ROUTING_KEY, value })
-      .onConflictDoUpdate({ target: appSettings.key, set: { value, updatedAt: new Date() } });
+    for (const [key, value] of [
+      [ROUTING_KEY, normalizeRouting(routing)],
+      [IMAGE_ROUTING_KEY, normalizeImageRouting(images)],
+    ] as const) {
+      await db()
+        .insert(appSettings)
+        .values({ key, value })
+        .onConflictDoUpdate({ target: appSettings.key, set: { value, updatedAt: new Date() } });
+    }
     revalidatePath("/settings/ai");
     return "Đã lưu cài đặt AI.";
   });
