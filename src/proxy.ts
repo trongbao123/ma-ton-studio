@@ -1,7 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { isAuthorized } from "@/lib/auth";
 
+// Trang công khai Google bắt buộc để duyệt OAuth (trang chủ + chính sách bảo mật) — không chứa dữ liệu.
+const PUBLIC = new Set(["/about", "/privacy"]);
+
 export function proxy(request: NextRequest) {
+  if (PUBLIC.has(request.nextUrl.pathname)) return NextResponse.next();
   if (isAuthorized(request.headers.get("authorization"), process.env.ADMIN_PASSWORD, process.env.ADMIN_USER)) {
     return NextResponse.next();
   }
