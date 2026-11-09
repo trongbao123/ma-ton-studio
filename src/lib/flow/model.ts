@@ -4,7 +4,7 @@ import type { StepProgress, VideoProgress } from "./progress";
 export type FileName = "long.mp4" | "short.mp4" | "thumbnail.jpg" | "youtube.txt";
 export type NodeId = "trigger" | "agent" | "tts" | "images" | "video" | "youtube";
 export type StepState = "wait" | "run" | "done" | "error" | "skip";
-export type StepView = { id: NodeId; title: string; subtitle: string; state: StepState; warning?: string };
+export type StepView = { id: NodeId; title: string; subtitle: string; state: StepState; warning?: string; /** 0–1 khi đang chạy có đếm */ progress?: number };
 export type FlowNotice = { tone: "info" | "error"; text: string } | null;
 
 /** Dữ liệu màn flow — ngày giờ là chuỗi ISO để truyền được từ server sang client. */
@@ -130,7 +130,11 @@ export function buildFlow(d: FlowData): { steps: Record<NodeId, StepView>; notic
   const hasProgress = Object.keys(tracked).length > 0;
   for (const id of RENDER_STEPS) {
     const p = tracked[id];
-    if (p) steps[id] = step(id, p.state, progressSubtitle(p) ?? steps[id].subtitle, p.warning ?? steps[id].warning);
+    if (p) {
+      steps[id] = step(id, p.state, progressSubtitle(p) ?? steps[id].subtitle, p.warning ?? steps[id].warning);
+      const parts = [p.long, p.short].filter((x) => x && x.total > 0) as { done: number; total: number }[];
+      if (p.state === "run" && parts.length) steps[id].progress = parts.reduce((a, x) => a + x.done, 0) / parts.reduce((a, x) => a + x.total, 0);
+    }
     // Bước chưa tới lượt: chờ, hoặc bỏ qua nếu render đã lỗi ở bước trước.
     else if (hasProgress && !finished) steps[id] = step(id, v.status === "failed" ? "skip" : "wait", "chưa chạy");
   }

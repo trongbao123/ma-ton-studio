@@ -60,8 +60,17 @@ export function StepNode({ data }: NodeProps<Node<StepNodeData>>) {
         {!first && <Handle type="target" position={Position.Left} className={handle} isConnectable={false} />}
         <Handle type="source" position={Position.Right} className={handle} isConnectable={false} />
         {hasSub(view.id) && <Handle id="sub" type="source" position={Position.Bottom} className={handle} isConnectable={false} />}
+        {view.progress != null && <Bar value={view.progress} />}
       </div>
       <Label title={view.title} subtitle={view.subtitle} tone={view.state} />
+    </div>
+  );
+}
+
+function Bar({ value }: { value: number }) {
+  return (
+    <div className="absolute inset-x-2.5 bottom-2 h-1 overflow-hidden rounded-full bg-zinc-800">
+      <div className="h-full rounded-full bg-gradient-to-r from-sky-500 to-violet-400 transition-[width] duration-700" style={{ width: `${Math.round(value * 100)}%` }} />
     </div>
   );
 }
@@ -102,6 +111,11 @@ export function AgentNode({ data }: NodeProps<Node<StepNodeData>>) {
             isConnectable={false}
           />
         ))}
+        {view.progress != null && (
+          <div className="absolute inset-x-5 bottom-3 h-1 overflow-hidden rounded-full bg-zinc-800">
+            <div className="h-full rounded-full bg-violet-400 transition-[width] duration-700" style={{ width: `${Math.round(view.progress * 100)}%` }} />
+          </div>
+        )}
       </div>
       <div className="pointer-events-none absolute inset-x-0 top-full mt-3 flex justify-around text-[10px] text-zinc-500">
         {AGENT_SLOTS.map((s) => (
@@ -119,7 +133,7 @@ export function SubNode({ data }: NodeProps<Node<SubNodeData>>) {
         {ICONS[data.id]}
         <Handle type="target" position={Position.Top} className={handle} isConnectable={false} />
       </div>
-      <div className="pointer-events-none absolute left-1/2 top-full mt-2 w-[110px] -translate-x-1/2 text-center leading-tight">
+      <div className="pointer-events-none absolute left-1/2 top-full mt-2 w-[80px] -translate-x-1/2 text-center leading-tight">
         <b className="block truncate text-[11.5px] font-medium text-zinc-300">{data.title}</b>
         <span className="block truncate text-[10.5px] text-zinc-500">{data.subtitle}</span>
       </div>

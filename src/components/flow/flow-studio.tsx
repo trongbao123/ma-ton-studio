@@ -18,7 +18,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { rerenderAction, resetFlowLayoutAction, saveFlowLayoutAction } from "@/app/actions";
 import { ActionForm } from "@/components/action-form";
 import { DEFAULT_POSITIONS, MAIN_ORDER, SUB_NODES, type CanvasNodeId, type Pos } from "@/lib/flow/layout";
-import { buildFlow, formatSlot, formatTime, STATUS_LABEL, type FlowData, type NodeId, type StepView } from "@/lib/flow/model";
+import { buildFlow, formatSlot, formatTime, STATUS_LABEL, TITLES, type FlowData, type NodeId, type StepView } from "@/lib/flow/model";
 import { Inspector } from "./inspector";
 import { nodeTypes } from "./nodes";
 
@@ -34,7 +34,14 @@ export function FlowStudio(props: Props) {
 
 const EDGE_COLOR = { done: "#2f7d4f", run: "#38bdf8", error: "#7f1d1d", wait: "#3b3b46", skip: "#2a2a31" } as const;
 
-function buildNodes(steps: Record<NodeId, StepView>, layout: Record<CanvasNodeId, Pos>, selected: NodeId): Node[] {
+/** Node con hiện dữ liệu thật khi có (vd model AI đã chạy). */
+function subData(id: string, data: FlowData) {
+  const s = SUB_NODES.find((x) => x.id === id)!;
+  const model = data.video.progress?.steps.agent?.model;
+  return { id: s.id, title: s.title, subtitle: id === "model" && model ? model : s.subtitle };
+}
+
+function buildNodes(data: FlowData, steps: Record<NodeId, StepView>, layout: Record<CanvasNodeId, Pos>, selected: NodeId): Node[] {
   return [
     ...MAIN_ORDER.map((id) => ({
       id,
@@ -42,7 +49,7 @@ function buildNodes(steps: Record<NodeId, StepView>, layout: Record<CanvasNodeId
       position: layout[id],
       data: { view: steps[id], selected: id === selected },
     })),
-    ...SUB_NODES.map((s) => ({ id: s.id, type: "sub", position: layout[s.id], data: { id: s.id, title: s.title, subtitle: s.subtitle } })),
+    ...SUB_NODES.map((s) => ({ id: s.id, type: "sub", position: layout[s.id], data: subData(s.id, data) })),
   ];
 }
 
@@ -72,19 +79,64 @@ function firstOpen(steps: Record<NodeId, StepView>): NodeId {
   return MAIN_ORDER.find((id) => steps[id].state !== "done") ?? "video";
 }
 
-function Studio({ data, layout }: Props) {
+const POLL_MS = 2000;
+
+/** 6 dòng nhật ký mới nhất của mọi bước, mới nhất trước — chạy ở thanh dưới cùng. */
+function recentLog(d: FlowData) {
+  return Object.entries(d.video.progress?.steps ?? {})
+    .flatMap(([id, p]) => (p?.log ?? []).map((l) => ({ ...l, text: `${TITLES[id as NodeId]}: ${l.text}` })))
+    .sort((a, b) => b.at.localeCompare(a.at))
+    .slice(0, 6);
+}
+
+/** Video còn đang chạy (render / chờ máy nhận job / upload YouTube) thì cần cập nhật trực tiếp. */
+const isLive = (d: FlowData) =>
+  d.video.status === "rendering" || d.video.uploadStatus === "uploading" || (d.video.status === "queued" && !d.video.error);
+
+/**
+ * Dữ liệu màn flow cập nhật gần realtime: hỏi `/api/flow/[id]` mỗi 2s khi video đang chạy và tab đang mở.
+ * Next ẩn trang đã rời bằng <Activity> → effect bị dọn, interval tự dừng.
+ */
+function useLiveFlow(initial: FlowData) {
+  const [data, setData] = useState(initial);
+  const [seen, setSeen] = useState(initial);
+  // Server gửi dữ liệu mới (sau action revalidate) thì lấy luôn.
+  if (seen !== initial) {
+    setSeen(initial);
+    setData(initial);
+  }
+  const live = isLive(data);
+  const id = data.video.id;
+  useEffect(() => {
+    if (!live) return;
+    let stopped = false;
+    const timer = setInterval(async () => {
+      if (document.visibilityState !== "visible") return;
+      const res = await fetch(`/api/flow/${id}`, { cache: "no-store" }).catch(() => null);
+      if (!stopped && res?.ok) setData((await res.json()) as FlowData);
+    }, POLL_MS);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [live, id]);
+  return { data, live };
+}
+
+function Studio({ data: initial, layout }: Props) {
+  const { data, live } = useLiveFlow(initial);
   const { steps, notice } = useMemo(() => buildFlow(data), [data]);
   const [selected, setSelected] = useState<NodeId>(() => firstOpen(steps));
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [nodes, setNodes, onNodesChange] = useNodesState(buildNodes(steps, layout, selected));
+  const [nodes, setNodes, onNodesChange] = useNodesState(buildNodes(data, steps, layout, selected));
   const edges = useMemo(() => buildEdges(steps), [steps]);
   const { fitView, getNodes } = useReactFlow();
   const [, startTransition] = useTransition();
   const measured = useNodesInitialized();
   // useNodesState chỉ lấy giá trị đầu — dữ liệu mới từ server (render lại, đã đăng, polling) phải đẩy vào node, giữ nguyên vị trí.
   useEffect(() => {
-    setNodes((ns) => ns.map((n) => (n.id in steps ? { ...n, data: { ...n.data, view: steps[n.id as NodeId] } } : n)));
-  }, [steps, setNodes]);
+    setNodes((ns) => ns.map((n) => ({ ...n, data: n.id in steps ? { ...n.data, view: steps[n.id as NodeId] } : subData(n.id, data) })));
+  }, [steps, data, setNodes]);
   // fitView ban đầu có thể chạy trước khi node đo xong kích thước (hay gặp trên điện thoại) → fit lại, và fit khi xoay/đổi cỡ màn hình.
   useEffect(() => {
     if (!measured) return;
@@ -124,7 +176,10 @@ function Studio({ data, layout }: Props) {
             Chương {data.chapter.number} · {data.chapter.title}
           </h1>
         </div>
-        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${tone}`}>● {label}</span>
+        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${tone}`}>
+          <span className={live ? "animate-pulse" : ""}>●</span> {label}
+          {live && <span className="ml-1 font-normal opacity-70">· trực tiếp</span>}
+        </span>
         {v.publishAt && v.status !== "failed" && (
           <span className="hidden rounded-full border border-border bg-card px-3 py-1 text-xs sm:inline">📅 {formatSlot(v.publishAt)}</span>
         )}
@@ -172,7 +227,7 @@ function Studio({ data, layout }: Props) {
         <Inspector data={data} steps={steps} selected={selected} open={sheetOpen} onToggle={setSheetOpen} />
       </div>
 
-      <footer className="hidden gap-5 overflow-x-auto whitespace-nowrap border-t border-border bg-[#111115] px-4 py-2 text-xs text-muted md:flex">
+      <footer className="hidden gap-5 overflow-x-auto whitespace-nowrap [scrollbar-width:none] border-t border-border bg-[#111115] px-4 py-2 text-xs text-muted md:flex">
         <span>
           <b className="text-foreground">{formatTime(v.createdAt)}</b> Tạo video
         </span>
@@ -180,7 +235,11 @@ function Studio({ data, layout }: Props) {
           <b className="text-foreground">{formatTime(v.updatedAt)}</b> {label}
         </span>
         {v.status === "failed" && v.error && <span className="text-red-400">{v.error.slice(0, 120)}</span>}
-        <span className="opacity-60">Nhật ký từng bước sẽ có ở bản cập nhật pipeline</span>
+        {recentLog(data).map((l, i) => (
+          <span key={i}>
+            <b className="text-foreground">{formatTime(l.at).slice(0, 5)}</b> {l.text}
+          </span>
+        ))}
       </footer>
     </div>
   );
