@@ -8,9 +8,10 @@ import { appSettings, chapters, series, videos } from "@/db/schema";
 import { LAYOUT_KEY, mergeLayout, type Pos } from "@/lib/flow/layout";
 import { draftBible, planChapters, writeChapterStep, type WriteMode } from "@/lib/story/service";
 import { dispatchPublish, dispatchRender, queueVideo } from "@/lib/story/videos";
-import { saveYoutubeAuth } from "@/lib/youtube";
+import { saveYoutubeAuth, updateYoutubeSnippet } from "@/lib/youtube";
+import { optimizeMeta, SEO_TARGET } from "@/lib/seo-optimize";
 import { VOICES } from "@/lib/flow/voices";
-import { availableProviders, loadRouting, providerFor } from "@/lib/ai";
+import { availableProviders, canRun, loadRouting, providerFor } from "@/lib/ai";
 import { loadSecrets, saveSecret } from "@/lib/secrets";
 import { IMAGE_ROUTING_KEY, normalizeImageRouting, normalizeRouting, promote, ROUTING_KEY, type AiTask, type ImageRoute, type ProviderId, type Route, type Routing } from "@/lib/ai/routing";
 
@@ -225,6 +226,38 @@ export async function saveAiRoutingAction(routing: Routing, images: ImageRoute[]
   });
 }
 
+/**
+ * Magic fill trên màn flow: AI sửa tiêu đề / mô tả / tag / Short tới khi điểm SEO tổng ≥ 90 (tối đa 3 lượt).
+ * Video đã lên YouTube thì cập nhật luôn trên YouTube.
+ */
+export async function optimizeSeoAction(videoId: number): Promise<ActionState> {
+  return attempt(async () => {
+    const [row] = await db()
+      .select({ v: videos, c: chapters, s: series })
+      .from(videos)
+      .innerJoin(chapters, eq(chapters.id, videos.chapterId))
+      .innerJoin(series, eq(series.id, chapters.seriesId))
+      .where(eq(videos.id, videoId));
+    if (!row?.v.meta) throw new Error("Video chưa có tiêu đề/mô tả để tối ưu.");
+    const { v, c, s } = row;
+    const r = await optimizeMeta(v.meta!, { seriesTitle: s.title, chapterNumber: c.number, chapterTitle: c.title, summary: c.summary });
+    if (r.score <= r.from) return `Đã thử ${r.rounds} lượt nhưng chưa tăng được điểm (đang ${r.from}). Thử lại hoặc đổi AI viết tiêu đề/mô tả.`;
+    await db().update(videos).set({ meta: r.meta, updatedAt: new Date() }).where(eq(videos.id, videoId));
+    const notes: string[] = [];
+    if (v.youtubeVideoId) {
+      try {
+        await updateYoutubeSnippet(v.youtubeVideoId, r.meta);
+        if (v.youtubeShortId) await updateYoutubeSnippet(v.youtubeShortId, { title: r.meta.shortTitle, description: r.meta.shortDescription, tags: r.meta.tags });
+        notes.push("đã cập nhật lên YouTube");
+      } catch (e) {
+        notes.push(`chưa cập nhật được YouTube: ${e instanceof Error ? e.message.slice(0, 160) : e}`);
+      }
+    }
+    revalidatePath("/videos", "layout");
+    return `Điểm SEO ${r.from} → ${r.score}${r.score >= SEO_TARGET ? " ✓" : ""} sau ${r.rounds} lượt${notes.length ? ` — ${notes.join("; ")}` : ""}.`;
+  });
+}
+
 /** Đổi nhanh AI cho một việc ngay trên màn flow: đưa AI đã chọn lên đầu, các AI khác giữ làm dự phòng. */
 export async function setTaskAiAction(task: AiTask, route: Route): Promise<ActionState> {
   return attempt(async () => {
@@ -244,6 +277,7 @@ export async function testAiAction(provider: ProviderId, model: string): Promise
   return attempt(async () => {
     await loadSecrets();
     if (!availableProviders().includes(provider)) throw new Error("Chưa có key cho AI này — dán key ở mục Kết nối.");
+    if (!canRun(provider)) throw new Error("AI dùng gói chỉ chạy trong job GitHub Actions — đã lưu, sẽ dùng ở lần render sau.");
     const started = Date.now();
     const p = providerFor({ provider, model });
     const text = await p.generateText({

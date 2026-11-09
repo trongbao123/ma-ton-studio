@@ -79,3 +79,34 @@ export async function saveYoutubeAuth(auth: YoutubeAuth | null) {
 }
 
 export const redirectUri = (origin: string) => `${origin}/api/youtube/callback`;
+
+/** YouTube từ chối tag tổng > 500 ký tự (tag có dấu cách tính thêm 2 dấu ngoặc) và ký tự < > trong tiêu đề/mô tả. */
+export function cleanTags(tags: string[]) {
+  const out: string[] = [];
+  let used = 0;
+  for (const raw of tags) {
+    const t = raw.replace(/[<>,]/g, "").trim();
+    if (!t) continue;
+    const cost = t.length + (t.includes(" ") ? 2 : 0) + (out.length ? 1 : 0);
+    if (used + cost > 500) break;
+    out.push(t);
+    used += cost;
+  }
+  return out;
+}
+export const noAngle = (s: string) => s.replace(/[<>]/g, "");
+
+/** Sửa tiêu đề / mô tả / tag của video đã có trên YouTube (videos.update ghi đè cả snippet nên gửi đủ trường). */
+export async function updateYoutubeSnippet(youtubeId: string, s: { title: string; description: string; tags: string[] }) {
+  const auth = await getYoutubeAuth();
+  if (!auth) throw new YoutubeAuthError("Chưa kết nối YouTube.");
+  const res = await fetch("https://www.googleapis.com/youtube/v3/videos?part=snippet", {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${await accessToken(auth.refreshToken)}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      id: youtubeId,
+      snippet: { title: noAngle(s.title).slice(0, 100), description: noAngle(s.description).slice(0, 5000), tags: cleanTags(s.tags), categoryId: "24", defaultLanguage: "vi" },
+    }),
+  });
+  if (!res.ok) throw new Error(`YouTube từ chối cập nhật: ${res.status} ${(await res.text()).slice(0, 200)}`);
+}

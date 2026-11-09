@@ -5,10 +5,13 @@ import { useState, useTransition } from "react";
 import { saveAiRoutingAction, saveSecretAction, testAiAction, type ActionState } from "@/app/actions";
 import { ActionForm } from "@/components/action-form";
 import { BrandIcon, type BrandId } from "@/components/brand-icons";
-import { IMAGE_PROVIDERS, PROVIDERS, TASKS, type AiTask, type ImageRoute, type ProviderId, type Routing } from "@/lib/ai/routing";
+import { DEFAULT_MODEL, IMAGE_PROVIDERS, isCli, PROVIDERS, TASKS, type AiTask, type ImageRoute, type ProviderId, type Routing } from "@/lib/ai/routing";
 import { SECRET_KEYS, type SecretKey, type SecretStatus } from "@/lib/secret-keys";
 
-const BRAND: Record<string, BrandId> = { anthropic: "claude", openai: "openai", gemini: "gemini", cloudflare: "cloudflare" };
+const BRAND: Record<string, BrandId> = {
+  ...Object.fromEntries(PROVIDERS.map((p) => [p.id, p.brand])),
+  cloudflare: "cloudflare",
+};
 
 type Option = { id: string; label: string; models: string[]; placeholder: string; note?: string };
 type Row = { provider: string; model: string };
@@ -17,7 +20,7 @@ const TEXT_OPTIONS: Option[] = PROVIDERS.map((p) => ({
   id: p.id,
   label: p.label,
   models: p.models,
-  placeholder: p.id === "gemini" ? "tự chọn (danh sách dự phòng)" : `mặc định ${p.models[0]}`,
+  placeholder: p.cli ? "model mặc định của gói" : DEFAULT_MODEL[p.id] ? `mặc định ${DEFAULT_MODEL[p.id]}` : "tự chọn (danh sách dự phòng)",
 }));
 const IMAGE_OPTIONS: Option[] = IMAGE_PROVIDERS.map((p) => ({ id: p.id, label: p.label, models: p.models, placeholder: `mặc định ${p.models[0]}`, note: p.note }));
 
@@ -252,7 +255,10 @@ function SecretCard({ k, status, testModel }: { k: SecretKey; status: SecretStat
         />
       </ActionForm>
       <div className="flex flex-wrap gap-2">
-        {provider && status.source && (
+        {provider && isCli(provider) && status.source && (
+          <span className="text-xs text-muted">Chạy trong job GitHub Actions (render, viết chương hằng ngày) — không gọi thử từ web được.</span>
+        )}
+        {provider && !isCli(provider) && status.source && (
           <button
             type="button"
             disabled={pending}

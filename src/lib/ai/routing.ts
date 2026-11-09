@@ -1,48 +1,65 @@
 /** Định tuyến AI theo việc — thuần, dùng được cả ở server lẫn trang cài đặt. */
 
 export type AiTask = "story" | "summary" | "meta" | "scenes";
-export type ProviderId = "anthropic" | "openai" | "gemini";
-/** `model` rỗng = model mặc định của nhà cung cấp (Gemini: danh sách dự phòng trong env). */
+/** API (trả theo lượng dùng) và CLI đăng nhập bằng gói Pro/Plus (không tốn credit API, chỉ chạy trên GitHub Actions). */
+export type ProviderId = "anthropic" | "openai" | "gemini" | "claude-cli" | "codex-cli" | "gemini-cli";
+/** `model` rỗng = model mặc định của nhà cung cấp (Gemini: danh sách dự phòng trong env; CLI: model mặc định của gói). */
 export type Route = { provider: ProviderId; model: string };
 export type Routing = Record<AiTask, Route[]>;
 
 export const TASKS: { id: AiTask; label: string; note: string }[] = [
-  { id: "story", label: "Viết truyện", note: "Story bible, dàn ý, viết chương — văn hay nhất: Claude Opus" },
-  { id: "summary", label: "Tóm tắt chương", note: "Việc nhẹ — model rẻ nhất (Gemini lite) cho đỡ token" },
-  { id: "meta", label: "Tiêu đề / mô tả YouTube", note: "Ngắn nhưng quyết định lượt bấm — Claude Sonnet / GPT-5" },
-  { id: "scenes", label: "Prompt ảnh", note: "Prompt tiếng Anh nhiều cảnh — model nhanh, rẻ" },
+  { id: "story", label: "Viết truyện", note: "Story bible, dàn ý, viết chương — văn hay nhất: Claude" },
+  { id: "summary", label: "Tóm tắt chương", note: "Việc nhẹ — Gemini cho đỡ lượt của Claude/ChatGPT" },
+  { id: "meta", label: "Tiêu đề / mô tả YouTube", note: "Ngắn nhưng quyết định lượt bấm — ChatGPT / Claude" },
+  { id: "scenes", label: "Prompt ảnh", note: "Prompt tiếng Anh nhiều cảnh — Gemini nhanh" },
 ];
 
-export const PROVIDERS: { id: ProviderId; label: string; env: string; models: string[] }[] = [
-  { id: "anthropic", label: "Claude", env: "ANTHROPIC_API_KEY", models: ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5-1"] },
-  { id: "openai", label: "ChatGPT", env: "OPENAI_API_KEY", models: ["gpt-5", "gpt-5-mini", "gpt-5-nano"] },
-  { id: "gemini", label: "Gemini", env: "GEMINI_API_KEY", models: ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.1-flash-lite"] },
+export type ProviderInfo = { id: ProviderId; label: string; env: string; models: string[]; brand: "claude" | "openai" | "gemini"; cli?: string };
+
+export const PROVIDERS: ProviderInfo[] = [
+  { id: "claude-cli", label: "Claude (gói Pro)", env: "CLAUDE_CODE_OAUTH_TOKEN", models: ["opus", "sonnet", "haiku"], brand: "claude", cli: "claude" },
+  { id: "codex-cli", label: "ChatGPT (gói Plus)", env: "CODEX_AUTH_JSON", models: [], brand: "openai", cli: "codex" },
+  { id: "gemini-cli", label: "Gemini (gói Google)", env: "GEMINI_OAUTH_CREDS", models: [], brand: "gemini", cli: "gemini" },
+  { id: "anthropic", label: "Claude API", env: "ANTHROPIC_API_KEY", models: ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5-1"], brand: "claude" },
+  { id: "openai", label: "ChatGPT API", env: "OPENAI_API_KEY", models: ["gpt-5", "gpt-5-mini", "gpt-5-nano"], brand: "openai" },
+  { id: "gemini", label: "Gemini API", env: "GEMINI_API_KEY", models: ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.1-flash-lite"], brand: "gemini" },
 ];
 
-export const DEFAULT_MODEL: Record<ProviderId, string> = { anthropic: "claude-opus-5-5", openai: "gpt-5", gemini: "" };
+export const DEFAULT_MODEL: Record<ProviderId, string> = {
+  anthropic: "claude-opus-5-5",
+  openai: "gpt-5",
+  gemini: "",
+  "claude-cli": "",
+  "codex-cli": "",
+  "gemini-cli": "",
+};
 
-const ALL: ProviderId[] = ["anthropic", "openai", "gemini"];
+export const isCli = (p: ProviderId) => Boolean(PROVIDERS.find((x) => x.id === p)?.cli);
+
+const ALL = PROVIDERS.map((p) => p.id);
 const r = (provider: ProviderId, model = ""): Route => ({ provider, model });
 
 /**
- * Mặc định chia việc theo thế mạnh và giá: AI viết hay nhất cho truyện, model tầm trung cho tiêu đề/mô tả,
- * model rẻ cho tóm tắt và prompt ảnh. Gemini để trống model = tự chọn theo hạng việc (quality / cheap) trong danh sách dự phòng.
- * Nhà cung cấp nào chưa có key thì tự bỏ qua lúc chạy.
+ * Mặc định: gói Pro/Plus (CLI, không tốn credit) đứng trước, chia việc ra 3 gói cho đỡ hết lượt một gói —
+ * truyện cho Claude, tiêu đề/mô tả cho ChatGPT, việc nhẹ cho Gemini. Sau đó mới tới API trả phí, cuối cùng Gemini API free.
+ * Gemini API để trống model = tự chọn theo hạng việc (quality / cheap). AI chưa có key / không chạy được ở nơi này thì tự bỏ qua.
  */
 export function defaultRouting(): Routing {
   return {
-    story: [r("anthropic", "claude-opus-5-5"), r("openai", "gpt-5"), r("gemini")],
-    meta: [r("anthropic", "claude-sonnet-5-5"), r("openai", "gpt-5"), r("gemini")],
-    summary: [r("gemini"), r("openai", "gpt-5-nano"), r("anthropic", "claude-haiku-5-5")],
-    scenes: [r("gemini"), r("openai", "gpt-5-mini"), r("anthropic", "claude-haiku-5-5")],
+    story: [r("claude-cli", "opus"), r("codex-cli"), r("gemini-cli"), r("anthropic", "claude-opus-5-5"), r("openai", "gpt-5"), r("gemini")],
+    meta: [r("codex-cli"), r("claude-cli", "sonnet"), r("gemini-cli"), r("anthropic", "claude-sonnet-5-5"), r("openai", "gpt-5"), r("gemini")],
+    summary: [r("gemini-cli"), r("gemini"), r("codex-cli"), r("claude-cli", "haiku"), r("openai", "gpt-5-nano"), r("anthropic", "claude-haiku-5-5")],
+    scenes: [r("gemini-cli"), r("gemini"), r("codex-cli"), r("claude-cli", "haiku"), r("openai", "gpt-5-mini"), r("anthropic", "claude-haiku-5-5")],
   };
 }
 
 /** Đưa một AI lên đầu chuỗi của một việc (đổi nhanh trên màn flow); bỏ bản trùng, giữ các AI còn lại làm dự phòng. */
 export function promote(routing: Routing, task: AiTask, route: Route): Routing {
   const same = (x: Route) => x.provider === route.provider && x.model === route.model;
-  return { ...routing, [task]: [route, ...routing[task].filter((x) => !same(x))].slice(0, 6) };
+  return { ...routing, [task]: [route, ...routing[task].filter((x) => !same(x))].slice(0, MAX_ROUTES) };
 }
+
+const MAX_ROUTES = 8;
 
 /** Lọc cấu hình đã lưu: bỏ dòng sai, việc nào trống thì về mặc định. */
 export function normalizeRouting(raw: unknown): Routing {
@@ -57,7 +74,7 @@ export function normalizeRouting(raw: unknown): Routing {
           ? [{ provider: x.provider as ProviderId, model: typeof x.model === "string" ? x.model.trim().slice(0, 80) : "" }]
           : [];
       });
-      return [id, routes.length ? routes.slice(0, 6) : def[id]];
+      return [id, routes.length ? routes.slice(0, MAX_ROUTES) : def[id]];
     }),
   ) as Routing;
 }

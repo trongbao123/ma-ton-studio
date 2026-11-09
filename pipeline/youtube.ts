@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { chapters, series, videos } from "@/db/schema";
 import { escapeHtml, notify, WEB_URL } from "@/lib/notify";
-import { accessToken, getYoutubeAuth, YoutubeAuthError } from "@/lib/youtube";
+import { accessToken, cleanTags, getYoutubeAuth, noAngle, YoutubeAuthError } from "@/lib/youtube";
 import { Tracker } from "./progress";
 import { keepOrNextSlot } from "./schedule";
 
@@ -75,21 +75,7 @@ export async function autoPublishEligible(videoId: number) {
   return Boolean(row?.autoPublish && !row.ytId && (await getYoutubeAuth()));
 }
 
-/** YouTube từ chối tag tổng > 500 ký tự (tag có dấu cách tính thêm 2 dấu ngoặc) và ký tự < > trong tiêu đề/mô tả. */
-export function cleanTags(tags: string[]) {
-  const out: string[] = [];
-  let used = 0;
-  for (const raw of tags) {
-    const t = raw.replace(/[<>,]/g, "").trim();
-    if (!t) continue;
-    const cost = t.length + (t.includes(" ") ? 2 : 0) + (out.length ? 1 : 0);
-    if (used + cost > 500) break;
-    out.push(t);
-    used += cost;
-  }
-  return out;
-}
-const noAngle = (s: string) => s.replace(/[<>]/g, "");
+export { cleanTags };
 
 /**
  * Đăng video đã render lên YouTube theo lịch. Người gọi đã "giữ chỗ" (`uploadStatus = uploading`):

@@ -13,6 +13,7 @@ import { ensureRelease, uploadAsset } from "./release";
 import { keepOrNextSlot } from "./schedule";
 import { loadSecrets } from "@/lib/secrets";
 import { keywordResearch, scoreTitles } from "./vidiq";
+import { AI_NOTE, optimizeMeta } from "@/lib/seo-optimize";
 import { autoPublishEligible, publishToYoutube } from "./youtube";
 
 type ScenePrompt = Awaited<ReturnType<typeof scenePrompts>>[number];
@@ -385,14 +386,20 @@ export async function renderVideo(videoId: number) {
       }
     }
     track.tick("agent", "long", `Tiêu đề: ${title}`);
-    const meta: VideoMeta = {
+    const draft: VideoMeta = {
       title: title.length > 100 ? `${title.slice(0, 97)}…` : title,
-      description: `${m.description}\n\n(Nội dung có sử dụng AI hỗ trợ giọng đọc và hình ảnh.)`,
+      description: `${m.description}\n\n${AI_NOTE}`,
       tags: m.tags,
       shortTitle: m.shortTitle,
       shortDescription: m.shortDescription,
       ...(seoInfo ? { seo: seoInfo } : {}),
     };
+    // Magic fill: điểm SEO tổng < 90 thì AI sửa đúng tiêu chí đang mất điểm (tối đa 3 lượt). Cache để chạy lại không tốn lượt.
+    const fixed = await cached(path.join(dir, "meta-seo.json"), () =>
+      optimizeMeta(draft, { seriesTitle: s.title, chapterNumber: c.number, chapterTitle: c.title, summary: c.summary }, { log: (t) => track.log("agent", t) }),
+    );
+    const meta = fixed.meta;
+    track.log("agent", fixed.rounds ? `Điểm SEO: ${fixed.from} → ${fixed.score} sau ${fixed.rounds} lượt tối ưu` : `Điểm SEO: ${fixed.score} (đạt)`);
     await db().update(videos).set({ meta }).where(eq(videos.id, videoId));
 
     // ── Giọng đọc

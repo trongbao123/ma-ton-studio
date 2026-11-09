@@ -95,7 +95,8 @@ export function scoreDescription(description: string, keywords: string[], tags: 
 
 export function scoreTags(tags: string[], keywords: string[], title: string, description: string): SeoScore {
   const n = tags.length;
-  const chars = tags.join(",").length;
+  // Đếm như YouTube: tag có dấu cách tính thêm 2 (dấu ngoặc kép), cộng dấu phẩy ngăn cách.
+  const chars = tags.reduce((n, t, i) => n + t.length + (t.includes(" ") ? 2 : 0) + (i ? 1 : 0), 0);
   const firstKw = n > 0 && keywords.some((k) => norm(tags[0]).includes(norm(k)) || norm(k).includes(norm(tags[0])));
   const anyKw = tags.some((t) => keywords.some((k) => norm(t).includes(norm(k))));
   const relevant = n ? tags.filter((t) => has(`${title}\n${description}`, t)).length / n : 0;
@@ -104,7 +105,7 @@ export function scoreTags(tags: string[], keywords: string[], title: string, des
   const dup = n - new Set(tags.map(norm)).size;
   const checks = [
     check(n >= 10 && n <= 25, `${n} tag (nên 10–25)`, 20, n >= 5 ? 10 : 0),
-    check(chars >= 300 && chars <= 500, `${chars}/500 ký tự (nên dùng 300–500)`, 20, chars > 500 ? 0 : chars >= 200 ? 12 : 5),
+    check(chars >= 300 && chars <= 500, `${chars}/500 ký tự (nên dùng 300–500, quá 500 YouTube cắt bớt)`, 20, chars > 500 ? 8 : chars >= 200 ? 12 : 5),
     check(firstKw, "Tag đầu tiên là từ khóa chính", 15, anyKw ? 7 : 0),
     check(relevant >= 0.4, `${Math.round(relevant * 100)}% tag khớp tiêu đề/mô tả (nên ≥ 40%)`, 25, Math.round((relevant / 0.4) * 25)),
     check(mixed, "Có cả tag ngắn và tag dài (long-tail)", 10),
@@ -133,4 +134,25 @@ export function scoreMeta(m: VideoMeta, seriesTitle: string) {
     tags: scoreTags(m.tags, kw, m.title, m.description),
     short: scoreShort(m.shortTitle, m.shortDescription, kw),
   };
+}
+
+/** Điểm tổng tối thiểu — dưới mức này pipeline tự chạy magic fill, bảng hiện nút. */
+export const SEO_TARGET = 90;
+
+/** Điểm tổng = trung bình 4 mục (vòng điểm trên bảng AI Agent). */
+export function totalScore(s: ReturnType<typeof scoreMeta>) {
+  const parts = [s.title, s.description, s.tags, s.short];
+  return Math.round(parts.reduce((n, p) => n + p.score, 0) / parts.length);
+}
+
+/** Các tiêu chí còn mất điểm, theo từng mục — đưa cho AI sửa. */
+export function seoFeedback(s: ReturnType<typeof scoreMeta>) {
+  const names = { title: "Tiêu đề", description: "Mô tả", tags: "Tag", short: "Short" } as const;
+  return (Object.keys(names) as (keyof typeof names)[])
+    .map((k) => {
+      const miss = s[k].checks.filter((c) => !c.ok);
+      return miss.length ? `${names[k]} (${s[k].score}/100):\n${miss.map((c) => `- ${c.text}`).join("\n")}` : "";
+    })
+    .filter(Boolean)
+    .join("\n\n");
 }

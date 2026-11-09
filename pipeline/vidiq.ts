@@ -92,6 +92,12 @@ export async function scoreTitles(titles: string[]): Promise<(number | null)[] |
   return out.some((x) => x != null) ? out : null;
 }
 
+/** Tên + mô tả các tool vidIQ đang mở (không tốn credit) — để xem có tool kiểu Magic Fill không. */
+export async function listVidiqTools() {
+  const s = await connect();
+  return (s?.tools ?? []).map((t) => ({ name: t.name, description: (t.description ?? "").replace(/\s+/g, " ").slice(0, 200), args: Object.keys(t.inputSchema?.properties ?? {}) }));
+}
+
 export async function closeVidiq() {
   const s = await session?.catch(() => null);
   await s?.client.close().catch(() => {});

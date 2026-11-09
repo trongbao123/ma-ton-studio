@@ -4,9 +4,10 @@ import { appSettings } from "@/db/schema";
 import { AnthropicProvider } from "./anthropic";
 import { GeminiProvider, QuotaExhaustedError } from "./gemini";
 import { OpenAIProvider } from "./openai";
+import { CliProvider, cliReady, type CliKind } from "./cli";
 import { DEFAULT_MODEL, IMAGE_ROUTING_KEY, normalizeImageRouting, normalizeRouting, PROVIDERS, ROUTING_KEY, type ImageRoute, type ProviderId, type Route, type Routing } from "./routing";
 import type { JsonRequest, TextProvider, TextRequest } from "./types";
-import { loadSecrets } from "@/lib/secrets";
+import { loadSecrets, saveSecret } from "@/lib/secrets";
 
 export type { TextProvider } from "./types";
 export { QuotaExhaustedError } from "./gemini";
@@ -15,11 +16,18 @@ const list = (v: string | undefined, d: string) => (v ?? d).split(",").map((m) =
 const GEMINI_QUALITY = list(process.env.GEMINI_MODELS, "gemini-3.8-flash,gemini-3.6-flash,gemini-3-flash-preview,gemini-3.5-flash-lite,gemma-4-31b-it");
 const GEMINI_CHEAP = list(process.env.GEMINI_CHEAP_MODELS, "gemini-3.1-flash-lite,gemini-3.5-flash-lite,gemma-4-31b-it,gemini-3-flash-preview");
 
-const keyOf = (p: ProviderId) => process.env[PROVIDERS.find((x) => x.id === p)!.env];
+const infoOf = (p: ProviderId) => PROVIDERS.find((x) => x.id === p)!;
+const keyOf = (p: ProviderId) => process.env[infoOf(p).env];
 
-/** Nhà cung cấp nào đang có API key trong môi trường chạy hiện tại (Vercel hoặc GitHub Actions). */
+/** Nhà cung cấp nào đã có key / đăng nhập gói (để hiện trên giao diện). */
 export function availableProviders(): ProviderId[] {
   return PROVIDERS.filter((p) => keyOf(p.id)).map((p) => p.id);
+}
+
+/** Gọi được ngay tại nơi đang chạy: có key, và nếu là gói qua CLI thì máy phải có CLI (GitHub Actions; Vercel không có). */
+export function canRun(p: ProviderId) {
+  const cli = infoOf(p).cli as CliKind | undefined;
+  return Boolean(keyOf(p)) && (!cli || cliReady(cli));
 }
 
 // Giữ instance theo (provider, model) để nhớ model Gemini nào đã hết quota trong suốt tiến trình.
@@ -32,7 +40,10 @@ export function providerFor(route: Route): TextProvider {
   const id = `${route.provider}:${model}:${key.slice(-6)}`;
   let p = cache.get(id);
   if (!p) {
-    if (route.provider === "anthropic") p = new AnthropicProvider(key, model);
+    const cli = infoOf(route.provider).cli as CliKind | undefined;
+    const env = infoOf(route.provider).env;
+    if (cli) p = new CliProvider(cli, key, model, (fresh) => saveSecret(env, fresh));
+    else if (route.provider === "anthropic") p = new AnthropicProvider(key, model);
     else if (route.provider === "openai") p = new OpenAIProvider(key, model);
     else p = new GeminiProvider(key, model ? { quality: [model], cheap: [model] } : { quality: GEMINI_QUALITY, cheap: GEMINI_CHEAP });
     cache.set(id, p);
@@ -72,8 +83,7 @@ class RouterProvider implements TextProvider {
   private async run<T>(req: TextRequest, call: (p: TextProvider) => Promise<T>): Promise<T> {
     await loadSecrets();
     const task = req.task ?? (req.tier === "cheap" ? "summary" : "story");
-    const have = availableProviders();
-    const chain = (await loadRouting())[task].filter((r) => have.includes(r.provider));
+    const chain = (await loadRouting())[task].filter((r) => canRun(r.provider));
     if (!chain.length) throw new Error("Chưa có AI nào dùng được — thêm ít nhất một API key (Gemini, Claude hoặc ChatGPT).");
     let quota = 0;
     let last: unknown;

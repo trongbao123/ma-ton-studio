@@ -3,15 +3,16 @@
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { AudioLines, Check, ChevronDown } from "lucide-react";
-import { disconnectYoutubeAction, markPublishedAction, retryPublishAction, setTaskAiAction, updateFlowSettingsAction } from "@/app/actions";
+import { AudioLines, Check, ChevronDown, Wand2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { disconnectYoutubeAction, markPublishedAction, optimizeSeoAction, retryPublishAction, setTaskAiAction, updateFlowSettingsAction } from "@/app/actions";
 import { BrandIcon } from "@/components/brand-icons";
-import { PROVIDERS, type ProviderId, type Route } from "@/lib/ai/routing";
+import { DEFAULT_MODEL, PROVIDERS, type ProviderId, type Route } from "@/lib/ai/routing";
 import { ActionForm } from "@/components/action-form";
 import { CopyButton } from "@/components/copy-button";
 import { formatSlot, formatTime, type FlowData, type NodeId } from "@/lib/flow/model";
 import type { Scene } from "@/lib/flow/progress";
-import { scoreMeta, type SeoScore } from "@/lib/flow/seo";
+import { scoreMeta, SEO_TARGET, totalScore, type SeoScore } from "@/lib/flow/seo";
 import { VOICES } from "@/lib/flow/voices";
 
 export type Tab = "out" | "in" | "log";
@@ -242,7 +243,7 @@ function Agent({ data, tab }: PanelProps) {
         <Empty text="AI Agent chưa trả kết quả cho video này." />
       ) : (
         <>
-          <SeoSummary score={score} />
+          <SeoSummary score={score} videoId={data.video.id} />
           <ScoredSec title="Tiêu đề YouTube" seo={score.title}>
             <Code>{m.title}</Code>
           </ScoredSec>
@@ -281,9 +282,9 @@ function Agent({ data, tab }: PanelProps) {
   );
 }
 
-const BRAND = { anthropic: "claude", openai: "openai", gemini: "gemini" } as const;
+const info = (id: ProviderId) => PROVIDERS.find((p) => p.id === id)!;
 const routeId = (r: Route) => `${r.provider}|${r.model}`;
-const routeLabel = (r: Route) => (r.model ? r.model : r.provider === "gemini" ? "Gemini (tự chọn model)" : PROVIDERS.find((p) => p.id === r.provider)!.label);
+const routeLabel = (r: Route) => (r.model ? r.model : DEFAULT_MODEL[r.provider] ? DEFAULT_MODEL[r.provider] : "model mặc định");
 
 /** Chọn AI chạy một việc ngay trong bảng — lưu luôn, không chuyển trang. */
 function AiPicker({ data, task, label }: { data: FlowData; task: "meta" | "scenes"; label: string }) {
@@ -294,8 +295,8 @@ function AiPicker({ data, task, label }: { data: FlowData; task: "meta" | "scene
   const [msg, setMsg] = useState<{ ok?: string; error?: string } | null>(null);
   const [pending, start] = useTransition();
   const options: Route[] = PROVIDERS.flatMap((p) => [
-    ...(p.id === "gemini" ? [{ provider: p.id, model: "" }] : []),
-    ...p.models.map((model) => ({ provider: p.id as ProviderId, model })),
+    ...(DEFAULT_MODEL[p.id] ? [] : [{ provider: p.id, model: "" }]),
+    ...p.models.map((model) => ({ provider: p.id, model })),
   ]);
   const picked = value ? (value.split("|") as [ProviderId, string]) : null;
   const save = (id: string) => {
@@ -307,7 +308,7 @@ function AiPicker({ data, task, label }: { data: FlowData; task: "meta" | "scene
     <div>
       <div className="flex items-center gap-2.5">
         <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/[.04]">
-          {picked && <BrandIcon id={BRAND[picked[0]]} size={17} />}
+          {picked && <BrandIcon id={info(picked[0]).brand} size={17} />}
         </span>
         <span className="w-24 shrink-0 text-xs text-muted">{label}</span>
         <select value={value} onChange={(e) => save(e.target.value)} disabled={pending} aria-label={`AI cho ${label}`} className="field min-w-0 flex-1 !py-1.5 text-xs">
@@ -332,24 +333,46 @@ function AiPicker({ data, task, label }: { data: FlowData; task: "meta" | "scene
 }
 
 /** Điểm SEO tổng (trung bình 4 mục) — như vòng điểm của vidIQ. */
-function SeoSummary({ score }: { score: ReturnType<typeof scoreMeta> }) {
-  const parts = [score.title, score.description, score.tags, score.short];
-  const total = Math.round(parts.reduce((n, p) => n + p.score, 0) / parts.length);
+function SeoSummary({ score, videoId }: { score: ReturnType<typeof scoreMeta>; videoId: number }) {
+  const total = totalScore(score);
   const deg = Math.round((total / 100) * 360);
   const color = total >= 80 ? "#34d399" : total >= 50 ? "#fbbf24" : "#fb7185";
+  const [msg, setMsg] = useState<{ ok?: string; error?: string } | null>(null);
+  const [pending, start] = useTransition();
+  const router = useRouter();
+  const fill = () =>
+    start(async () => {
+      const r = await optimizeSeoAction(videoId);
+      setMsg(r);
+      router.refresh();
+    });
   return (
-    <div className="mb-7 flex items-center gap-4 rounded-xl border border-border bg-card/60 px-4 py-3">
-      <div className="grid h-14 w-14 shrink-0 place-items-center rounded-full" style={{ background: `conic-gradient(${color} ${deg}deg, #27272a 0)` }}>
-        <div className="grid h-11 w-11 place-items-center rounded-full bg-[#0e0e12]">
-          <span className={`text-lg font-semibold tabular-nums ${tone(total)}`}>{total}</span>
+    <div className="mb-7 rounded-xl border border-border bg-card/60 px-4 py-3">
+      <div className="flex items-center gap-4">
+        <div className="grid h-14 w-14 shrink-0 place-items-center rounded-full" style={{ background: `conic-gradient(${color} ${deg}deg, #27272a 0)` }}>
+          <div className="grid h-11 w-11 place-items-center rounded-full bg-[#0e0e12]">
+            <span className={`text-lg font-semibold tabular-nums ${tone(total)}`}>{total}</span>
+          </div>
+        </div>
+        <div className="min-w-0 text-xs">
+          <p className="font-medium text-zinc-200">Điểm SEO</p>
+          <p className="mt-0.5 text-muted">
+            {score.title.source === "vidiq" ? "Tiêu đề do vidIQ chấm, còn lại app tự chấm." : "App tự chấm theo checklist kiểu vidIQ."} Bấm số ở từng mục để xem chi tiết.
+          </p>
         </div>
       </div>
-      <div className="min-w-0 text-xs">
-        <p className="font-medium text-zinc-200">Điểm SEO</p>
-        <p className="mt-0.5 text-muted">
-          {score.title.source === "vidiq" ? "Tiêu đề do vidIQ chấm, còn lại app tự chấm." : "App tự chấm theo checklist kiểu vidIQ."} Bấm số ở từng mục để xem chi tiết.
-        </p>
-      </div>
+      {total < SEO_TARGET && (
+        <button
+          type="button"
+          onClick={fill}
+          disabled={pending}
+          className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-violet-600 to-sky-600 px-3 py-2 text-xs font-medium text-white transition hover:brightness-110 disabled:opacity-60"
+        >
+          <Wand2 size={14} />
+          {pending ? "AI đang sửa tới khi đạt ≥ 90… (30–90 giây)" : `Magic fill — tự sửa lên ≥ ${SEO_TARGET} điểm`}
+        </button>
+      )}
+      {msg && !pending && <p className={`mt-2 text-[11px] ${msg.error ? "text-rose-400" : "text-emerald-400"}`}>{msg.error ?? msg.ok}</p>}
     </div>
   );
 }

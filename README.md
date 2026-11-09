@@ -36,7 +36,25 @@ App dùng được cùng lúc **Claude** (`ANTHROPIC_API_KEY`), **ChatGPT** (`OP
 2. Thêm key vào **Vercel** (Environment Variables → redeploy) **và** GitHub → Settings → Secrets → Actions (để job tự viết + render dùng được).
 3. Vào **Cài đặt AI** trên web: bấm **Thử** để kiểm tra key, rồi sắp thứ tự AI cho từng việc — viết truyện, tóm tắt, tiêu đề/mô tả YouTube, prompt ảnh. AI đầu lỗi / hết tiền / từ chối thì tự chuyển AI sau.
 
-Mặc định: viết truyện Claude → ChatGPT → Gemini; việc phụ dùng Gemini free trước, hết lượt mới sang AI trả phí.
+### Dùng gói Claude Pro / ChatGPT Plus / Gemini (không tốn credit API)
+Job GitHub Actions cài **Claude Code**, **Codex** và **Gemini CLI**, rồi gọi chúng bằng đăng nhập gói của bạn. Mỗi gói đăng nhập **một lần** trên máy bạn:
+
+```
+node scripts/ai-login.mjs claude   # mở trình duyệt → copy token sk-ant-oat… in ra cuối
+node scripts/ai-login.mjs codex    # đăng nhập ChatGPT → tự copy vào clipboard
+node scripts/ai-login.mjs gemini   # đăng nhập Google, vào màn chat rồi gõ /quit → tự copy
+```
+
+Dán vào ô tương ứng ở **Cài đặt AI** (được mã hoá trước khi lưu). Kiểm tra: GitHub → Actions → **ai-check** → Run workflow.
+
+- Chỉ chạy trong job GitHub Actions (render, viết chương hằng ngày). Nút viết trên web (Vercel) vẫn dùng API.
+- Hạn mức dùng chung với lúc bạn chat. Hết lượt gói thì tự chuyển sang AI kế tiếp (cuối cùng là Gemini API free).
+- Đăng nhập hết hạn thì chạy lại lệnh trên (Claude ~1 năm; Codex tự làm mới token và lưu lại).
+
+Mặc định chia việc ra 3 gói cho đỡ hết lượt: viết truyện Claude, tiêu đề/mô tả ChatGPT, tóm tắt + prompt ảnh Gemini; sau đó mới tới API trả phí, cuối cùng Gemini API free.
+
+### Điểm SEO + Magic fill
+Bảng AI Agent chấm 0–100 tiêu đề, mô tả, tag, Short (tiêu đề dùng điểm vidIQ nếu có). Điểm tổng < 90 thì render tự cho AI sửa đúng các tiêu chí mất điểm (tối đa 3 lượt). Video cũ: bấm **Magic fill** — video đã lên YouTube thì cập nhật luôn trên YouTube.
 
 ## vidIQ (SEO YouTube)
 Có `VIDIQ_API_KEY` thì trước khi viết tiêu đề/mô tả/tag, job render tra **từ khóa thật** trên vidIQ rồi đưa vào prompt; AI đề xuất 3 tiêu đề, vidIQ **chấm điểm** và app lấy tiêu đề cao nhất. Mỗi video tốn khoảng 20 credit vidIQ (1 lượt từ khóa + 3 lượt chấm). Tắt phần chấm tiêu đề: đặt `VIDIQ_SCORE_TITLES=0`.

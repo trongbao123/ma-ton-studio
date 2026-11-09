@@ -1,0 +1,19 @@
+name: ai-check
+# Gọi thử từng AI dùng gói (Claude / ChatGPT / Gemini qua CLI) — chạy tay sau khi dán đăng nhập ở Cài đặt AI.
+on:
+  workflow_dispatch:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: npm i -g @anthropic-ai/claude-code@2.1.311 @openai/codex@0.164.0 @google/gemini-cli@0.65.0
+      - run: pnpm exec tsx pipeline/ai-check.ts
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRETS_KEY: ${{ secrets.SECRETS_KEY }}
