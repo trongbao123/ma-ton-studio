@@ -6,12 +6,14 @@ import { promisify } from "node:util";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { videos } from "@/db/schema";
+import { loadSecrets } from "@/lib/secrets";
 import { publishToYoutube } from "./youtube";
 
 const run = promisify(execFile);
 
 /** Đăng lại YouTube cho video đã render (vd lần trước token hỏng): tải file từ release về rồi upload, không render lại. */
 async function main(videoId: number) {
+  await loadSecrets(true);
   const dir = await mkdtemp(path.join(tmpdir(), `publish-${videoId}-`));
   await run("gh", ["release", "download", `video-${videoId}`, "--repo", process.env.GITHUB_REPOSITORY!, "--dir", dir, "--pattern", "*.mp4", "--pattern", "thumbnail.jpg"]);
   const files = await readdir(dir);

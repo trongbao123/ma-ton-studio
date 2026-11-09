@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { AudioLines, Check, ChevronDown } from "lucide-react";
 import { disconnectYoutubeAction, markPublishedAction, retryPublishAction, updateFlowSettingsAction } from "@/app/actions";
 import { ActionForm } from "@/components/action-form";
 import { CopyButton } from "@/components/copy-button";
@@ -238,20 +239,77 @@ function Tts({ data, tab }: PanelProps) {
         )}
       </Sec>
       <Sec title="Giọng đọc" right={voice.note && <span className="text-[11px] text-emerald-400">{voice.note}</span>}>
-        <select value={voice.value} onChange={(e) => voice.save(e.target.value)} className="field">
-          {VOICES.map((v) => (
-            <option key={v.id} value={v.id}>
-              {v.id} — {v.note}
-            </option>
-          ))}
-        </select>
-        <p className="mt-1.5 text-[11px] text-muted">Áp dụng cho cả bộ truyện từ lần render sau.</p>
+        <VoicePicker value={voice.value} onChange={voice.save} />
+        <p className="mt-2 text-[11px] text-muted">Áp dụng cho cả bộ truyện từ lần render sau.</p>
       </Sec>
       <Sec title="Thông tin">
         <Row k="Thời lượng" v={d ? `${Math.floor(d / 60)} phút ${d % 60} giây` : "—"} />
         <Row k="Chất giọng mong muốn" v={<span className="line-clamp-2">{data.series.voiceStyle}</span>} />
       </Sec>
     </>
+  );
+}
+
+/** Chọn giọng: thẻ giọng đang dùng, bấm mở danh sách chia nam/nữ (thay ô chọn mặc định của trình duyệt). */
+function VoicePicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const current = VOICES.find((v) => v.id === value) ?? { id: value, note: "" };
+  const groups = [
+    { label: "Giọng nam", list: VOICES.filter((v) => !v.female) },
+    { label: "Giọng nữ", list: VOICES.filter((v) => v.female) },
+  ];
+  return (
+    <div className="rounded-xl border border-border bg-[#101118]">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-3 rounded-xl px-3.5 py-3 text-left hover:bg-white/[.03]"
+      >
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-sky-400/10 text-sky-300">
+          <AudioLines size={18} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <b className="block text-sm">{current.id}</b>
+          <span className="block truncate text-xs text-muted">{current.note}</span>
+        </span>
+        <ChevronDown size={16} className={`shrink-0 text-muted transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="max-h-80 space-y-4 overflow-y-auto border-t border-border p-3">
+          {groups.map((g) => (
+            <div key={g.label}>
+              <p className="mb-2 px-1 text-xs font-medium text-muted">{g.label}</p>
+              <ul className="grid grid-cols-2 gap-1.5">
+                {g.list.map((v) => {
+                  const on = v.id === value;
+                  return (
+                    <li key={v.id}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onChange(v.id);
+                          setOpen(false);
+                        }}
+                        className={`w-full rounded-lg border px-2.5 py-2 text-left transition-colors ${
+                          on ? "border-sky-400/60 bg-sky-400/10" : "border-transparent hover:bg-white/[.04]"
+                        }`}
+                      >
+                        <span className="flex items-center justify-between gap-1">
+                          <b className="truncate text-[13px]">{v.id}</b>
+                          {on && <Check size={14} className="shrink-0 text-sky-300" />}
+                        </span>
+                        <span className="block truncate text-[11px] text-muted">{v.note}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

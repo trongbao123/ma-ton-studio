@@ -1,5 +1,5 @@
-/** 30 giọng Gemini TTS (tên giữ nguyên tiếng Anh vì API dùng đúng tên này) + mô tả chất giọng của Google. */
-export const VOICES = [
+/** 30 giọng Gemini TTS (tên giữ nguyên vì API dùng đúng tên này) + mô tả chất giọng của Google, chia nam/nữ. */
+export const VOICES: { id: string; note: string; female?: boolean }[] = [
   { id: "Algenib", note: "trầm khàn, gai góc" },
   { id: "Charon", note: "rõ ràng, kể chuyện" },
   { id: "Orus", note: "chắc, dứt khoát" },
@@ -16,18 +16,18 @@ export const VOICES = [
   { id: "Zubenelgenubi", note: "đời thường, tự nhiên" },
   { id: "Achird", note: "thân thiện" },
   { id: "Puck", note: "vui, sôi nổi" },
-  { id: "Kore", note: "chắc, rõ (nữ)" },
-  { id: "Zephyr", note: "sáng, tươi (nữ)" },
-  { id: "Leda", note: "trẻ trung (nữ)" },
-  { id: "Aoede", note: "nhẹ, thoáng (nữ)" },
-  { id: "Callirrhoe", note: "dễ chịu (nữ)" },
-  { id: "Autonoe", note: "sáng (nữ)" },
-  { id: "Despina", note: "mượt (nữ)" },
-  { id: "Erinome", note: "rõ ràng (nữ)" },
-  { id: "Laomedeia", note: "hào hứng (nữ)" },
-  { id: "Achernar", note: "mềm mại (nữ)" },
-  { id: "Pulcherrima", note: "thẳng thắn (nữ)" },
-  { id: "Vindemiatrix", note: "dịu dàng (nữ)" },
-  { id: "Sadachbia", note: "sinh động (nữ)" },
-  { id: "Sulafat", note: "ấm áp (nữ)" },
-] as const;
+  { id: "Kore", note: "chắc, rõ", female: true },
+  { id: "Zephyr", note: "sáng, tươi", female: true },
+  { id: "Leda", note: "trẻ trung", female: true },
+  { id: "Aoede", note: "nhẹ, thoáng", female: true },
+  { id: "Callirrhoe", note: "dễ chịu", female: true },
+  { id: "Autonoe", note: "sáng", female: true },
+  { id: "Despina", note: "mượt", female: true },
+  { id: "Erinome", note: "rõ ràng", female: true },
+  { id: "Laomedeia", note: "hào hứng", female: true },
+  { id: "Achernar", note: "mềm mại", female: true },
+  { id: "Pulcherrima", note: "thẳng thắn", female: true },
+  { id: "Vindemiatrix", note: "dịu dàng", female: true },
+  { id: "Sadachbia", note: "sinh động", female: true },
+  { id: "Sulafat", note: "ấm áp", female: true },
+];

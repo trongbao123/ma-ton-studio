@@ -43,7 +43,16 @@ const BADGE: Partial<Record<StepState, [string, string]>> = {
 const handle = "!h-2.5 !w-2.5 !border-2 !border-[#0f0f13] !bg-[#55555f]";
 
 export type StepNodeData = { view: StepView; selected?: boolean; brand?: BrandId | null };
-export type SubNodeData = { id: string; title: string; subtitle: string; brand?: BrandId | null };
+export type SubNodeData = { id: string; title: string; subtitle: string; brand?: BrandId | null; state?: StepState };
+
+/** Node con sáng theo node cha: đang chạy thì phát sáng xanh, xong thì viền xanh lá, chưa tới thì mờ. */
+const SUB_RING: Record<StepState, string> = {
+  run: "border-sky-400 shadow-[0_0_0_5px_rgba(56,189,248,.14),0_0_22px_rgba(56,189,248,.35)]",
+  done: "border-emerald-600/80",
+  error: "border-red-500/80",
+  wait: "border-[#3a3a44] opacity-55",
+  skip: "border-[#3a3a44] opacity-35",
+};
 
 function Badge({ view }: { view: StepView }) {
   const b = BADGE[view.state];
@@ -111,9 +120,15 @@ export function AgentNode({ data }: NodeProps<Node<StepNodeData>>) {
         } from-[#2a2140] to-[#19171f] ${ring(data.selected)}`}
       >
         <NodeIcon id="agent" brand={data.brand} size={30} />
-        <div className="min-w-0 text-left">
+        <div className="min-w-0 flex-1 text-left">
           <b className="block text-sm text-zinc-100">AI Agent</b>
           <small className="block truncate text-xs text-violet-300">Đạo diễn · {view.subtitle}</small>
+          {/* Thanh tiến độ nằm dưới dòng mô tả, không đè nhãn cổng ở đáy node. */}
+          {view.progress != null && (
+            <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-zinc-800">
+              <div className="h-full rounded-full bg-violet-400 transition-[width] duration-700" style={{ width: `${Math.round(view.progress * 100)}%` }} />
+            </div>
+          )}
         </div>
         <Badge view={view} />
         <div className="pointer-events-none absolute inset-x-0 bottom-1.5 flex justify-around text-[10px] text-violet-200/55">
@@ -134,11 +149,6 @@ export function AgentNode({ data }: NodeProps<Node<StepNodeData>>) {
             isConnectable={false}
           />
         ))}
-        {view.progress != null && (
-          <div className="absolute inset-x-5 bottom-3 h-1 overflow-hidden rounded-full bg-zinc-800">
-            <div className="h-full rounded-full bg-violet-400 transition-[width] duration-700" style={{ width: `${Math.round(view.progress * 100)}%` }} />
-          </div>
-        )}
       </div>
 
     </div>
@@ -148,12 +158,15 @@ export function AgentNode({ data }: NodeProps<Node<StepNodeData>>) {
 export function SubNode({ data }: NodeProps<Node<SubNodeData>>) {
   return (
     <div className="group relative w-[52px] cursor-pointer">
-      <div className="relative grid h-[52px] w-[52px] place-items-center rounded-full border-[1.5px] border-[#3a3a44] bg-[#1a1a20] text-xl shadow-[0_6px_16px_rgba(0,0,0,.45)] transition-transform group-hover:-translate-y-0.5">
+      <div
+        className={`relative grid h-[52px] w-[52px] place-items-center rounded-full border-[1.5px] bg-[#1a1a20] text-xl shadow-[0_6px_16px_rgba(0,0,0,.45)] transition-[transform,box-shadow,border-color] group-hover:-translate-y-0.5 ${SUB_RING[data.state ?? "wait"]}`}
+      >
+        {data.state === "run" && <span aria-hidden className="absolute inset-0 animate-ping rounded-full border border-sky-400/50" />}
         <NodeIcon id={data.id} brand={data.brand} size={22} />
         <Handle type="target" position={Position.Top} className={handle} isConnectable={false} />
       </div>
       <div className="pointer-events-none absolute left-1/2 top-full mt-2 w-[80px] -translate-x-1/2 text-center leading-tight">
-        <b className="block truncate text-[11.5px] font-medium text-zinc-300">{data.title}</b>
+        <b className={`block truncate text-[11.5px] font-medium ${data.state === "run" ? "text-sky-200" : "text-zinc-300"}`}>{data.title}</b>
         <span className="block truncate text-[10.5px] text-zinc-500">{data.subtitle}</span>
       </div>
     </div>

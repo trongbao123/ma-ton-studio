@@ -1,10 +1,12 @@
 "use client";
 
-import { ArrowDown, ArrowUp, Plus, X } from "lucide-react";
+import { ArrowDown, ArrowUp, KeyRound, Lock, Plus, TrendingUp, X } from "lucide-react";
 import { useState, useTransition } from "react";
-import { saveAiRoutingAction, testAiAction, type ActionState } from "@/app/actions";
+import { saveAiRoutingAction, saveSecretAction, testAiAction, type ActionState } from "@/app/actions";
+import { ActionForm } from "@/components/action-form";
 import { BrandIcon, type BrandId } from "@/components/brand-icons";
 import { IMAGE_PROVIDERS, PROVIDERS, TASKS, type AiTask, type ImageRoute, type ProviderId, type Routing } from "@/lib/ai/routing";
+import { SECRET_KEYS, type SecretKey, type SecretStatus } from "@/lib/secret-keys";
 
 const BRAND: Record<string, BrandId> = { anthropic: "claude", openai: "openai", gemini: "gemini", cloudflare: "cloudflare" };
 
@@ -96,7 +98,17 @@ function RouteList({ rows, options, missing, onChange, listId }: { rows: Row[]; 
   );
 }
 
-export function AiRoutingEditor({ initial, initialImages, available }: { initial: Routing; initialImages: ImageRoute[]; available: ProviderId[] }) {
+export function AiRoutingEditor({
+  initial,
+  initialImages,
+  available,
+  secrets,
+}: {
+  initial: Routing;
+  initialImages: ImageRoute[];
+  available: ProviderId[];
+  secrets: SecretStatus[];
+}) {
   const [routing, setRouting] = useState(initial);
   const [images, setImages] = useState(initialImages);
   const [dirty, setDirty] = useState(false);
@@ -111,13 +123,20 @@ export function AiRoutingEditor({ initial, initialImages, available }: { initial
     <div className="space-y-10 pb-24">
       <section className="space-y-4">
         <h2 className="text-lg font-semibold">Kết nối</h2>
-        <p className="max-w-3xl text-sm text-muted">
-          Key đặt ở Vercel dùng cho web (viết chương, tạo truyện). Job tự viết và render video chạy trên GitHub Actions, nên phải đặt cùng key ở GitHub, mục Settings,
-          Secrets, Actions. Thêm key xong thì deploy lại Vercel.
+        <p className="flex max-w-3xl items-start gap-2 text-sm text-muted">
+          <Lock size={15} className="mt-0.5 shrink-0 text-jade" />
+          Dán key một lần ở đây là web và job render trên GitHub đều dùng được ngay, không cần deploy lại. Key được mã hoá trước khi lưu và không bao giờ hiện lại đầy
+          đủ, chỉ 4 ký tự cuối.
         </p>
         <ul className="grid gap-3 md:grid-cols-3">
-          {PROVIDERS.map((p) => (
-            <KeyCard key={p.id} provider={p.id} env={p.env} ok={available.includes(p.id)} model={routing.story.find((r) => r.provider === p.id)?.model ?? ""} />
+          {SECRET_KEYS.filter((k) => k.group === "ai").map((k) => (
+            <SecretCard key={k.env} k={k} status={secrets.find((x) => x.env === k.env)!} testModel={routing.story.find((r) => r.provider === providerOf(k.env))?.model ?? ""} />
+          ))}
+        </ul>
+        <h3 className="pt-2 font-semibold">Dịch vụ khác</h3>
+        <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {SECRET_KEYS.filter((k) => k.group === "service").map((k) => (
+            <SecretCard key={k.env} k={k} status={secrets.find((x) => x.env === k.env)!} />
           ))}
         </ul>
       </section>
@@ -191,27 +210,64 @@ export function AiRoutingEditor({ initial, initialImages, available }: { initial
   );
 }
 
-function KeyCard({ provider, env, ok, model }: { provider: ProviderId; env: string; ok: boolean; model: string }) {
+const providerOf = (env: string) => PROVIDERS.find((p) => p.env === env)?.id;
+
+const SOURCE: Record<string, [string, string]> = {
+  web: ["Đã lưu", "bg-jade/15 text-jade"],
+  env: ["Từ biến môi trường", "bg-sky-400/10 text-sky-300"],
+};
+
+/** Một ô key: trạng thái (không lộ key), dán key mới, xoá key đã lưu, gọi thử với AI. */
+function SecretCard({ k, status, testModel }: { k: SecretKey; status: SecretStatus; testModel?: string }) {
   const [res, setRes] = useState<ActionState>({});
   const [pending, start] = useTransition();
-  const label = PROVIDERS.find((p) => p.id === provider)!.label;
+  const provider = providerOf(k.env);
+  const tag = status.source ? SOURCE[status.source] : null;
   return (
     <li className="space-y-3 rounded-xl border border-border bg-card p-4">
       <div className="flex items-center gap-3">
-        <span className="grid h-10 w-10 place-items-center rounded-xl bg-white/[.04]">
-          <BrandIcon id={BRAND[provider]} size={22} />
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/[.04]">
+          {k.brand ? <BrandIcon id={k.brand} size={22} /> : k.env.startsWith("VIDIQ") ? <TrendingUp size={20} className="text-emerald-300" /> : <KeyRound size={20} />}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="font-semibold">{label}</p>
-          <code className="text-xs text-muted">{env}</code>
+          <p className="truncate font-semibold">{k.label}</p>
+          <p className="truncate text-xs text-muted">{k.help}</p>
         </div>
-        <span className={`rounded-full px-2.5 py-1 text-xs ${ok ? "bg-jade/15 text-jade" : "bg-white/[.05] text-muted"}`}>{ok ? "Đã có key" : "Chưa có key"}</span>
+        {tag ? (
+          <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs ${tag[1]}`}>
+            {tag[0]} {status.hint}
+          </span>
+        ) : (
+          <span className="shrink-0 rounded-full bg-white/[.05] px-2.5 py-1 text-xs text-muted">Chưa có</span>
+        )}
       </div>
-      {ok && (
-        <button type="button" disabled={pending} onClick={() => start(async () => setRes(await testAiAction(provider, model)))} className="btn-secondary w-full !py-1.5 text-xs">
-          {pending ? "Đang gọi thử…" : "Gọi thử"}
-        </button>
-      )}
+      <ActionForm action={saveSecretAction.bind(null, k.env)} submitLabel="Lưu" variant="secondary" className="flex flex-wrap items-center gap-2">
+        <input
+          name="value"
+          type="password"
+          autoComplete="off"
+          spellCheck={false}
+          placeholder={status.source ? "Dán key mới để thay" : "Dán key vào đây"}
+          className="field min-w-0 flex-1 basis-40"
+        />
+      </ActionForm>
+      <div className="flex flex-wrap gap-2">
+        {provider && status.source && (
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => start(async () => setRes(await testAiAction(provider, testModel ?? "")))}
+            className="btn-secondary !px-3 !py-1.5 text-xs"
+          >
+            {pending ? "Đang gọi thử…" : "Gọi thử"}
+          </button>
+        )}
+        {status.source === "web" && (
+          <ActionForm action={saveSecretAction.bind(null, k.env)} submitLabel="Xoá key đã lưu" variant="secondary">
+            <input type="hidden" name="remove" value="1" />
+          </ActionForm>
+        )}
+      </div>
       {res.error && <p className="text-xs text-red-400">{res.error}</p>}
       {res.ok && <p className="text-xs text-jade">{res.ok}</p>}
     </li>

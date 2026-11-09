@@ -6,6 +6,7 @@ import { escapeHtml, notify, WEB_URL } from "@/lib/notify";
 import { planChapters, writeChapterStep } from "@/lib/story/service";
 import { quotaDay } from "@/lib/ai/usage";
 import { aiUsage } from "@/db/schema";
+import { loadSecrets } from "@/lib/secrets";
 import { renderVideo } from "./render";
 
 /** Số chương chờ duyệt tối đa khi không tự duyệt — tránh viết dồn khi người dùng chưa kịp đọc. */
@@ -63,6 +64,7 @@ async function renderQueue(failures: string[]) {
  * Hết quota không phải lỗi — lần chạy sau làm tiếp.
  */
 async function main() {
+  await loadSecrets(true);
   const failures: string[] = [];
   await renderQueue(failures);
 

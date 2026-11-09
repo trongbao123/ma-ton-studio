@@ -6,6 +6,7 @@ import { GeminiProvider, QuotaExhaustedError } from "./gemini";
 import { OpenAIProvider } from "./openai";
 import { DEFAULT_MODEL, IMAGE_ROUTING_KEY, normalizeImageRouting, normalizeRouting, PROVIDERS, ROUTING_KEY, type ImageRoute, type ProviderId, type Route, type Routing } from "./routing";
 import type { JsonRequest, TextProvider, TextRequest } from "./types";
+import { loadSecrets } from "@/lib/secrets";
 
 export type { TextProvider } from "./types";
 export { QuotaExhaustedError } from "./gemini";
@@ -26,10 +27,11 @@ const cache = new Map<string, TextProvider>();
 
 export function providerFor(route: Route): TextProvider {
   const model = route.model || DEFAULT_MODEL[route.provider];
-  const id = `${route.provider}:${model}`;
+  const key = keyOf(route.provider)!;
+  // Kèm đuôi key: đổi key trên trang Cài đặt AI thì tạo client mới.
+  const id = `${route.provider}:${model}:${key.slice(-6)}`;
   let p = cache.get(id);
   if (!p) {
-    const key = keyOf(route.provider)!;
     if (route.provider === "anthropic") p = new AnthropicProvider(key, model);
     else if (route.provider === "openai") p = new OpenAIProvider(key, model);
     else p = new GeminiProvider(key, model ? { quality: [model], cheap: [model] } : { quality: GEMINI_QUALITY, cheap: GEMINI_CHEAP });
@@ -68,6 +70,7 @@ class RouterProvider implements TextProvider {
   lastModel?: string;
 
   private async run<T>(req: TextRequest, call: (p: TextProvider) => Promise<T>): Promise<T> {
+    await loadSecrets();
     const task = req.task ?? (req.tier === "cheap" ? "summary" : "story");
     const have = availableProviders();
     const chain = (await loadRouting())[task].filter((r) => have.includes(r.provider));

@@ -2,6 +2,7 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { AiRoutingEditor } from "@/components/ai-routing-editor";
 import { availableProviders, loadImageRouting, loadRouting } from "@/lib/ai";
+import { secretStatus } from "@/lib/secrets";
 
 export default function AiSettingsPage() {
   return (
@@ -21,6 +22,7 @@ export default function AiSettingsPage() {
 
 async function Editor() {
   await connection();
+  const secrets = await secretStatus();
   const [routing, images] = await Promise.all([loadRouting(true), loadImageRouting()]);
-  return <AiRoutingEditor initial={routing} initialImages={images} available={availableProviders()} />;
+  return <AiRoutingEditor initial={routing} initialImages={images} available={availableProviders()} secrets={secrets} />;
 }

@@ -36,15 +36,16 @@ export function FlowStudio(props: Props) {
 const EDGE_COLOR = { done: "#2f7d4f", run: "#38bdf8", error: "#7f1d1d", wait: "#3b3b46", skip: "#2a2a31" } as const;
 
 /** Node con hiện dữ liệu thật khi có (vd model AI đã chạy). */
-function subData(id: string, data: FlowData) {
+function subData(id: string, data: FlowData, steps: Record<NodeId, StepView>) {
   const s = SUB_NODES.find((x) => x.id === id)!;
+  const state = steps[s.parent].state;
   const model = data.video.progress?.steps.agent?.model;
-  if (id === "model") return { id, title: s.title, subtitle: model ?? s.subtitle, brand: brandOfModel(model) };
+  if (id === "model") return { id, state, title: s.title, subtitle: model ?? s.subtitle, brand: brandOfModel(model) };
   if (id === "imageModel") {
     const m = data.ai.imageModel;
-    return { id, title: "AI vẽ ảnh", subtitle: m.replace(/^@cf\/[^/]+\//, ""), brand: brandOfModel(m) };
+    return { id, state, title: "AI vẽ ảnh", subtitle: m.replace(/^@cf\/[^/]+\//, ""), brand: brandOfModel(m) };
   }
-  return { id, title: s.title, subtitle: s.subtitle };
+  return { id, state, title: s.title, subtitle: s.subtitle };
 }
 
 const agentBrand = (data: FlowData) => brandOfModel(data.video.progress?.steps.agent?.model);
@@ -57,7 +58,7 @@ function buildNodes(data: FlowData, steps: Record<NodeId, StepView>, layout: Rec
       position: layout[id],
       data: { view: steps[id], selected: id === selected, brand: id === "agent" ? agentBrand(data) : null },
     })),
-    ...SUB_NODES.map((s) => ({ id: s.id, type: "sub", position: layout[s.id], data: subData(s.id, data) })),
+    ...SUB_NODES.map((s) => ({ id: s.id, type: "sub", position: layout[s.id], data: subData(s.id, data, steps) })),
   ];
 }
 
@@ -72,13 +73,23 @@ function buildEdges(steps: Record<NodeId, StepView>): Edge[] {
       style: { stroke: EDGE_COLOR[state], strokeWidth: 2 },
     };
   });
-  const subs = SUB_NODES.map((s) => ({
-    id: `s-${s.id}`,
-    source: s.parent,
-    sourceHandle: s.slot ?? "sub",
-    target: s.id,
-    style: { stroke: "#4a4a56", strokeWidth: 1.6, strokeDasharray: "4 5" },
-  }));
+  // Dây tới node con: chạy hiệu ứng khi node cha đang làm, xanh lá khi xong.
+  const subs = SUB_NODES.map((s) => {
+    const state = steps[s.parent].state;
+    return {
+      id: `s-${s.id}`,
+      source: s.parent,
+      sourceHandle: s.slot ?? "sub",
+      target: s.id,
+      animated: state === "run",
+      style: {
+        stroke: state === "run" ? "#38bdf8" : state === "done" ? "#2f7d4f" : "#4a4a56",
+        strokeWidth: 1.6,
+        strokeDasharray: "4 5",
+        opacity: state === "wait" || state === "skip" ? 0.5 : 1,
+      },
+    };
+  });
   return [...main, ...subs];
 }
 
@@ -144,7 +155,7 @@ function Studio({ data: initial, layout }: Props) {
   const measured = useNodesInitialized();
   // useNodesState chỉ lấy giá trị đầu — dữ liệu mới từ server (render lại, đã đăng, polling) phải đẩy vào node, giữ nguyên vị trí.
   useEffect(() => {
-    setNodes((ns) => ns.map((n) => ({ ...n, data: n.id in steps ? { ...n.data, view: steps[n.id as NodeId], brand: n.id === "agent" ? agentBrand(data) : null } : subData(n.id, data) })));
+    setNodes((ns) => ns.map((n) => ({ ...n, data: n.id in steps ? { ...n.data, view: steps[n.id as NodeId], brand: n.id === "agent" ? agentBrand(data) : null } : subData(n.id, data, steps) })));
   }, [steps, data, setNodes]);
   // fitView ban đầu có thể chạy trước khi node đo xong kích thước (hay gặp trên điện thoại) → fit lại, và fit khi xoay/đổi cỡ màn hình.
   useEffect(() => {

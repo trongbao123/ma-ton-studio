@@ -11,6 +11,7 @@ import { dispatchPublish, dispatchRender, queueVideo } from "@/lib/story/videos"
 import { saveYoutubeAuth } from "@/lib/youtube";
 import { VOICES } from "@/lib/flow/voices";
 import { availableProviders, providerFor } from "@/lib/ai";
+import { loadSecrets, saveSecret } from "@/lib/secrets";
 import { IMAGE_ROUTING_KEY, normalizeImageRouting, normalizeRouting, ROUTING_KEY, type ImageRoute, type ProviderId, type Routing } from "@/lib/ai/routing";
 
 export type ActionState = { error?: string; ok?: string };
@@ -227,7 +228,8 @@ export async function saveAiRoutingAction(routing: Routing, images: ImageRoute[]
 /** Gọi thử 1 AI với câu hỏi ngắn để kiểm tra key và model. */
 export async function testAiAction(provider: ProviderId, model: string): Promise<ActionState> {
   return attempt(async () => {
-    if (!availableProviders().includes(provider)) throw new Error("Chưa có API key trên Vercel cho AI này.");
+    await loadSecrets();
+    if (!availableProviders().includes(provider)) throw new Error("Chưa có key cho AI này — dán key ở mục Kết nối.");
     const started = Date.now();
     const p = providerFor({ provider, model });
     const text = await p.generateText({
@@ -237,5 +239,21 @@ export async function testAiAction(provider: ProviderId, model: string): Promise
       tier: "cheap",
     });
     return `${p.lastModel ?? model} · ${((Date.now() - started) / 1000).toFixed(1)}s — “${text.slice(0, 120)}”`;
+  });
+}
+
+/** Dán (hoặc xoá khi để trống) key trên web — Vercel và GitHub Actions cùng đọc từ DB, không cần deploy lại. */
+export async function saveSecretAction(env: string, _: ActionState, form: FormData): Promise<ActionState> {
+  return attempt(async () => {
+    const value = String(form.get("value") ?? "").trim();
+    if (form.get("remove") === "1") {
+      await saveSecret(env, null);
+      revalidatePath("/settings/ai");
+      return "Đã xoá key trên web.";
+    }
+    if (value.length < 8) throw new Error("Key quá ngắn — dán lại nguyên key.");
+    await saveSecret(env, value);
+    revalidatePath("/settings/ai");
+    return "Đã lưu — dùng được ngay ở web và job render.";
   });
 }

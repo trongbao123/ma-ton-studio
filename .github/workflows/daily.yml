@@ -27,6 +27,7 @@ jobs:
       - run: pnpm exec tsx pipeline/daily.ts
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRETS_KEY: ${{ secrets.SECRETS_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { appSettings } from "@/db/schema";
+import { decrypt, encrypt } from "./crypto";
 
 export const YT_KEY = "youtube";
 export type YoutubeAuth = { refreshToken: string; channel: string | null; connectedAt: string };
@@ -63,15 +64,18 @@ export async function accessToken(refreshToken: string) {
 export async function getYoutubeAuth(): Promise<YoutubeAuth | null> {
   const [row] = await db().select({ value: appSettings.value }).from(appSettings).where(eq(appSettings.key, YT_KEY));
   const v = row?.value as Partial<YoutubeAuth> | undefined;
-  return v?.refreshToken ? { refreshToken: v.refreshToken, channel: v.channel ?? null, connectedAt: v.connectedAt ?? "" } : null;
+  if (!v?.refreshToken) return null;
+  // Token lưu mã hoá; token cũ (trước khi có mã hoá) vẫn đọc được.
+  return { refreshToken: decrypt(v.refreshToken), channel: v.channel ?? null, connectedAt: v.connectedAt ?? "" };
 }
 
 export async function saveYoutubeAuth(auth: YoutubeAuth | null) {
   if (!auth) return void (await db().delete(appSettings).where(eq(appSettings.key, YT_KEY)));
+  const value = { ...auth, refreshToken: encrypt(auth.refreshToken) };
   await db()
     .insert(appSettings)
-    .values({ key: YT_KEY, value: auth })
-    .onConflictDoUpdate({ target: appSettings.key, set: { value: auth, updatedAt: new Date() } });
+    .values({ key: YT_KEY, value })
+    .onConflictDoUpdate({ target: appSettings.key, set: { value, updatedAt: new Date() } });
 }
 
 export const redirectUri = (origin: string) => `${origin}/api/youtube/callback`;

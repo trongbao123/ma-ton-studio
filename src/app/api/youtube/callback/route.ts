@@ -1,7 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { loadSecrets } from "@/lib/secrets";
 import { exchangeCode, redirectUri, saveYoutubeAuth } from "@/lib/youtube";
 
 export async function GET(request: NextRequest) {
+  await loadSecrets();
   const url = request.nextUrl;
   const back = (q: string) => {
     const res = NextResponse.redirect(new URL(`/videos?youtube=${q}`, url.origin));

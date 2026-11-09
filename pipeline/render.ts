@@ -11,6 +11,7 @@ import { Tracker } from "./progress";
 import { metaRequest, scenePrompts, scenesRequest, videoMeta } from "./prompts";
 import { ensureRelease, uploadAsset } from "./release";
 import { keepOrNextSlot } from "./schedule";
+import { loadSecrets } from "@/lib/secrets";
 import { keywordResearch, scoreTitles } from "./vidiq";
 import { autoPublishEligible, publishToYoutube } from "./youtube";
 
@@ -268,6 +269,8 @@ function clip(req: { system: string; prompt: string }) {
 const SHORT_SCENES = 5;
 
 export async function renderVideo(videoId: number) {
+  // Key dán trên trang Cài đặt AI (lưu DB) — dùng được ngay mà không cần thêm GitHub Secrets.
+  await loadSecrets(true);
   const [v] = await db().select().from(videos).where(eq(videos.id, videoId));
   if (!v) throw new Error(`Không có video #${videoId}`);
   const [c] = await db().select().from(chapters).where(eq(chapters.id, v.chapterId));
