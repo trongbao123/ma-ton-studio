@@ -1,3 +1,4 @@
+import { loadSecrets } from "@/lib/secrets";
 import { textProvider } from "@/lib/ai";
 import { buildTrendsPrompt, insightsSchema, loadTrends, parseVideos, saveTrends, scannedWithin, type TrendVideo } from "@/lib/trends";
 import { callVidiq, closeVidiq, vidiqSchema } from "./vidiq";
@@ -33,6 +34,8 @@ const dedupe = (list: TrendVideo[]) => [...new Map(list.map((v) => [v.url ?? v.t
  * Dùng cho tiêu đề/thumbnail ở bước SEO và dàn ý chương. Không có vidIQ hoặc mọi tool lỗi thì không ghi gì.
  */
 export async function scanTrends() {
+  // Key vidIQ lưu mã hoá trong DB (Cài đặt AI) — chạy riêng bằng CLI thì phải nạp, không thì vidIQ im lặng trả rỗng.
+  await loadSecrets(true);
   const after = new Date(Date.now() - WINDOW_DAYS * 86_400_000).toISOString();
   const trending: TrendVideo[] = [];
   const outliers: TrendVideo[] = [];
