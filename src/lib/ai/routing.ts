@@ -60,8 +60,8 @@ export function defaultRouting(): Routing {
   const claude = r("claude-cli", PLAN_MODEL.claude);
   const codex = r("codex-cli", PLAN_MODEL.codex);
   return {
-    // Viết chương là thứ quyết định giữ chân người nghe → dùng Sonnet của gói (mỗi ngày chỉ ~3 lượt, không đáng kể hạn mức).
-    story: [r("claude-cli", "sonnet"), claude, codex, r("anthropic", "claude-opus-5-5"), r("openai", "gpt-5"), r("gemini")],
+    // Viết chương bằng Haiku của gói (rẻ hạn mức nhất); Sonnet chỉ dự phòng khi Haiku lỗi.
+    story: [claude, r("claude-cli", "sonnet"), codex, r("anthropic", "claude-opus-5-5"), r("openai", "gpt-5"), r("gemini")],
     meta: [codex, claude, r("anthropic", "claude-sonnet-5-5"), r("openai", "gpt-5"), r("gemini")],
     summary: [r("gemini"), codex, claude, r("openai", "gpt-5-nano"), r("anthropic", "claude-haiku-5-5")],
     scenes: [r("gemini"), codex, claude, r("openai", "gpt-5-mini"), r("anthropic", "claude-haiku-5-5")],

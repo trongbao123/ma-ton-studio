@@ -4,8 +4,8 @@ import { defaultRouting, normalizeRouting, promote } from "./routing";
 describe("defaultRouting", () => {
   it("gói Pro/Plus (CLI) đứng trước API: truyện Claude, meta ChatGPT, việc nhẹ Gemini API free", () => {
     const d = defaultRouting();
-    expect(d.story[0]).toEqual({ provider: "claude-cli", model: "sonnet" });
-    expect(d.story[1]).toEqual({ provider: "claude-cli", model: "haiku" });
+    expect(d.story[0]).toEqual({ provider: "claude-cli", model: "haiku" });
+    expect(d.story[1]).toEqual({ provider: "claude-cli", model: "sonnet" });
     expect(d.meta[0]).toEqual({ provider: "codex-cli", model: "gpt-6-luna" });
     expect(d.summary[0].provider).toBe("gemini");
     expect(d.scenes[0].provider).toBe("gemini");

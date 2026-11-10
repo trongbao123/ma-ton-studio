@@ -78,7 +78,15 @@ Viết chương ${chapter.number}: "${chapter.title}".
 Dàn ý:
 ${chapter.outline}
 
-Độ dài khoảng ${s.targetWords} từ. Chỉ trả về nội dung chương, không lặp lại tiêu đề, không lời bình.`,
+Độ dài khoảng ${s.targetWords} từ. Chỉ trả về nội dung chương, không lặp lại tiêu đề, không lời bình.
+
+Cách viết (bắt buộc):
+- Chia 3–4 cảnh liền mạch; mỗi cảnh có mục tiêu, trở ngại và một thay đổi. Không tóm tắt sự kiện — diễn ra trước mắt người nghe.
+- Tả bằng giác quan cụ thể (mùi máu, tiếng xương gãy, hơi lạnh của sát khí) thay vì tính từ chung chung "rất mạnh", "vô cùng đáng sợ".
+- Thoại chiếm khoảng 1/3: ngắn, mỗi nhân vật một giọng riêng; xen suy nghĩ nội tâm của nhân vật chính.
+- Ít nhất 1 khoảnh khắc cảm xúc thật (mất mát, ân tình, nhớ người thân) và 1 khoảnh khắc "sướng" (lật kèo, vả mặt, đột phá) có phản ứng đám đông.
+- Không lặp từ/câu, không sáo rỗng ("khóe miệng nhếch lên", "hít một ngụm khí lạnh") quá 1 lần mỗi chương.
+- Câu cuối là cliffhanger cụ thể (một mối nguy, một bí mật vừa lộ), không kết bằng câu tổng kết.`,
   };
 }
 
