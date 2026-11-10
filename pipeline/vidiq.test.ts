@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { genreSeeds, parseKeywordTable, parseScoredTitles } from "./vidiq";
+import { genreSeeds, onTopic, parseKeywordTable, parseScoredTitles } from "./vidiq";
 
 describe("parseScoredTitles", () => {
   it("đọc JSON lồng nhau", () => {
@@ -43,5 +43,10 @@ describe("vidIQ", () => {
   it("từ khóa gốc theo thể loại, không dùng tên truyện", () => {
     expect(genreSeeds("tiên hiệp")).toContain("truyện tu tiên");
     expect(genreSeeds("huyền huyễn")[0]).toBe("truyện huyền huyễn");
+  });
+  it("bỏ từ khóa lạc ngách", () => {
+    expect(onTopic("truyện tu tiên")).toBe(true);
+    expect(onTopic("review truyện tranh")).toBe(false);
+    expect(onTopic("hh vietsub")).toBe(false);
   });
 });

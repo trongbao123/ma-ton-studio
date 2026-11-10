@@ -73,6 +73,9 @@ export function genreSeeds(genre: string) {
   return ["truyện tu tiên", "truyện tiên hiệp", "tiên hiệp audio"];
 }
 
+/** Bỏ từ khóa lạc ngách mà vidIQ hay gợi ý kèm (vd "review truyện tranh", "hh vietsub") — người nghe audio không tìm mấy cái đó. */
+export const onTopic = (k: string) => !/tranh|review|manga|manhua|anime|vietsub|thuyết minh|phim|game|tiktok/i.test(k);
+
 /**
  * Nghiên cứu từ khóa thật (Việt Nam) cho các từ khóa gốc của thể loại: gộp, bỏ từ khóa không có lượt tìm,
  * xếp theo điểm tổng vidIQ (volume cao + cạnh tranh thấp). ~5 credit/từ khóa gốc.
@@ -85,7 +88,7 @@ export async function keywordResearch(seeds: string[]): Promise<{ text: string; 
     try {
       const res = await s.client.callTool({ name: "vidiq_keyword_research", arguments: { mode: "research", keyword: seed, country: "VN", limit: 25 } });
       if ((res as { isError?: boolean }).isError) throw new Error(textOf(res).slice(0, 200));
-      for (const k of parseKeywordTable(textOf(res))) if (k.volume > 0 && !all.has(k.keyword)) all.set(k.keyword, k);
+      for (const k of parseKeywordTable(textOf(res))) if (k.volume > 0 && onTopic(k.keyword) && !all.has(k.keyword)) all.set(k.keyword, k);
     } catch (e) {
       console.warn(`⚠ vidIQ từ khóa "${seed}" lỗi:`, e instanceof Error ? e.message : e);
     }
