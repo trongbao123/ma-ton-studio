@@ -1,7 +1,7 @@
 name: daily
 on:
   schedule:
-    - cron: "17 2,8,14,20 * * *" # 6 tiếng/lần (9h17, 15h17, 21h17, 3h17 VN) — tiết kiệm phút Actions repo private
+    - cron: "17 1,7,13,19 * * *" # 6 tiếng/lần (8h17, 14h17, 20h17, 2h17 VN) — lượt 8h17 viết + render kịp lịch đăng 15h
   workflow_dispatch:
 permissions:
   contents: write

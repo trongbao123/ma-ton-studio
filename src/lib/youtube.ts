@@ -116,3 +116,15 @@ export async function updateYoutubeSnippet(youtubeId: string, s: { title: string
   await recordYoutubeUnits("videoUpdate");
   if (!res.ok) throw new Error(`YouTube từ chối cập nhật: ${res.status} ${(await res.text()).slice(0, 200)}`);
 }
+
+/** Đổi giờ công chiếu của video đang ở chế độ lên lịch (private + publishAt). Video đã công khai thì YouTube từ chối — bỏ qua. */
+export async function updateYoutubePublishAt(youtubeId: string, publishAt: Date) {
+  const auth = await getYoutubeAuth();
+  if (!auth) throw new YoutubeAuthError("Chưa kết nối YouTube.");
+  const res = await fetch("https://www.googleapis.com/youtube/v3/videos?part=status", {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${await accessToken(auth.refreshToken)}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ id: youtubeId, status: { privacyStatus: "private", publishAt: publishAt.toISOString(), selfDeclaredMadeForKids: false } }),
+  });
+  if (!res.ok) throw new Error(`YouTube từ chối đổi lịch: ${res.status} ${(await res.text()).slice(0, 200)}`);
+}

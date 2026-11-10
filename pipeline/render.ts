@@ -617,6 +617,7 @@ if (process.argv[1]?.endsWith("render.ts")) {
   const arg = process.argv[2] ?? "";
   const runJob = () => {
     if (arg.startsWith("seo:")) return import("./seo-redo").then((x) => x.redoSeo(Number(arg.slice(4))));
+    if (arg === "reschedule") return import("./schedule").then((x) => x.rescheduleToPublishHour());
     if (arg.startsWith("playlist:")) return import("./playlist").then((x) => x.backfillPlaylist(Number(arg.slice(9))));
     if (arg === "trends") return import("./trends").then((x) => x.scanTrends());
     if (arg.startsWith("compile:")) return import("./compile").then((x) => x.compileSeries(Number(arg.slice(8))));
