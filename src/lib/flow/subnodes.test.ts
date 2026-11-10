@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildFlow, type FlowData } from "./model";
-import { buildSubs, SUB_GAP, SUB_WIDTH, subOffsetX } from "./subnodes";
+import { buildSubs, SUB_HEIGHT, SUB_GAP, SUB_INSET, subOffset } from "./subnodes";
 
 function data(extra: Partial<FlowData> = {}, meta: Partial<NonNullable<FlowData["video"]["meta"]>> = {}): FlowData {
   return {
@@ -37,12 +37,12 @@ const subsOf = (d: FlowData) => buildSubs(d, buildFlow(d).cards);
 const byId = (d: FlowData) => Object.fromEntries(subsOf(d).map((s) => [s.id, s]));
 
 describe("buildSubs", () => {
-  it("hiện giá trị thật: model chương, điểm vidIQ, model ảnh, nhạc, lịch", () => {
+  it("hiện giá trị thật: model chương, điểm vidIQ, nhạc, lịch", () => {
     const s = byId(data());
     expect(s["chapter-model"]).toMatchObject({ parent: "chapter", ok: true });
     expect(s["chapter-model"].value).toContain("haiku");
     expect(s["seo-vidiq"]).toMatchObject({ value: "95đ", ok: true });
-    expect(s["images-model"].value).toBe("gpt-image (gói Plus)");
+    expect(s["images-model"]).toBeUndefined();
     expect(s["video-music"]).toMatchObject({ value: "Dark Fog", ok: true });
     expect(s["youtube-slot"]).toMatchObject({ value: "19:00 12/11", ok: true });
   });
@@ -58,17 +58,16 @@ describe("buildSubs", () => {
     expect(byId(data({}, { seo: { keywords: ["a", "b", "c"] } }))["seo-vidiq"].value).toBe("3 từ khóa");
   });
 
-  it("bản gộp: bỏ node con của Viết chương và Ảnh cảnh", () => {
+  it("bản gộp: bỏ node con của Viết chương", () => {
     const d = data({}, { compilation: { seriesId: 1, from: 1, to: 3, videoIds: [1, 2, 3] } });
     expect(subsOf(d).map((s) => s.parent)).toEqual(["seo", "seo", "video", "youtube", "youtube"]);
   });
 });
 
-describe("subOffsetX", () => {
-  it("canh giữa dưới thẻ cha", () => {
-    expect(subOffsetX(0, 1, 248)).toBe((248 - SUB_WIDTH) / 2);
-    const [a, b] = [subOffsetX(0, 2, 248), subOffsetX(1, 2, 248)];
-    expect(b - a).toBe(SUB_WIDTH + SUB_GAP);
-    expect(a + (2 * SUB_WIDTH + SUB_GAP) / 2).toBe(124);
+describe("subOffset", () => {
+  it("xếp cột bên phải thẻ cha, mỗi node con một dòng", () => {
+    expect(subOffset(0, 248).x).toBe(248 + SUB_INSET);
+    expect(subOffset(2, 248).x).toBe(subOffset(0, 248).x);
+    expect(subOffset(1, 248).y - subOffset(0, 248).y).toBe(SUB_HEIGHT + SUB_GAP);
   });
 });

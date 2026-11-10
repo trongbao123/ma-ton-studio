@@ -1,22 +1,47 @@
 import { describe, expect, it } from "vitest";
-import { CARD_WIDTH, DEFAULT_POSITIONS, mergeLayout } from "./layout";
+import { CARD_GAP, CARD_WIDTH, DEFAULT_POSITIONS, mergeLayout, ROW_OF, ROW_PITCH, TREE_ROWS } from "./layout";
 import { CARD_ORDER } from "./model";
 
-const full = () => Object.fromEntries(CARD_ORDER.map((id, i) => [id, { x: i * (CARD_WIDTH + 10), y: 5 }]));
+const full = () => Object.fromEntries(CARD_ORDER.map((id, i) => [id, { x: i * 10, y: 5 + i }]));
+const centerX = (id: (typeof CARD_ORDER)[number]) => DEFAULT_POSITIONS[id].x + CARD_WIDTH / 2;
+
+describe("cây mặc định", () => {
+  it("đủ 10 thẻ, mỗi thẻ đúng một hàng", () => {
+    expect(CARD_ORDER).toHaveLength(10);
+    expect(TREE_ROWS.flat().sort()).toEqual([...CARD_ORDER].sort());
+  });
+
+  it("hàng r nằm ở y = r * ROW_PITCH, y tăng dần từ trên xuống", () => {
+    for (const id of CARD_ORDER) expect(DEFAULT_POSITIONS[id].y).toBe(ROW_OF[id] * ROW_PITCH);
+    expect(DEFAULT_POSITIONS.trends.y).toBeLessThan(DEFAULT_POSITIONS.youtube.y);
+  });
+
+  it("thẻ đơn nằm giữa trục x = 0; nhánh song song đối xứng quanh trục", () => {
+    for (const id of ["trends", "chapter", "seo", "video", "youtube"] as const) expect(centerX(id)).toBe(0);
+    expect(centerX("images")).toBe(0);
+    expect(centerX("tts")).toBe(-(CARD_WIDTH + CARD_GAP));
+    expect(centerX("thumbnail")).toBe(CARD_WIDTH + CARD_GAP);
+    expect(centerX("long") + centerX("short")).toBe(0);
+    expect(centerX("short") - centerX("long")).toBe(CARD_WIDTH + CARD_GAP);
+  });
+
+  it("3 nhánh song song cùng hàng; Video dài / Short cùng hàng", () => {
+    expect(new Set(["tts", "images", "thumbnail"].map((id) => DEFAULT_POSITIONS[id as "tts"].y)).size).toBe(1);
+    expect(DEFAULT_POSITIONS.long.y).toBe(DEFAULT_POSITIONS.short.y);
+  });
+});
 
 describe("mergeLayout", () => {
-  it("mặc định: một hàng ngang, đủ 7 thẻ, x tăng dần", () => {
-    const xs = CARD_ORDER.map((id) => DEFAULT_POSITIONS[id].x);
-    expect(xs).toEqual([...xs].sort((a, b) => a - b));
-    expect(new Set(CARD_ORDER.map((id) => DEFAULT_POSITIONS[id].y)).size).toBe(1);
-    expect(CARD_ORDER).toHaveLength(7);
-  });
-
   it("bố cục đủ thẻ và hợp lệ thì giữ nguyên", () => {
-    expect(mergeLayout(full()).seo).toEqual({ x: 2 * (CARD_WIDTH + 10), y: 5 });
+    expect(mergeLayout(full()).seo).toEqual({ x: 20, y: 7 });
   });
 
-  it("bố cục cũ (id trigger/agent/node con) không khớp → về mặc định cả bộ", () => {
+  it("bố cục hàng ngang cũ (7 thẻ, thiếu thumbnail/long/short) → về cây mặc định", () => {
+    const old = Object.fromEntries(["trends", "chapter", "seo", "tts", "images", "video", "youtube"].map((id, i) => [id, { x: i * 304, y: 0 }]));
+    expect(mergeLayout(old)).toEqual(DEFAULT_POSITIONS);
+  });
+
+  it("bố cục của mô hình cũ hơn (id trigger/agent/node con) → về mặc định cả bộ", () => {
     const old = { trigger: { x: 0, y: 150 }, agent: { x: 170, y: 145 }, tts: { x: 490, y: 150 }, images: { x: 650, y: 150 }, video: { x: 810, y: 150 }, youtube: { x: 970, y: 150 }, model: { x: 1, y: 2 } };
     expect(mergeLayout(old)).toEqual(DEFAULT_POSITIONS);
   });

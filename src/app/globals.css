@@ -110,3 +110,36 @@ body {
     @apply rounded-xl border border-border bg-card p-6;
   }
 }
+
+/* ── Hoạt ảnh màn flow: chỉ CSS, tắt hết khi người dùng chọn giảm chuyển động ── */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes node-in {
+    from { opacity: 0; transform: translateY(-14px) scale(0.97); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes sub-in {
+    from { opacity: 0; transform: translateX(-36px) scale(0.92); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes node-glow {
+    0%, 100% { box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.1), 0 0 14px rgba(56, 189, 248, 0.18); }
+    50% { box-shadow: 0 0 0 8px rgba(56, 189, 248, 0.16), 0 0 34px rgba(56, 189, 248, 0.38); }
+  }
+  @keyframes tick-pop {
+    0% { transform: scale(0.4); }
+    55% { transform: scale(1.5); }
+    100% { transform: scale(1); }
+  }
+  @keyframes edge-flow {
+    to { stroke-dashoffset: -22; }
+  }
+  .node-enter { animation: node-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
+  .sub-enter { animation: sub-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+  .node-glow { animation: node-glow 2.4s ease-in-out infinite; }
+  .tick-pop { display: inline-block; animation: tick-pop 0.5s ease-out; }
+  .edge-flow { animation: edge-flow 0.9s linear infinite; }
+  .panel-swap { animation: fadein 0.25s ease-out; }
+}
+.node-glow { box-shadow: 0 0 0 6px rgba(56, 189, 248, 0.12), 0 0 30px rgba(56, 189, 248, 0.25); }
+.edge-glow { stroke: #38bdf8; stroke-width: 7; stroke-linecap: round; opacity: 0.16; }
+.edge-flow { stroke: #e0f7ff; stroke-width: 3; stroke-linecap: round; stroke-dasharray: 1 21; }

@@ -58,7 +58,10 @@ export function Inspector({ data, cards, selected }: Props) {
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-x-hidden px-6 py-6 lg:overflow-y-auto">
-        <Panel data={data} tab={tab} />
+        {/* key đổi theo thẻ + tab → nội dung mờ vào nhẹ mỗi lần chuyển. */}
+        <div key={`${selected}:${tab}`} className="panel-swap">
+          <Panel data={data} tab={tab} />
+        </div>
       </div>
     </aside>
   );

@@ -19,11 +19,13 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, useTransition } from "react";
 import { rerenderAction, resetFlowLayoutAction, saveFlowLayoutAction } from "@/app/actions";
 import { ActionForm } from "@/components/action-form";
-import { CARD_WIDTH, DEFAULT_POSITIONS, MAIN_ORDER, ROW_Y, type CanvasNodeId, type Pos } from "@/lib/flow/layout";
-import { buildFlow, formatSlot, formatTime, isStale, STATUS_LABEL, TITLES, type CardId, type CardState, type CardView, type FlowData, type Issue, type NodeId } from "@/lib/flow/model";
+import { CARD_WIDTH, DEFAULT_POSITIONS, MAIN_ORDER, ROW_OF, type CanvasNodeId, type Pos } from "@/lib/flow/layout";
+import { edgeTone, TREE_EDGES } from "@/lib/flow/edges";
+import { buildFlow, formatSlot, formatTime, isStale, STATUS_LABEL, TITLES, type CardId, type CardView, type FlowData, type Issue, type NodeId } from "@/lib/flow/model";
 import { useLive, useLiveVideo } from "@/lib/live/store";
-import { buildSubs, SUB_Y, subOffsetX, type SubView } from "@/lib/flow/subnodes";
+import { buildSubs, subOffset, type SubView } from "@/lib/flow/subnodes";
 import { Inspector } from "./inspector";
+import { edgeTypes } from "./flow-edge";
 import { nodeTypes } from "./nodes";
 
 type Props = { data: FlowData; layout: Record<CanvasNodeId, Pos> };
@@ -36,17 +38,20 @@ export function FlowStudio(props: Props) {
   );
 }
 
-/** Cao độ (trên canvas) mà viewport canh giữa — thẻ ~400px + hàng node con ~110px nằm gọn trong khung 600px. */
-const VIEW_CENTER_Y = ROW_Y + 260;
-
-const EDGE_COLOR: Record<CardState, string> = { done: "#2f7d4f", run: "#38bdf8", error: "#7f1d1d", quota: "#b45309", wait: "#3b3b46", idle: "#3b3b46", skip: "#2a2a31" };
+/** Khung nhìn ôm cả cây: chừa lề 6%, không phóng quá 100%. */
+const FIT = { padding: 0.06, minZoom: 0.3, maxZoom: 1 } as const;
+/** Thời gian pan/zoom mượt khi chọn thẻ hoặc sắp xếp lại (ms). */
+const CAMERA_MS = 400;
+/** Chọn thẻ thì zoom lên ít nhất mức này để chữ đọc được. */
+const FOCUS_MIN_ZOOM = 0.8;
+const DEFAULT_CARD_HEIGHT = 150;
 
 function buildNodes(cards: Record<CardId, CardView>, subs: SubView[], layout: Record<CanvasNodeId, Pos>, selected: CardId): Node[] {
   const main: Node[] = MAIN_ORDER.map((id) => ({
     id,
     type: "card",
     position: layout[id],
-    data: { view: cards[id], selected: id === selected },
+    data: { view: cards[id], selected: id === selected, row: ROW_OF[id] },
   }));
   // Node con gắn parentId nên đi theo thẻ cha khi kéo; vị trí tương đối, không lưu.
   const children: Node[] = subs.map((view) => {
@@ -55,27 +60,23 @@ function buildNodes(cards: Record<CardId, CardView>, subs: SubView[], layout: Re
       id: view.id,
       type: "sub",
       parentId: view.parent,
-      position: { x: subOffsetX(siblings.indexOf(view), siblings.length, CARD_WIDTH), y: SUB_Y },
+      position: subOffset(siblings.indexOf(view), CARD_WIDTH),
       draggable: false,
-      data: { view },
+      data: { view, row: ROW_OF[view.parent] },
     };
   });
   return [...main, ...children];
 }
 
 function buildEdges(cards: Record<CardId, CardView>, subs: SubView[]): Edge[] {
-  const chain: Edge[] = MAIN_ORDER.slice(1).map((id, i) => {
-    const state = cards[id].state;
-    return {
-      id: `e-${id}`,
-      source: MAIN_ORDER[i],
-      sourceHandle: "out",
-      target: id,
-      type: "smoothstep",
-      animated: state === "run",
-      style: { stroke: EDGE_COLOR[state], strokeWidth: 3 },
-    };
-  });
+  const chain: Edge[] = TREE_EDGES.map(([from, to]) => ({
+    id: `e-${from}-${to}`,
+    source: from,
+    sourceHandle: "out",
+    target: to,
+    type: "flow",
+    data: { tone: edgeTone(from, to, cards) },
+  }));
   const dotted: Edge[] = subs.map((x) => ({
     id: `s-${x.id}`,
     source: x.parent,
@@ -89,7 +90,7 @@ function buildEdges(cards: Record<CardId, CardView>, subs: SubView[]): Edge[] {
 
 /** Mặc định mở thẻ đầu tiên chưa xong — thường là chỗ người dùng cần xem (Xu hướng chỉ là bối cảnh nên bỏ qua). */
 function firstOpen(cards: Record<CardId, CardView>): CardId {
-  return MAIN_ORDER.find((id) => id !== "trends" && cards[id].state !== "done") ?? "video";
+  return MAIN_ORDER.find((id) => id !== "trends" && cards[id].state !== "done") ?? "youtube";
 }
 
 const ISSUE_TONE: Record<Issue["tone"], string> = {
@@ -175,7 +176,7 @@ function Studio({ data: initial, layout }: Props) {
   const [selected, setSelected] = useState<CardId>(() => firstOpen(cards));
   const [nodes, setNodes, onNodesChange] = useNodesState(buildNodes(cards, subs, layout, selected));
   const edges = useMemo(() => buildEdges(cards, subs), [cards, subs]);
-  const { setCenter, getNode, getNodes } = useReactFlow();
+  const { setCenter, getNode, getNodes, getZoom, fitView } = useReactFlow();
   const [, startTransition] = useTransition();
   // useNodesState chỉ lấy giá trị đầu — dữ liệu mới từ server (render lại, đã đăng, polling) phải đẩy vào node, giữ nguyên vị trí.
   useEffect(() => {
@@ -186,20 +187,22 @@ function Studio({ data: initial, layout }: Props) {
       }),
     );
   }, [cards, subs, setNodes]);
-  // Canh viewport giữa thẻ đang chọn ở zoom 100% (chữ luôn đọc được); 7 thẻ rộng hơn màn hình nên kéo / cuộn ngang để xem tiếp.
-  const centerOn = useCallback(
-    (id: CardId, duration = 0) => {
+  // Chọn thẻ: camera trượt mượt tới thẻ, giữ zoom hiện tại nhưng không nhỏ hơn FOCUS_MIN_ZOOM.
+  const focusOn = useCallback(
+    (id: CardId) => {
       const n = getNode(id);
-      if (n) void setCenter(n.position.x + CARD_WIDTH / 2, VIEW_CENTER_Y, { zoom: 1, duration });
+      if (!n) return;
+      const h = n.measured?.height ?? DEFAULT_CARD_HEIGHT;
+      void setCenter(n.position.x + CARD_WIDTH / 2, n.position.y + h / 2, { zoom: Math.max(getZoom(), FOCUS_MIN_ZOOM), duration: CAMERA_MS });
     },
-    [getNode, setCenter],
+    [getNode, setCenter, getZoom],
   );
+  const fitAll = useCallback((duration = 0) => void fitView({ ...FIT, duration }), [fitView]);
   useEffect(() => {
-    const onResize = () => centerOn(selected);
+    const onResize = () => fitAll();
     addEventListener("resize", onResize);
     return () => removeEventListener("resize", onResize);
-  }, [centerOn, selected]);
-  // Hàng thẻ luôn thẳng: kéo thẻ chỉ trượt ngang, giữ nguyên y.
+  }, [fitAll]);
   // Kéo thả tự do (node con đi theo thẻ cha); vị trí lưu khi thả chuột.
   const onChange = (changes: NodeChange<Node>[]) => onNodesChange(changes);
   const v = data.video;
@@ -215,10 +218,16 @@ function Studio({ data: initial, layout }: Props) {
   const [panelOpen, setPanelOpen] = usePref("flow:panel", true);
   const [logOpen, setLogOpen] = usePref("flow:log", true);
 
+  // Đóng/mở bảng chi tiết đổi bề rộng canvas → ôm lại cả cây sau khi layout xong.
+  useEffect(() => {
+    const t = setTimeout(() => fitAll(CAMERA_MS), 60);
+    return () => clearTimeout(t);
+  }, [panelOpen, fitAll]);
+
   const select = (id: CardId) => {
     setSelected(id);
     setPanelOpen(true);
-    centerOn(id, 300);
+    focusOn(id);
     setNodes((ns) => ns.map((n) => ({ ...n, data: { ...n.data, selected: n.id === id } })));
   };
 
@@ -229,7 +238,7 @@ function Studio({ data: initial, layout }: Props) {
 
   const resetLayout = () => {
     setNodes((ns) => ns.map((n) => (n.parentId ? n : { ...n, position: DEFAULT_POSITIONS[n.id as CanvasNodeId] })));
-    requestAnimationFrame(() => centerOn(selected, 300));
+    requestAnimationFrame(() => fitAll(CAMERA_MS));
     startTransition(async () => void (await resetFlowLayoutAction()));
   };
 
@@ -294,25 +303,26 @@ function Studio({ data: initial, layout }: Props) {
         data-panel={panelOpen ? "open" : "closed"}
         className="flow-grid grid shrink-0 grid-cols-1 content-start lg:min-h-0 lg:flex-1 lg:shrink lg:overflow-hidden"
       >
-        <div className={`area-canvas relative min-w-0 border-b border-border ${logOpen ? "h-[580px]" : "h-[580px] lg:h-full"}`}>
+        <div className={`area-canvas relative min-w-0 border-b border-border ${logOpen ? "h-[640px] lg:h-[calc(100dvh-230px)] lg:min-h-[560px]" : "h-[640px] lg:h-full"}`}>
           <ReactFlow
             nodes={nodes}
             edges={edges}
             nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
             onNodesChange={onChange}
             onNodeDragStop={savePositions}
             onNodeClick={(_, n) => select((n.parentId ?? n.id) as CardId)}
-            onInit={() => centerOn(selected)}
+            fitView
+            fitViewOptions={FIT}
             nodesConnectable={false}
-            defaultViewport={{ x: 0, y: 0, zoom: 1 }}
             minZoom={0.3}
             maxZoom={1.5}
             zoomOnScroll={false}
-            // Giữ ⌘/Ctrl + cuộn (hoặc chụm 2 ngón trên trackpad) để thu nhỏ/phóng to; cuộn thường thì kéo ngang.
+            // Giữ ⌘/Ctrl + cuộn (hoặc chụm 2 ngón trên trackpad) để thu nhỏ/phóng to; cuộn thường thì dời khung nhìn.
             zoomActivationKeyCode={["Meta", "Control"]}
             zoomOnDoubleClick={false}
             panOnScroll
-            panOnScrollMode={PanOnScrollMode.Horizontal}
+            panOnScrollMode={PanOnScrollMode.Free}
             preventScrolling={false}
             colorMode="dark"
             proOptions={{ hideAttribution: true }}
@@ -321,7 +331,7 @@ function Studio({ data: initial, layout }: Props) {
             <Background variant={BackgroundVariant.Dots} gap={22} size={1.3} color="#2a2a33" />
             <Controls showInteractive={false} position="bottom-right" />
           </ReactFlow>
-          <p className="pointer-events-none absolute right-4 top-3 text-xs text-zinc-500">Kéo hoặc cuộn ngang để xem các bước khác</p>
+          <p className="pointer-events-none absolute bottom-3 left-4 text-xs text-zinc-500">Kéo để dời · ⌘/Ctrl + cuộn để zoom</p>
         </div>
         <div className="area-insp relative flex min-h-0 flex-col [&>aside]:flex-1">
           {panelOpen ? (

@@ -363,12 +363,6 @@ function Seo({ data, tab }: PanelProps) {
         <Empty text="Chưa có SEO & thumbnail cho video này." />
       ) : (
         <>
-          {data.video.files["thumbnail.jpg"] && (
-            <Sec title="Thumbnail">
-              {/* eslint-disable-next-line @next/next/no-img-element -- file từ GitHub Release qua redirect */}
-              <img src={data.video.files["thumbnail.jpg"]} alt="Thumbnail" className="aspect-video w-full rounded-xl border border-border object-cover" />
-            </Sec>
-          )}
           <SeoSummary score={score} videoId={data.video.id} />
           <ScoredSec title="Tiêu đề YouTube" seo={score.title}>
             <Code>{m.title}</Code>
@@ -729,15 +723,8 @@ function Lightbox({ src, scene, onClose }: { src: string; scene?: Scene; onClose
 }
 
 function VideoOut({ data, tab }: PanelProps) {
-  const refs = useRef<(HTMLVideoElement | null)[]>([]);
-  // Next ẩn trang cũ bằng <Activity> thay vì gỡ — dừng video để không phát tiếng khi đã rời trang.
-  useLayoutEffect(() => {
-    const vids = refs.current;
-    return () => vids.forEach((v) => v?.pause());
-  }, []);
-  const short = useSetting(data.series.id, "makeShort", data.series.makeShort);
-  const { files, error, runUrl } = data.video;
-  if (tab === "in") return <Empty text="Đầu vào là giọng đọc + ảnh cảnh ở các thẻ trước." />;
+  const { error, runUrl } = data.video;
+  if (tab === "in") return <Empty text="Đầu vào là giọng đọc + ảnh cảnh + thumbnail ở các thẻ trước." />;
   if (tab === "log")
     return (
       <StepLog
@@ -759,41 +746,89 @@ function VideoOut({ data, tab }: PanelProps) {
     );
   return (
     <>
-      <Sec title="Video dài">
-        {files["long.mp4"] ? (
-          <video ref={(el) => void (refs.current[0] = el)} src={files["long.mp4"]} poster={files["thumbnail.jpg"]} controls preload="metadata" className="aspect-video w-full rounded-xl bg-black" />
-        ) : (
-          <Empty text="Chưa có video dài." />
-        )}
+      <Sec title="Nhạc nền">
+        <Row k="Bài" v={(data.video.meta && musicTitle(data.video.meta.description)) || "Chưa có nhạc nền"} />
       </Sec>
+      <Sec title="Đầu ra">
+        <Row k="Video dài" v={data.video.files["long.mp4"] ? "đã dựng" : "chưa có"} />
+        <Row k="Short" v={data.video.files["short.mp4"] ? "đã dựng" : "chưa có"} />
+      </Sec>
+    </>
+  );
+}
+
+/** Dừng video khi rời trang: Next ẩn trang cũ bằng <Activity> thay vì gỡ nên tiếng sẽ phát tiếp. */
+function usePauseOnLeave() {
+  const ref = useRef<HTMLVideoElement | null>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    return () => el?.pause();
+  }, []);
+  return ref;
+}
+
+const DownloadLink = ({ href, text }: { href?: string; text: string }) =>
+  href ? (
+    <a href={href} className="btn-secondary mt-3 inline-block !px-3 !py-1.5 text-xs">
+      {text}
+    </a>
+  ) : null;
+
+function ThumbnailOut({ data, tab }: PanelProps) {
+  const src = data.video.files["thumbnail.jpg"];
+  if (tab === "in") return <Empty text="Thumbnail do bước Ảnh cảnh tạo ra, theo tiêu đề / mô tả từ thẻ SEO & Thumbnail." />;
+  if (tab === "log") return <StepLog data={data} id="images" />;
+  if (!src) return <Empty text="Chưa có thumbnail." />;
+  return (
+    <Sec title="Thumbnail">
+      {/* eslint-disable-next-line @next/next/no-img-element -- file từ GitHub Release qua redirect */}
+      <img src={src} alt="Thumbnail" width={640} height={360} loading="lazy" decoding="async" className="aspect-video w-full rounded-xl border border-border object-cover" />
+      <DownloadLink href={src} text="⬇ Thumbnail" />
+    </Sec>
+  );
+}
+
+function LongOut({ data, tab }: PanelProps) {
+  const ref = usePauseOnLeave();
+  const { files } = data.video;
+  if (tab === "in") return <Empty text="Đầu vào là giọng đọc + ảnh cảnh ở các thẻ trước, ghép ở thẻ Dựng video." />;
+  if (tab === "log") return <StepLog data={data} id="video" />;
+  return (
+    <Sec title="Video dài">
+      {files["long.mp4"] ? (
+        <>
+          <video ref={ref} src={files["long.mp4"]} poster={files["thumbnail.jpg"]} controls preload="metadata" className="aspect-video w-full rounded-xl bg-black" />
+          {data.video.durationSec ? <Row k="Thời lượng" v={clock(data.video.durationSec)} /> : null}
+          <DownloadLink href={files["long.mp4"]} text="⬇ Video dài" />
+        </>
+      ) : (
+        <Empty text="Chưa có video dài." />
+      )}
+    </Sec>
+  );
+}
+
+function ShortOut({ data, tab }: PanelProps) {
+  const ref = usePauseOnLeave();
+  const short = useSetting(data.series.id, "makeShort", data.series.makeShort);
+  const { files } = data.video;
+  if (tab === "in") return <Empty text="Short dựng từ các cảnh đầu của video, khổ dọc 9:16." />;
+  if (tab === "log") return <StepLog data={data} id="video" />;
+  return (
+    <>
       <Sec title="Short">
         {files["short.mp4"] ? (
-          <video ref={(el) => void (refs.current[1] = el)} src={files["short.mp4"]} controls preload="metadata" className="mx-auto aspect-[9/16] max-h-[420px] rounded-xl bg-black" />
+          <>
+            <video ref={ref} src={files["short.mp4"]} controls preload="metadata" className="mx-auto aspect-[9/16] max-h-[420px] rounded-xl bg-black" />
+            <DownloadLink href={files["short.mp4"]} text="⬇ Short" />
+          </>
         ) : (
           <Empty text="Video này không có Short." />
         )}
       </Sec>
-      <Sec title="Nhạc nền">
-        <Row k="Bài" v={(data.video.meta && musicTitle(data.video.meta.description)) || "Chưa có nhạc nền"} />
-      </Sec>
       <Sec title="Cài đặt" right={short.note && <span className="text-[11px] text-emerald-400">{short.note}</span>}>
         <Toggle on={short.value} onChange={short.save} label="Làm Short (cả bộ truyện, từ lần render sau)" />
       </Sec>
-      <div className="flex flex-wrap gap-2">
-        {(
-          [
-            ["long.mp4", "⬇ Video dài"],
-            ["short.mp4", "⬇ Short"],
-            ["thumbnail.jpg", "⬇ Thumbnail"],
-          ] as const
-        ).map(([f, text]) =>
-          files[f] ? (
-            <a key={f} href={files[f]} className="btn-secondary !px-3 !py-1.5 text-xs">
-              {text}
-            </a>
-          ) : null,
-        )}
-      </div>
     </>
   );
 }
@@ -926,6 +961,9 @@ export const PANELS: Record<CardId, (p: PanelProps) => ReactNode> = {
   seo: Seo,
   tts: Tts,
   images: Images,
+  thumbnail: ThumbnailOut,
   video: VideoOut,
+  long: LongOut,
+  short: ShortOut,
   youtube: Youtube,
 };

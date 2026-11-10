@@ -36,11 +36,12 @@ function data(v: VideoOverrides = {}, extra: Partial<Omit<FlowData, "video">> = 
 }
 
 const RENDER: CardId[] = ["seo", "tts", "images", "video"];
+const OUTPUT: CardId[] = ["thumbnail", "long", "short"];
 const states = (d: FlowData) => Object.fromEntries(CARD_ORDER.map((k) => [k, buildFlow(d).cards[k].state]));
 
 describe("buildFlow", () => {
-  it("một hàng 7 thẻ đúng thứ tự", () => {
-    expect(CARD_ORDER).toEqual(["trends", "chapter", "seo", "tts", "images", "video", "youtube"]);
+  it("10 thẻ của cây dọc đúng thứ tự", () => {
+    expect(CARD_ORDER).toEqual(["trends", "chapter", "seo", "tts", "images", "thumbnail", "video", "long", "short", "youtube"]);
     expect(Object.keys(buildFlow(data()).cards)).toEqual(CARD_ORDER);
   });
 
@@ -60,10 +61,12 @@ describe("buildFlow", () => {
 
   it("thiếu Short: video vẫn done, có cảnh báo và việc cần làm", () => {
     const r = buildFlow(data({ status: "ready", files: { "long.mp4": "/x" } }));
-    expect(r.cards.video).toMatchObject({ state: "done", warning: "Không có Short" });
+    expect(r.cards.video).toMatchObject({ state: "done" });
+    expect(r.cards.short).toMatchObject({ state: "skip", subtitle: "không có Short", warning: "Không có Short" });
+    expect(r.cards.long.state).toBe("done");
     expect(r.cards.video.metrics[0]).toBe("chỉ video dài");
     expect(r.cards.images.metrics).toEqual([]);
-    expect(r.issues).toContainEqual({ tone: "warn", text: "Không có Short", card: "video" });
+    expect(r.issues).toContainEqual({ tone: "warn", text: "Không có Short", card: "short" });
   });
 
   it("failed với meta null không crash, youtube skip, issue đỏ", () => {
@@ -126,8 +129,32 @@ describe("buildFlow", () => {
     expect(c.metrics[0]).toMatch(/^SEO \d+\/100$/);
     expect(c.metrics[1]).toBe("Tiêu đề vidIQ 72");
     expect(c.chips).toEqual(["a", "b", "c"]);
-    expect(c.thumb).toBe("/api/videos/31/thumbnail.jpg");
+    expect(c.thumb).toBeUndefined();
     expect(c.ai).toEqual({ label: "gpt-6-luna", brand: "openai" });
+  });
+
+  it("Thumbnail / Video dài / Short: trạng thái và chỉ số từ file + tiến độ dựng thật", () => {
+    const ready = buildFlow(data({ status: "ready" })).cards;
+    expect(OUTPUT.map((k) => ready[k].state)).toEqual(["done", "done", "done"]);
+    expect(ready.thumbnail).toMatchObject({ thumb: "/api/videos/31/thumbnail.jpg", metrics: ["thumbnail.jpg"] });
+    expect(ready.long.metrics).toEqual(["Thời lượng 18:40"]);
+
+    const progress = { steps: { video: { state: "run" as const, long: { done: 12, total: 30 }, short: { done: 1, total: 5 }, log: [] } } };
+    const run = buildFlow(data({ status: "rendering", files: {}, progress })).cards;
+    expect(run.long).toMatchObject({ state: "run", metrics: ["12/30 cảnh"], progress: 12 / 30 });
+    expect(run.short).toMatchObject({ state: "run", progress: 1 / 5 });
+    expect(run.thumbnail.state).toBe("wait"); // bước Ảnh cảnh chưa tới lượt
+
+    const failed = buildFlow(data({ status: "failed", files: {}, meta: null })).cards;
+    expect(OUTPUT.map((k) => failed[k].state)).toEqual(["error", "error", "error"]);
+  });
+
+  it("Short: bộ truyện tắt Short thì bỏ qua, không cảnh báo; thiếu thumbnail sau khi xong thì bỏ qua", () => {
+    const off = buildFlow(data({ status: "ready", files: { "long.mp4": "/x", "thumbnail.jpg": "/t" } }, { series: { ...data().series, makeShort: false } }));
+    expect(off.cards.short).toMatchObject({ state: "skip", subtitle: "bộ truyện tắt Short" });
+    expect(off.cards.short.warning).toBeUndefined();
+    expect(off.issues.some((i) => i.card === "short")).toBe(false);
+    expect(buildFlow(data({ status: "ready", files: { "long.mp4": "/x" } })).cards.thumbnail).toMatchObject({ state: "skip", subtitle: "không có file" });
   });
 
   it("Giọng đọc: giọng + thời lượng; Ảnh cảnh: model thật + x/y ảnh, ghi chú khi chỉ là dự kiến", () => {

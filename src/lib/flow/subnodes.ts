@@ -1,11 +1,11 @@
 import type { BrandId } from "@/components/brand-icons";
-import { describeRoute, firstUsableRoute, imageBrand, musicTitle } from "./derive";
+import { describeRoute, firstUsableRoute, musicTitle } from "./derive";
 import { formatTime, type CardId, type CardView, type FlowData } from "./model";
 
 /** Khóa icon nét (STEP_ICONS) cho node con không có logo hãng. */
 export type SubIcon = "model" | "bible" | "summary" | "vidiq" | "music" | "label" | "calendar";
 
-/** Node con treo dưới thẻ cha như cổng chat model / memory / tool của n8n: `value` là model hoặc giá trị thật. */
+/** Node con xếp cột bên phải thẻ cha như cổng chat model / memory / tool của n8n: `value` là model hoặc giá trị thật. */
 export type SubView = {
   id: string;
   parent: CardId;
@@ -17,21 +17,22 @@ export type SubView = {
   ok: boolean;
 };
 
-export const SUB_WIDTH = 104;
-export const SUB_GAP = 12;
-/** Khoảng cách dọc từ đỉnh hàng chính tới đỉnh hàng node con (px trên canvas). */
-export const SUB_Y = 430;
+export const SUB_WIDTH = 176;
+export const SUB_HEIGHT = 46;
+export const SUB_GAP = 6;
+/** Khoảng hở giữa mép phải thẻ cha và cột node con (px trên canvas). */
+export const SUB_INSET = 40;
+const SUB_TOP = 8;
 
-/** Toạ độ x (tương đối so với thẻ cha) của node con thứ i trong n node, canh giữa dưới thẻ cha. */
-export function subOffsetX(index: number, count: number, parentWidth: number): number {
-  const total = count * SUB_WIDTH + (count - 1) * SUB_GAP;
-  return (parentWidth - total) / 2 + index * (SUB_WIDTH + SUB_GAP);
+/** Vị trí (tương đối so với thẻ cha) của node con thứ i: xếp thành cột bên phải thẻ cha. */
+export function subOffset(index: number, parentWidth: number): { x: number; y: number } {
+  return { x: parentWidth + SUB_INSET, y: SUB_TOP + index * (SUB_HEIGHT + SUB_GAP) };
 }
 
 const orDash = (s: string | null | undefined) => (s && s.trim() ? s : "—");
 
 /**
- * Các node con của từng thẻ, suy từ dữ liệu thật. Bản gộp dùng lại chương/ảnh nên không có node con ở Viết chương và Ảnh cảnh.
+ * Các node con của từng thẻ, suy từ dữ liệu thật. Bản gộp dùng lại chương nên không có node con ở Viết chương; Ảnh cảnh không có node con (model đã hiện ngay trên thẻ).
  */
 export function buildSubs(d: FlowData, cards: Record<CardId, CardView>): SubView[] {
   const reuse = Boolean(d.video.meta?.compilation);
@@ -57,8 +58,6 @@ export function buildSubs(d: FlowData, cards: Record<CardId, CardView>): SubView
     { id: "seo-model", parent: "seo", label: "Chat model", value: orDash(agent?.label), icon: "model", brand: agent?.brand ?? null, ok: Boolean(agent) },
     { id: "seo-vidiq", parent: "seo", label: "vidIQ", value: vidiq, icon: "vidiq", ok: titleScore != null || keywords > 0 },
   );
-
-  if (!reuse) subs.push({ id: "images-model", parent: "images", label: "AI vẽ ảnh", value: d.ai.image.model, icon: "model", brand: imageBrand(d.ai.image.model), ok: true });
 
   const music = m ? musicTitle(m.description) : null;
   subs.push({ id: "video-music", parent: "video", label: "Nhạc nền", value: orDash(music), icon: "music", ok: Boolean(music) });
