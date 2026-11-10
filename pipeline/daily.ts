@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, lt, sql } from "drizzle-orm";
+import { and, asc, eq, lt, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { chapters, series, videos } from "@/db/schema";
 import { QuotaExhaustedError } from "@/lib/ai";
@@ -13,11 +13,6 @@ import { renderVideo } from "./render";
 /** Số chương chờ duyệt tối đa khi không tự duyệt — tránh viết dồn khi người dùng chưa kịp đọc. */
 const MAX_PENDING = 3;
 
-/** 0h hôm nay giờ Việt Nam (UTC+7). */
-function startOfTodayVN() {
-  const now = new Date(Date.now() + 7 * 3600_000);
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - 7 * 3600_000);
-}
 
 async function writeNext(seriesId: number): Promise<{ id: number; number: number; title: string; words: number }> {
   const list = await db().select().from(chapters).where(eq(chapters.seriesId, seriesId)).orderBy(asc(chapters.number));
@@ -128,6 +123,9 @@ async function scanTrendsDaily() {
  * Chạy 3 tiếng/lần: render hàng đợi trước, rồi viết chương tới khi đủ chỉ tiêu ngày hoặc hết quota free.
  * Hết quota không phải lỗi — lần chạy sau làm tiếp.
  */
+/** Số video chương làm sẵn chờ đăng (mỗi ngày đăng 1 lúc 15h). */
+const BUFFER = 3;
+
 async function main() {
   await loadSecrets(true);
   const failures: string[] = [];
@@ -138,15 +136,18 @@ async function main() {
     if (!quotaLeft) break;
     console.log(`▶ ${s.title}`);
     try {
-      // Đếm theo VIDEO chương tạo hôm nay (mỗi ngày 1 video) — đếm chapters.updatedAt sai vì sửa SEO/duyệt lại cũng làm đổi.
-      const writtenToday = (
+      // Viết trước, đăng theo lịch: giữ sẵn BUFFER video chưa lên sóng (chờ render / đã lên lịch ở tương lai).
+      // Đủ kho thì thôi viết → chạy đều 1 video/ngày, không đốt quota và phút Actions.
+      const now = new Date();
+      const stock = (
         await db()
-          .select({ id: videos.id, meta: videos.meta })
+          .select({ id: videos.id, status: videos.status, publishAt: videos.publishAt, meta: videos.meta })
           .from(videos)
           .innerJoin(chapters, eq(chapters.id, videos.chapterId))
-          .where(and(eq(chapters.seriesId, s.id), gte(videos.createdAt, startOfTodayVN())))
-      ).filter((v) => !v.meta?.compilation);
-      for (let done = writtenToday.length; done < s.chaptersPerDay; done++) {
+          .where(eq(chapters.seriesId, s.id))
+      ).filter((v) => !v.meta?.compilation && v.status !== "failed" && (!v.publishAt || v.publishAt > now));
+      const want = Math.min(s.chaptersPerDay, Math.max(0, BUFFER - stock.length));
+      for (let done = 0; done < want; done++) {
         const pending = await db()
           .select({ id: chapters.id })
           .from(chapters)
@@ -165,7 +166,7 @@ async function main() {
             (s.autoApprove ? "Đã tự duyệt, đang xếp hàng render." : `Chờ đạo hữu duyệt 👉 ${WEB_URL}/chapters/${ch.id}`),
         );
       }
-      if (writtenToday.length >= s.chaptersPerDay) console.log(`  đủ ${s.chaptersPerDay} chương hôm nay`);
+      if (!want) console.log(`  kho đủ ${stock.length}/${BUFFER} video chờ đăng — chưa cần viết thêm`);
     } catch (e) {
       if (e instanceof QuotaExhaustedError) {
         console.log(`⏸ ${e.message}`);
@@ -181,6 +182,8 @@ async function main() {
   await renderQueue(failures);
   // Xu hướng YouTube: tối đa 1 lần/ngày; lỗi không làm hỏng job.
   await scanTrendsDaily().catch((e) => console.warn("⚠ Quét xu hướng lỗi:", e instanceof Error ? e.message : e));
+  // Chương vừa viết thì render luôn trong lượt này (không đợi 6 tiếng sau).
+  if (quotaLeft) await renderQueue(failures);
   await dispatchCompilations().catch((e) => failures.push(`bản gộp: ${e instanceof Error ? e.message : e}`));
   if (failures.length) {
     await notify(`❌ <b>Job tự động có lỗi</b>\n${escapeHtml(failures.join("\n").slice(0, 800))}`);
