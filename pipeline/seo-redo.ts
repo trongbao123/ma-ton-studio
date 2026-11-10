@@ -26,11 +26,15 @@ export async function redoSeo(videoId: number) {
   const m = await videoMeta(s, c, seo?.text);
   console.log(`  Meta mới bởi ${textProvider().lastModel}`);
 
-  const options = [m.title, ...(m.titleAlternatives ?? [])].filter(Boolean);
+  // Giữ cả tiêu đề đang dùng làm ứng viên: làm lại không bao giờ được ra tiêu đề điểm thấp hơn.
+  const options = [v.meta.title, m.title, ...(m.titleAlternatives ?? [])].filter(Boolean);
   const picked = await pickBestTitle(options, m.description);
   const all = picked?.all ?? options.map((title) => ({ title, score: null }));
   for (const x of all) console.log(`  ${x.score ?? "?"} — ${x.title}`);
-  const best = picked?.best ?? all[0];
+  const top = picked?.best ?? all[0];
+  // Tiêu đề vidIQ gợi ý hay thiếu số chương → gắn thêm nếu còn chỗ (≤ 100 ký tự).
+  const tail = ` | Chương ${c.number}`;
+  const best = /chương\s*\d+/i.test(top.title) || top.title.length + tail.length > 100 ? top : { ...top, title: `${top.title}${tail}` };
 
   // Giữ phần ghi công nhạc (nếu có) ở cuối mô tả cũ.
   const credit = v.meta.description.match(/\n\nNhạc nền:[\s\S]*$/)?.[0] ?? "";

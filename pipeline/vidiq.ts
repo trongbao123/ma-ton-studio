@@ -169,7 +169,8 @@ export async function generateTitles(
     if ("regionCode" in props) args.regionCode = "VN";
     // Vòng sau: báo vidIQ các tiêu đề đã thử để nó nghĩ hướng khác, và chỉ trả tiêu đề đạt ngưỡng điểm.
     if (more.previous?.length && "previousTitles" in props) args.previousTitles = more.previous.slice(0, 20);
-    if (more.threshold && "scoreThreshold" in props) args.scoreThreshold = more.threshold;
+    // vidIQ chỉ nhận scoreThreshold ≤ 80 — xin ≥ 80 rồi tự lọc điểm cao hơn.
+    if (more.threshold && "scoreThreshold" in props) args.scoreThreshold = Math.min(80, more.threshold);
     const res = await s.client.callTool({ name: tool.name, arguments: args });
     if ((res as { isError?: boolean }).isError) throw new Error(textOf(res).slice(0, 200));
     return parseScoredTitles(textOf(res));
