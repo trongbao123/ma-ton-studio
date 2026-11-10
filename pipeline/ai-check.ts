@@ -2,6 +2,7 @@
 // để trang Cài đặt AI hiện "đã kết nối". Chạy bởi workflow ai-check (scripts/ai-login.mjs tự kích hoạt sau khi lưu đăng nhập).
 import { z } from "zod";
 import { availableProviders, canRun, providerFor } from "@/lib/ai";
+import { codexImage } from "@/lib/ai/cli";
 import { saveCliStatus, type CliStatus } from "@/lib/ai/cli-status";
 import { defaultRouting, isCli, PROVIDERS } from "@/lib/ai/routing";
 import { loadSecrets } from "@/lib/secrets";
@@ -41,6 +42,17 @@ async function main() {
       const error = e instanceof Error ? e.message : String(e);
       console.log(`✗ ${p.label}: ${error}`);
       status[p.id] = { ok: false, error: error.slice(0, 300), at };
+    }
+  }
+  // Thử vẽ 1 ảnh bằng Codex (gói Plus) — xác nhận công cụ vẽ chạy được trên máy này.
+  if (process.env.CODEX_AUTH_JSON && canRun("codex-cli")) {
+    const started = Date.now();
+    try {
+      const img = await codexImage(process.env.CODEX_AUTH_JSON, "a small red lotus on dark water, 3D render", "1:1");
+      console.log(`✓ Codex vẽ ảnh: ${img.length} bytes (${((Date.now() - started) / 1000).toFixed(1)}s)`);
+    } catch (e) {
+      failed++;
+      console.log(`✗ Codex vẽ ảnh: ${e instanceof Error ? e.message : e}`);
     }
   }
   await saveCliStatus(status);

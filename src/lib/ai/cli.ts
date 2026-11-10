@@ -255,6 +255,8 @@ export class CliProvider implements TextProvider {
   }
 }
 
+const CODEX_IMAGE_MODEL = process.env.CODEX_IMAGE_MODEL ?? "gpt-6-luna";
+
 /** File ảnh mới nhất Codex lưu trong CODEX_HOME/generated_images (công cụ vẽ ảnh của Codex tự lưu ở đó). */
 async function newestImage(dir: string): Promise<string | null> {
   const entries = await readdir(dir, { recursive: true }).catch(() => [] as string[]);
@@ -266,6 +268,40 @@ async function newestImage(dir: string): Promise<string | null> {
     if (!best || at > best.at) best = { file, at };
   }
   return best?.file ?? null;
+}
+
+/**
+ * Chạy Codex tới khi ảnh xuất hiện (kích thước đứng yên 2 lần đo) rồi tắt luôn — Codex đôi khi treo ở bước
+ * kết nối lại sau khi đã vẽ xong, chờ nó tự thoát là phí tới 20 phút.
+ */
+function runUntilImage(cmd: Command, cwd: string, imageDir: string): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd.bin, cmd.args, { cwd, env: cmd.env as NodeJS.ProcessEnv, stdio: ["pipe", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    let lastSize = -1;
+    const done = () => {
+      clearInterval(poll);
+      clearTimeout(timer);
+      resolve({ stdout, stderr });
+    };
+    const poll = setInterval(async () => {
+      const img = await newestImage(imageDir);
+      const size = img ? (await stat(img).catch(() => null))?.size ?? -1 : -1;
+      if (size > 0 && size === lastSize) child.kill("SIGKILL");
+      lastSize = size;
+    }, 3000);
+    const timer = setTimeout(() => child.kill("SIGKILL"), 10 * 60_000);
+    child.stdout.on("data", (d: Buffer) => (stdout += d));
+    child.stderr.on("data", (d: Buffer) => (stderr += d));
+    child.on("error", (e) => {
+      clearInterval(poll);
+      clearTimeout(timer);
+      reject(e);
+    });
+    child.on("close", done);
+    child.stdin.end(cmd.stdin);
+  });
 }
 
 /**
@@ -284,11 +320,15 @@ export async function codexImage(
     await mkdir(work, { recursive: true });
     const cmd: Command = {
       bin: "codex",
-      args: ["exec", "--skip-git-repo-check", "--ephemeral", "--sandbox", "read-only", "--color", "never", "-c", "features.image_generation=true", "-"],
+      // Model chat chỉ cần gọi công cụ vẽ 1 lần → dùng model rẻ nhất, suy nghĩ tối thiểu để đỡ tốn lượt gói.
+      args: [
+        "exec", "--skip-git-repo-check", "--ephemeral", "--sandbox", "read-only", "--color", "never",
+        "-m", CODEX_IMAGE_MODEL, "-c", 'model_reasoning_effort="low"', "-c", "features.image_generation=true", "-",
+      ],
       env: { ...baseEnv(home), CODEX_HOME: path.join(home, ".codex") },
       stdin: `Use your image generation tool to create exactly ONE image, aspect ratio ${aspect}. Do not ask questions, do not write files, just generate it.\n\nImage prompt: ${prompt}`,
     };
-    const res = await run(cmd, work);
+    const res = await runUntilImage(cmd, work, path.join(home, ".codex", "generated_images"));
     const img = await newestImage(path.join(home, ".codex", "generated_images"));
     if (!img) throw classify("codex", `${res.stderr}\n${res.stdout}`.trim().slice(-600) || "Codex không vẽ ra ảnh.");
     if (persist) {

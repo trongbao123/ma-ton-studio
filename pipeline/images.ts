@@ -101,6 +101,16 @@ export function drawImage(prompt: string, outFile: string, opts: DrawOpts): Prom
   return job;
 }
 
+async function codexDraw(prompt: string, outFile: string, model: string, opts: DrawOpts) {
+  try {
+    await saveImage(outFile, await codexImage(process.env.CODEX_AUTH_JSON!, prompt, aspect(opts), (fresh) => saveSecret("CODEX_AUTH_JSON", fresh)));
+    void recordUsage(model, false);
+  } catch (e) {
+    if (e instanceof QuotaExhaustedError) void recordUsage(model, true);
+    throw e;
+  }
+}
+
 const inflight = new Map<string, Promise<string | undefined>>();
 
 async function drawOnce(prompt: string, outFile: string, opts: DrawOpts): Promise<string | undefined> {
@@ -112,7 +122,7 @@ async function drawOnce(prompt: string, outFile: string, opts: DrawOpts): Promis
   for (const r of list) {
     try {
       const model = r.model || DEFAULT_IMAGE_MODEL[r.provider];
-      if (r.provider === "codex") await saveImage(outFile, await codexImage(process.env.CODEX_AUTH_JSON!, prompt, aspect(opts), (fresh) => saveSecret("CODEX_AUTH_JSON", fresh)));
+      if (r.provider === "codex") await codexDraw(prompt, outFile, model, opts);
       else if (r.provider === "gemini") await geminiImage(prompt, outFile, model, opts);
       else if (r.provider === "openai") await openaiImage(prompt, outFile, model, opts);
       else if (r.provider === "deepinfra") await deepinfraFlux(prompt, outFile, model, opts);
