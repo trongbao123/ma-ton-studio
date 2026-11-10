@@ -7,7 +7,7 @@ import { planChapters, writeChapterStep } from "@/lib/story/service";
 import { quotaDay } from "@/lib/ai/usage";
 import { aiUsage } from "@/db/schema";
 import { loadSecrets } from "@/lib/secrets";
-import { compileState } from "./compile";
+import { compileSeries, compileState } from "./compile";
 import { renderVideo } from "./render";
 
 /** Số chương chờ duyệt tối đa khi không tự duyệt — tránh viết dồn khi người dùng chưa kịp đọc. */
@@ -74,17 +74,23 @@ async function renderQueue(failures: string[]) {
   }
 }
 
-/** Bản gộp (render.yml với video_id = "compile:<seriesId>"). Cần quyền `actions: write` cho GH_TOKEN. */
+/**
+ * Thử dispatch render.yml (job riêng); token của job daily thiếu quyền `actions: write` (403) thì gộp ngay trong job này
+ * (daily có 240 phút, ghép thường chỉ copy luồng nên vài phút).
+ */
 async function dispatchCompile(seriesId: number) {
   const token = process.env.GH_TOKEN;
   const repo = process.env.GITHUB_REPOSITORY ?? process.env.GH_REPO;
-  if (!token || !repo) throw new Error("Thiếu GH_TOKEN / GITHUB_REPOSITORY");
-  const res = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/render.yml/dispatches`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" },
-    body: JSON.stringify({ ref: "main", inputs: { video_id: `compile:${seriesId}` } }),
-  });
-  if (!res.ok) throw new Error(`${res.status} ${(await res.text()).slice(0, 200)}`);
+  if (token && repo) {
+    const res = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/render.yml/dispatches`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" },
+      body: JSON.stringify({ ref: "main", inputs: { video_id: `compile:${seriesId}` } }),
+    });
+    if (res.ok) return;
+    console.log(`  dispatch bản gộp ${res.status} — gộp ngay trong job daily`);
+  }
+  await compileSeries(seriesId);
 }
 
 /** Đủ chương đã render chưa nằm trong bản gộp nào thì kích hoạt gộp. Lỗi dispatch chỉ báo (1 lần/ngày), không làm hỏng job. */
