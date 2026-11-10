@@ -1,9 +1,10 @@
 "use server";
 
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
+import { SERIES_TAG, TRENDS_TAG } from "@/lib/cache-tags";
 import { appSettings, chapters, series, videos } from "@/db/schema";
 import { LAYOUT_KEY, mergeLayout, type Pos } from "@/lib/flow/layout";
 import { draftBible, planChapters, writeChapterStep, type WriteMode } from "@/lib/story/service";
@@ -41,6 +42,7 @@ export async function createSeriesAction(_: ActionState, form: FormData): Promis
       .values({ ...draft, genre, targetWords })
       .returning({ id: series.id });
     id = row.id;
+    updateTag(SERIES_TAG);
   });
   if (state.error) return state;
   redirect(`/series/${id}`);
@@ -61,6 +63,7 @@ export async function updateSeriesAction(seriesId: number, _: ActionState, form:
         chaptersPerDay: Math.min(Math.max(Number(form.get("chaptersPerDay")) || 2, 1), 10),
       })
       .where(eq(series.id, seriesId));
+    updateTag(SERIES_TAG);
     revalidatePath(`/series/${seriesId}`);
     return "Đã lưu story bible.";
   });
@@ -70,6 +73,7 @@ export async function planChaptersAction(seriesId: number, _: ActionState, form:
   const count = Math.min(Math.max(Number(form.get("count")) || 10, 1), 30);
   return attempt(async () => {
     await planChapters(seriesId, count);
+    updateTag(SERIES_TAG);
     revalidatePath(`/series/${seriesId}`);
     return `Đã lên dàn ý ${count} chương.`;
   });
@@ -78,7 +82,10 @@ export async function planChaptersAction(seriesId: number, _: ActionState, form:
 export async function writeChapterAction(chapterId: number, mode: WriteMode) {
   try {
     const r = await writeChapterStep(chapterId, mode);
-    if (mode === "finish") revalidatePath("/", "layout");
+    if (mode === "finish") {
+      updateTag(SERIES_TAG);
+      revalidatePath("/", "layout");
+    }
     return r;
   } catch (e) {
     return { error: e instanceof Error ? e.message : String(e) };
@@ -98,6 +105,7 @@ export async function saveChapterAction(chapterId: number, _: ActionState, form:
         updatedAt: new Date(),
       })
       .where(eq(chapters.id, chapterId));
+    updateTag(SERIES_TAG);
     revalidatePath("/", "layout");
     return "Đã lưu.";
   });
@@ -112,6 +120,7 @@ export async function setApprovedAction(chapterId: number, approved: boolean): P
       .set({ status: approved ? "approved" : row?.content ? "draft" : "outline", updatedAt: new Date() })
       .where(eq(chapters.id, chapterId));
     if (approved) await queueVideo(chapterId);
+    updateTag(SERIES_TAG);
     revalidatePath("/", "layout");
     return approved ? "Đã duyệt — đang render video." : "Đã bỏ duyệt.";
   });
@@ -134,6 +143,7 @@ export async function rerenderAction(videoId: number): Promise<ActionState> {
 export async function scanTrendsAction(): Promise<ActionState> {
   return attempt(async () => {
     if (!(await dispatchTrends())) throw new Error("Chưa cấu hình GH_TOKEN / GH_REPO nên không gọi được GitHub Actions.");
+    revalidateTag(TRENDS_TAG, "max");
     revalidatePath("/trends");
     return "Đã xếp hàng quét — khoảng 2–3 phút nữa tải lại trang.";
   });

@@ -8,7 +8,8 @@ import { Lamp } from "@/components/usage-lamp";
 import { LAMP_TEXT, lampOf, nextReset, SOURCES, untilText, type Source, type SourceDay, type SourceId } from "@/lib/ai/sources";
 import { LIMIT_SOURCE_TEXT, levelOf, type LimitBrand, type LimitLevel, type LimitRow, type LimitWindow } from "@/lib/limits";
 import { loadLimits } from "@/lib/limits-data";
-import { configuredSources, lastQuotaDays, recentAiWork, usageByDay } from "@/lib/usage-data";
+import { usageHistory } from "@/lib/cached";
+import { configuredSources, lastQuotaDays, recentAiWork } from "@/lib/usage-data";
 
 export const metadata: Metadata = { title: "Hạn mức AI · Ma Tôn Studio" };
 
@@ -48,7 +49,7 @@ function SourceMark({ s }: { s: Source }) {
 async function Ledger() {
   await connection();
   const days = lastQuotaDays(7);
-  const [usage, configured] = await Promise.all([usageByDay(days), configuredSources()]);
+  const [usage, configured] = await Promise.all([usageHistory(days), configuredSources()]);
   const today = usage[days[0]];
   const now = new Date();
   // Nguồn chính luôn hiện; nguồn dự phòng trả phí chỉ hiện khi có key hoặc đã dùng trong 7 ngày.

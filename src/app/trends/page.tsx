@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
-import { connection } from "next/server";
 import { Suspense, type ReactNode } from "react";
 import { scanTrendsAction } from "@/app/actions";
 import { ActionForm } from "@/components/action-form";
-import { loadTrends, type TrendVideo } from "@/lib/trends";
+import { cachedTrends } from "@/lib/cached";
+import type { TrendVideo } from "@/lib/trends";
 
 export const metadata: Metadata = { title: "Xu hướng · Ma Tôn Studio" };
 
@@ -27,8 +27,7 @@ const vnTime = (iso: string) => new Date(iso).toLocaleString("vi-VN", { timeZone
 const num = (n: number | null) => (n == null ? "—" : n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1)}K` : String(Math.round(n)));
 
 async function Report() {
-  await connection();
-  const data = await loadTrends();
+  const data = await cachedTrends();
   const i = data?.insights;
   return (
     <>

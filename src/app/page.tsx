@@ -9,7 +9,8 @@ import { db } from "@/db";
 import { aiUsage } from "@/db/schema";
 import { quotaDay } from "@/lib/ai/usage";
 import { readStatsSnapshot } from "@/lib/youtube-stats";
-import { counters, seriesCards, todo, videoCards } from "@/lib/studio";
+import { cachedSeriesCards } from "@/lib/cached";
+import { counters, todo, videoCards } from "@/lib/studio";
 
 export default function HomePage() {
   return (
@@ -132,8 +133,7 @@ async function Todo() {
 }
 
 async function Covers() {
-  await connection();
-  const list = await seriesCards();
+  const list = await cachedSeriesCards();
   if (!list.length)
     return (
       <div className="rounded-xl border border-dashed border-border p-10 text-center">

@@ -1,9 +1,8 @@
 import { Plus } from "lucide-react";
 import Link from "next/link";
-import { connection } from "next/server";
 import { Suspense } from "react";
 import { SeriesCover } from "@/components/studio-cards";
-import { seriesCards } from "@/lib/studio";
+import { cachedSeriesCards } from "@/lib/cached";
 
 export default function SeriesListPage() {
   return (
@@ -22,8 +21,7 @@ export default function SeriesListPage() {
 }
 
 async function List() {
-  await connection();
-  const list = await seriesCards();
+  const list = await cachedSeriesCards();
   if (!list.length) return <p className="text-muted">Chưa có truyện nào.</p>;
   return (
     <ul className="grid grid-cols-2 gap-5 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
