@@ -1,10 +1,10 @@
-import { eq } from "drizzle-orm";
+import { eq, gte } from "drizzle-orm";
 import { db } from "@/db";
 import { aiUsage } from "@/db/schema";
 import { fetchClaudeLimits } from "@/lib/ai/claude-limits";
 import { toLimitWindow, type PlanSnapshot } from "@/lib/ai/plan-limits";
 import { loadPlanLimits, savePlanLimits } from "@/lib/ai/plan-limits-store";
-import { bySource, DAILY_LIMIT, nextPacificMidnight, nextReset, type SourceDay } from "@/lib/ai/sources";
+import { bySource, classifyModel, DAILY_LIMIT, nextPacificMidnight, nextReset, type SourceDay } from "@/lib/ai/sources";
 import { quotaDay } from "@/lib/ai/usage";
 import {
   CF_DAILY_NEURONS,
@@ -59,6 +59,34 @@ async function claudeRow(): Promise<LimitRow> {
 
 const chatgptRow = async (): Promise<LimitRow> =>
   snapshotRow({ id: "chatgpt-plan", name: "ChatGPT · gói Plus (Codex)", brand: "openai" }, (await loadPlanLimits()).codex, "Chưa có số đo — hiện sau lần Codex chạy kế tiếp trên GitHub Actions.");
+
+/**
+ * Vẽ ảnh bằng gói ChatGPT Plus (Codex): lượt vẽ ảnh RIÊNG của gói, không dính Cloudflare. OpenAI không công bố số lượt
+ * và API hạn mức của Codex chỉ trả khung chung của gói → hiện số ảnh app đã vẽ hôm nay; mốc = số ảnh của lần gần nhất
+ * chạm giới hạn (7 ngày qua), như cách đo của Gemini.
+ */
+async function chatgptImageRow(today: TodayUsage): Promise<LimitRow> {
+  const row = { id: "chatgpt-image", name: "Vẽ ảnh · gói ChatGPT Plus", brand: "openai" as const, asOf: null };
+  const day = today.sources["chatgpt-image"];
+  const since = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
+  const recent = await db().select().from(aiUsage).where(gte(aiUsage.day, since));
+  const hits = new Map<string, number>();
+  for (const r of recent) {
+    if (classifyModel(r.model) !== "chatgpt-image") continue;
+    hits.set(r.day, (hits.get(r.day) ?? 0) + r.calls);
+  }
+  const limitedDays = [...new Set(recent.filter((r) => r.limited && classifyModel(r.model) === "chatgpt-image").map((r) => r.day))].sort();
+  const lastHit = limitedDays.at(-1);
+  const measured = lastHit ? (hits.get(lastHit) ?? null) : null;
+  const used = day?.calls ?? 0;
+  const w = makeWindow("Hôm nay", used, measured, "ảnh", null);
+  const note = day?.limited
+    ? "Đã chạm giới hạn vẽ ảnh của gói hôm nay — app tự chuyển sang AI vẽ kế tiếp (Cloudflare)."
+    : measured
+      ? `Mốc ~${measured} ảnh là số đo được lần chạm giới hạn gần nhất (${lastHit}). OpenAI không công bố số lượt của gói Plus.`
+      : "OpenAI không công bố số lượt vẽ ảnh của gói Plus — mốc sẽ hiện sau lần đầu chạm giới hạn.";
+  return { ...row, source: "measured", windows: [day?.limited ? { ...w, percent: 100 } : w], note };
+}
 
 /** Gemini: Google không có API đọc quota còn lại → số lượt app đếm hôm nay so với mốc free đã đo, tính theo từng model. */
 function geminiRow(id: "gemini-free" | "voice", name: string, today: TodayUsage): LimitRow {
@@ -180,6 +208,7 @@ export async function loadLimits(): Promise<LimitRow[]> {
   const jobs: { id: string; name: string; brand: LimitRow["brand"]; run: () => Promise<LimitRow> }[] = [
     { id: "claude-plan", name: "Claude · gói Pro", brand: "claude", run: claudeRow },
     { id: "chatgpt-plan", name: "ChatGPT · gói Plus (Codex)", brand: "openai", run: chatgptRow },
+    { id: "chatgpt-image", name: "Vẽ ảnh · gói ChatGPT Plus", brand: "openai", run: async () => chatgptImageRow(await todayP) },
     { id: "gemini-free", name: "Gemini API miễn phí", brand: "gemini", run: async () => geminiRow("gemini-free", "Gemini API miễn phí", await todayP) },
     { id: "voice", name: "Giọng đọc Gemini", brand: "gemini", run: async () => geminiRow("voice", "Giọng đọc Gemini", await todayP) },
     { id: "cloudflare", name: "Cloudflare Workers AI", brand: "cloudflare", run: async () => cloudflareRow(await todayP) },
