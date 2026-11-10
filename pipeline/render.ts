@@ -1,3 +1,5 @@
+import { enrichDescription, segmentsFromCues } from "./description";
+import { playlistUrl, seriesPlaylist } from "./playlist";
 import { access, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { and, eq } from "drizzle-orm";
@@ -444,7 +446,7 @@ export async function renderVideo(videoId: number) {
     );
     const music = await pickMusic(videoId);
     // Ghi công nhạc nền (bắt buộc với CC BY) — gắn sau bước tối ưu SEO để AI không xoá mất.
-    const meta: VideoMeta = music
+    let meta: VideoMeta = music
       ? { ...fixed.meta, description: `${fixed.meta.description}\n\n${musicCredit(music)}`, shortDescription: `${fixed.meta.shortDescription}\n\n${musicCredit(music)}` }
       : fixed.meta;
     track.log("agent", fixed.rounds ? `Điểm SEO: ${fixed.from} → ${fixed.score} sau ${fixed.rounds} lượt tối ưu` : `Điểm SEO: ${fixed.score} (đạt)`);
@@ -558,6 +560,12 @@ export async function renderVideo(videoId: number) {
       return thumbnail(dir, "", m.thumbnailText, `CHƯƠNG ${c.number}`);
     });
     track.finish("images");
+    // Mô tả đủ checklist vidIQ: mục lục theo mốc giọng đọc thật, link danh sách phát / chương trước, hashtag.
+    const pl = await seriesPlaylist(s.id);
+    meta = await enrichDescription(meta, {
+      segments: segmentsFromCues(long.cues, long.seconds), seriesId: s.id, chapterNumber: c.number,
+      keywords: meta.seo?.keywords, links: pl ? [`📜 Nghe trọn bộ theo thứ tự: ${playlistUrl(pl)}`] : [],
+    });
     const metaFile = path.join(dir, "youtube.txt");
     await writeFile(metaFile, `${meta.title}\n\n${meta.description}\n\nTags: ${meta.tags.join(", ")}\n\n--- SHORT ---\n${meta.shortTitle}\n\n${meta.shortDescription}\n`);
 
@@ -609,6 +617,7 @@ if (process.argv[1]?.endsWith("render.ts")) {
   const arg = process.argv[2] ?? "";
   const runJob = () => {
     if (arg.startsWith("seo:")) return import("./seo-redo").then((x) => x.redoSeo(Number(arg.slice(4))));
+    if (arg.startsWith("playlist:")) return import("./playlist").then((x) => x.backfillPlaylist(Number(arg.slice(9))));
     if (arg === "trends") return import("./trends").then((x) => x.scanTrends());
     if (arg.startsWith("compile:")) return import("./compile").then((x) => x.compileSeries(Number(arg.slice(8))));
     return renderVideo(Number(arg));

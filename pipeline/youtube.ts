@@ -1,3 +1,4 @@
+import { addToSeriesPlaylist, playlistUrl } from "./playlist";
 import { createReadStream } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { Readable } from "node:stream";
@@ -102,6 +103,15 @@ export async function publishToYoutube(videoId: number, files: { long: string; s
     // Lưu id ngay: lỗi ở bước sau cũng không upload trùng lần nữa.
     await db().update(videos).set({ youtubeVideoId: id, youtubeUrl: `https://youtu.be/${id}`, publishAt }).where(eq(videos.id, videoId));
     track.tick("youtube", "long", `Video dài: youtu.be/${id}`);
+
+    // Video chương tự vào danh sách phát của bộ truyện (bản gộp thì không — tránh lặp nội dung trong playlist).
+    if (!meta.compilation) {
+      const [ch] = await db().select({ seriesId: chapters.seriesId }).from(chapters).where(eq(chapters.id, v.chapterId));
+      await addToSeriesPlaylist(ch.seriesId, id).then(
+        (pl) => track.log("youtube", `Đã thêm vào danh sách phát ${playlistUrl(pl)}`),
+        (e) => track.warn("youtube", `Không thêm được vào danh sách phát: ${e instanceof Error ? e.message : e}`),
+      );
+    }
 
     if (files.thumb) {
       await setThumbnail(token, id, files.thumb).then(

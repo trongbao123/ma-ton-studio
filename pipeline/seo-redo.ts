@@ -8,6 +8,8 @@ import { scoreMeta, totalScore } from "@/lib/flow/seo";
 import { AI_NOTE, optimizeMeta } from "@/lib/seo-optimize";
 import { loadSecrets } from "@/lib/secrets";
 import { updateYoutubeSnippet } from "@/lib/youtube";
+import { enrichDescription, segmentsFromText } from "./description";
+import { playlistUrl, seriesPlaylist } from "./playlist";
 import { videoMeta } from "./prompts";
 import { closeVidiq, genreSeeds, keywordResearch, pickBestTitle } from "./vidiq";
 
@@ -48,7 +50,14 @@ export async function redoSeo(videoId: number) {
     seo: { titleScore: best.score, titleOptions: all, keywords },
   };
   const fixed = await optimizeMeta(draft, { seriesTitle: s.title, chapterNumber: c.number, chapterTitle: c.title, summary: c.summary }, { log: console.log });
-  const meta: VideoMeta = { ...fixed.meta, description: `${fixed.meta.description}${credit}` };
+  const pl = await seriesPlaylist(s.id);
+  const meta = await enrichDescription(
+    { ...fixed.meta, description: `${fixed.meta.description}${credit}` },
+    {
+      segments: segmentsFromText(c.content, v.durationSec ?? 900), seriesId: s.id, chapterNumber: c.number,
+      keywords, links: pl ? [`📜 Nghe trọn bộ theo thứ tự: ${playlistUrl(pl)}`] : [],
+    },
+  );
   console.log(`  Điểm SEO app: ${before} → ${fixed.score}; vidIQ tiêu đề: ${best.score ?? "?"}`);
 
   if (v.youtubeVideoId) {
