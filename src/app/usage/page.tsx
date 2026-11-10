@@ -6,6 +6,7 @@ import { ChevronDown, ImageIcon } from "lucide-react";
 import { BrandIcon } from "@/components/brand-icons";
 import { Lamp } from "@/components/usage-lamp";
 import { LAMP_TEXT, lampOf, nextReset, SOURCES, untilText, type Source, type SourceDay, type SourceId } from "@/lib/ai/sources";
+import { vidiqBalance } from "@/lib/vidiq-balance";
 import { configuredSources, lastQuotaDays, recentAiWork, usageByDay } from "@/lib/usage-data";
 
 export const metadata: Metadata = { title: "Hạn mức AI · Ma Tôn Studio" };
@@ -19,6 +20,9 @@ export default function UsagePage() {
       </header>
       <Suspense fallback={<p className="text-sm text-muted">Đang tải…</p>}>
         <Ledger />
+      </Suspense>
+      <Suspense fallback={<p className="text-sm text-muted">Đang hỏi vidIQ…</p>}>
+        <VidiqCredits />
       </Suspense>
       <Suspense fallback={null}>
         <Work />
@@ -201,6 +205,44 @@ async function Work() {
         </table>
       </div>
       <p className="text-xs text-muted">Video render trước khi có ghi nhận sẽ hiện “—”.</p>
+    </section>
+  );
+}
+
+/** Credit vidIQ: từ khóa (~5/lượt gốc), chấm & gợi ý tiêu đề (~5/lượt), quét xu hướng (~25/lần). */
+async function VidiqCredits() {
+  await connection();
+  const b = await vidiqBalance();
+  const pct = b?.remaining != null && b.total ? Math.round((b.remaining / b.total) * 100) : null;
+  return (
+    <section aria-labelledby="vidiq" className="space-y-4">
+      <h2 id="vidiq" className="text-lg font-semibold">
+        vidIQ
+      </h2>
+      <div className="rounded-2xl border border-border bg-card p-5">
+        {!b ? (
+          <p className="text-sm text-muted">Chưa đọc được số dư vidIQ (chưa có key hoặc vidIQ không trả lời).</p>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
+              <p className="text-3xl font-bold tabular-nums">
+                {b.remaining ?? "?"}
+                {b.total != null && <span className="text-base font-normal text-muted"> / {b.total} credit</span>}
+              </p>
+              {b.used != null && <p className="text-sm text-muted">đã dùng {b.used}</p>}
+              {b.plan && <p className="text-sm text-muted">gói {b.plan}</p>}
+              {b.resetAt && <p className="text-sm text-muted">làm mới: {new Date(b.resetAt).toString() !== "Invalid Date" ? new Date(b.resetAt).toLocaleDateString("vi-VN") : b.resetAt}</p>}
+            </div>
+            {pct != null && (
+              <div className="h-2 overflow-hidden rounded-full bg-zinc-800">
+                <div className={`h-full rounded-full ${pct < 15 ? "bg-red-500" : pct < 40 ? "bg-amber-400" : "bg-emerald-500"}`} style={{ width: `${pct}%` }} />
+              </div>
+            )}
+            <p className="text-xs text-muted">Mỗi video tốn ~25–45 credit (từ khóa 3 lượt, chấm + gợi ý tiêu đề); quét xu hướng ~25 credit/ngày.</p>
+            {b.remaining == null && <pre className="overflow-x-auto whitespace-pre-wrap text-xs text-muted">{b.raw}</pre>}
+          </div>
+        )}
+      </div>
     </section>
   );
 }
