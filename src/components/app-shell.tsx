@@ -1,9 +1,10 @@
 "use client";
 
-import { BookOpen, Clapperboard, LayoutDashboard, Menu, Plus, Sparkles, X, type LucideIcon } from "lucide-react";
+import { BookOpen, Clapperboard, LayoutDashboard, LogOut, Menu, Plus, Sparkles, X, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Suspense, useState, type ReactNode } from "react";
+import { logoutAction } from "@/app/login/actions";
 
 const NAV: { href: string; label: string; icon: LucideIcon; match: (p: string) => boolean }[] = [
   { href: "/", label: "Xưởng truyện", icon: LayoutDashboard, match: (p) => p === "/" },
@@ -74,9 +75,16 @@ export function AppShell({ children }: { children: ReactNode }) {
     </Link>
   );
   const newSeries = (
-    <Link href="/series/new" onClick={() => setOpen(false)} className="btn-primary flex items-center justify-center gap-2">
-      <Plus size={16} strokeWidth={2.2} /> Truyện mới
-    </Link>
+    <div className="space-y-2">
+      <Link href="/series/new" onClick={() => setOpen(false)} className="btn-primary flex items-center justify-center gap-2">
+        <Plus size={16} strokeWidth={2.2} /> Truyện mới
+      </Link>
+      <form action={logoutAction}>
+        <button type="submit" className="flex w-full items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-xs text-muted hover:text-foreground">
+          <LogOut size={14} /> Đăng xuất
+        </button>
+      </form>
+    </div>
   );
 
   return (

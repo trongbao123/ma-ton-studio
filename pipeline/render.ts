@@ -355,7 +355,9 @@ export async function renderVideo(videoId: number) {
   try {
     console.log(`▶ Video #${videoId}: ${s.title} — chương ${c.number}`);
     // Hết quota ảnh đẹp thì chờ 7h sáng (lần chạy 00:17 UTC) thay vì ra video ảnh mờ Pollinations.
-    if (!(await imagesReady())) throw new QuotaExhaustedError("Hết quota ảnh Cloudflare hôm nay — chờ reset 7h sáng (hoặc thêm AI vẽ khác trong Cài đặt AI).");
+    // Video đã vẽ dở (ảnh nằm trong cache) thì cứ chạy: ảnh có sẵn không tốn quota, thiếu ảnh thì drawImage tự báo hết quota.
+    const hasImages = (await readdir(dir).catch(() => [] as string[])).some((f) => /-img-\d+\.jpg$/.test(f));
+    if (!hasImages && !(await imagesReady())) throw new QuotaExhaustedError("Hết quota ảnh Cloudflare hôm nay — chờ reset 7h sáng (hoặc thêm AI vẽ khác trong Cài đặt AI).");
     // Video đã lên YouTube thì giữ release cũ (thay dần từng file); chưa thì làm sạch để xem tiến độ từ đầu.
     const releaseId = await ensureRelease(videoId, !v.youtubeVideoId);
     const wantShort = s.makeShort;

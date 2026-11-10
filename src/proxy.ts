@@ -1,18 +1,29 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { isAuthorized } from "@/lib/auth";
+import { SESSION_COOKIE, verifySession } from "@/lib/session";
 
-// Trang công khai Google bắt buộc để duyệt OAuth (trang chủ + chính sách bảo mật) — không chứa dữ liệu.
-const PUBLIC = new Set(["/about", "/privacy"]);
+// Trang công khai: Google bắt buộc để duyệt OAuth (trang chủ + chính sách bảo mật) và trang đăng nhập — không chứa dữ liệu.
+const PUBLIC = new Set(["/about", "/privacy", "/login"]);
 
-export function proxy(request: NextRequest) {
-  if (PUBLIC.has(request.nextUrl.pathname)) return NextResponse.next();
-  if (isAuthorized(request.headers.get("authorization"), process.env.ADMIN_PASSWORD, process.env.ADMIN_USER)) {
+export async function proxy(request: NextRequest) {
+  const { pathname, search } = request.nextUrl;
+  if (PUBLIC.has(pathname)) return NextResponse.next();
+  const password = process.env.ADMIN_PASSWORD;
+  const user = process.env.ADMIN_USER;
+  // Cookie phiên (trang đăng nhập) hoặc Basic Auth cũ (vẫn nhận để link/công cụ cũ không gãy).
+  if (
+    (await verifySession(request.cookies.get(SESSION_COOKIE)?.value, password, user)) ||
+    isAuthorized(request.headers.get("authorization"), password, user)
+  ) {
     return NextResponse.next();
   }
-  return new NextResponse("Cần đăng nhập", {
-    status: 401,
-    headers: { "WWW-Authenticate": 'Basic realm="Ma Ton Studio", charset="UTF-8"' },
-  });
+  // Trang thường → chuyển sang /login rồi quay lại đúng chỗ; API / Server Action → 401.
+  if (request.method === "GET" && !pathname.startsWith("/api/")) {
+    const url = new URL("/login", request.url);
+    if (pathname !== "/") url.searchParams.set("next", pathname + search);
+    return NextResponse.redirect(url);
+  }
+  return NextResponse.json({ error: "Cần đăng nhập" }, { status: 401 });
 }
 
 export const config = {

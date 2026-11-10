@@ -1,5 +1,4 @@
-"use client";
-
+// Không đánh dấu "use client": chỉ có SVG + hàm thuần, dùng được cả ở trang server (Xưởng truyện gọi brandOfModel).
 import { siClaude, siCloudflare, siGooglegemini, siYoutube } from "simple-icons";
 import {
   AudioLines,
