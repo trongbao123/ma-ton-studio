@@ -143,3 +143,30 @@ body {
 .node-glow { box-shadow: 0 0 0 6px rgba(56, 189, 248, 0.12), 0 0 30px rgba(56, 189, 248, 0.25); }
 .edge-glow { stroke: #38bdf8; stroke-width: 7; stroke-linecap: round; opacity: 0.16; }
 .edge-flow { stroke: #e0f7ff; stroke-width: 3; stroke-linecap: round; stroke-dasharray: 1 21; }
+
+/* Tailwind v4 đặt nút về con trỏ mặc định — mọi thứ bấm được phải hiện bàn tay. */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+a[href],
+summary,
+select,
+label[for],
+input[type="checkbox"],
+input[type="radio"] {
+  cursor: pointer;
+}
+button:disabled,
+[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+/* Thẻ trên canvas bấm để chọn, kéo vẫn được (đang kéo thì con trỏ đổi thành nắm tay). */
+.react-flow__node,
+.react-flow__node.draggable {
+  cursor: pointer;
+}
+.react-flow__node.dragging {
+  cursor: grabbing;
+}
+.react-flow__controls-button {
+  cursor: pointer;
+}
