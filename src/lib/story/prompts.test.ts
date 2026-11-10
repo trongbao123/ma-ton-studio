@@ -104,3 +104,13 @@ describe("chương dài (tập dài mỗi ngày)", () => {
     expect(dropRepeatedParagraphs(written, part)).toBe('"Được."\n\nĐoạn mới hoàn toàn.');
   });
 });
+
+describe("biblePrompt", () => {
+  it("lồng khung cấu trúc 3 bộ hit kèm luật không chép", async () => {
+    const { biblePrompt, HIT_FORMULA } = await import("./prompts");
+    const p = biblePrompt("phế vật thức tỉnh", "tiên hiệp").prompt;
+    expect(p).toContain(HIT_FORMULA);
+    expect(p).toContain("Kiểu Đấu La Đại Lục");
+    expect(p).toContain("KHÔNG đi lại chuỗi tình tiết");
+  });
+});

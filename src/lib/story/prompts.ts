@@ -31,6 +31,17 @@ export const bibleSchema = z.object({
 });
 export type BibleDraft = z.infer<typeof bibleSchema>;
 
+/**
+ * Công thức khiến Thôn Phệ Tinh Không, Đấu La Đại Lục, Quang Âm Chi Ngoại hút người đọc — chỉ lấy CẤU TRÚC và mô-típ chung của thể loại
+ * (không ai giữ bản quyền), ghép thành bộ mới. Không bám cốt truyện/nhân vật/hệ thống riêng của bộ nào: vừa là phóng tác trái phép,
+ * vừa dễ dính gậy bản quyền YouTube, và người nghe ngách này thuộc lòng các bộ đó.
+ */
+export const HIT_FORMULA = `Khung cấu trúc học từ 3 bộ hit (chỉ học cấu trúc, KHÔNG chép cốt truyện):
+- Kiểu Thôn Phệ Tinh Không: thế giới sau một đại biến (quái thú, dị biến, linh khí phục hồi…), sức mạnh đo bằng con số công khai và bảng xếp hạng mà ai cũng biết; nhân vật chính xuất thân bình thường, mạnh lên nhờ khổ luyện + một kỳ ngộ bí mật; thế giới mở rộng từ quê nhà ra vũ trụ/các giới.
+- Kiểu Đấu La Đại Lục: nghi lễ thức tỉnh năng lực lúc nhỏ quyết định số phận; mỗi cấp bậc có dấu hiệu bên ngoài nhìn thấy được; học viện + một tiểu đội cố định 5–7 người, mỗi người một vai (tấn công, phòng thủ, hỗ trợ, khống chế, trinh sát) phối hợp với nhau; giải đấu giữa các học viện/thế lực làm sân khấu toả sáng; tình cảm thanh mai trúc mã, tình huynh đệ sống chết.
+- Kiểu Quang Âm Chi Ngoại: không khí u ám, sinh tồn ở vùng đất chết chóc; nhân vật chính lạnh lùng, cẩn trọng, tính toán từng bước, ra tay tàn nhẫn khi cần; một bí ẩn rất lớn về nguồn gốc thế giới/thời gian được hé dần qua cả bộ.
+Ghép các yếu tố trên thành một bộ MỚI có hệ thống sức mạnh, thế giới, nhân vật, tên gọi của riêng mình. KHÔNG dùng hệ thống đặc trưng riêng của các bộ đó (vd hồn hoàn/hồn cốt, Đường Môn ám khí), KHÔNG dùng tên nhân vật/địa danh/tông môn của chúng, KHÔNG đi lại chuỗi tình tiết của chúng.`;
+
 export function biblePrompt(idea: string, genre: string) {
   return {
     system: WRITER_SYSTEM,
@@ -42,7 +53,9 @@ Story bible chi tiết, đủ để nhiều chương sau viết nhất quán, g�
 - "Bàn tay vàng" của nhân vật chính: bí mật thân thế hoặc năng lực độc nhất, hé lộ dần theo từng arc.
 - Nhóm đồng đội 4–6 người cá tính khác nhau, đối thủ cùng thế hệ, phản diện lớn phía sau.
 - Mỗi arc có một đỉnh cảm xúc (mất người thân/đồng đội, đoàn tụ, phản bội, báo thù) và một trận cao trào; danh sách các phục bút/bí ẩn lớn sẽ được hé lộ ở đâu.
-- Các arc lớn nối tiếp, thế giới mở rộng dần (thôn nhỏ → tông môn → châu lục → thượng giới/tinh không), mỗi arc có mục tiêu, bí cảnh, trùm cuối.`,
+- Các arc lớn nối tiếp, thế giới mở rộng dần (thôn nhỏ → tông môn → châu lục → thượng giới/tinh không), mỗi arc có mục tiêu, bí cảnh, trùm cuối.
+
+${HIT_FORMULA}`,
   };
 }
 
