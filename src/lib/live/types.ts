@@ -5,7 +5,8 @@ import type { FlowData } from "@/lib/flow/model";
 export type YtStat = { views: number; likes: number; comments: number; at: number };
 export type YtStatsMap = Record<string, YtStat>;
 export type ChannelStat = { views: number; subscribers: number | null; videos: number; at: number };
-export type LiveStats = { videos: YtStatsMap; channel: ChannelStat | null };
+/** metaAt: lần cuối tiêu đề/mô tả/thumbnail/lịch đăng đồng bộ từ YouTube làm đổi DB (ms) — trang danh sách thấy tăng thì tự làm mới. */
+export type LiveStats = { videos: YtStatsMap; channel: ChannelStat | null; metaAt?: number | null };
 
 /** Video đang render + tiến độ gọn cho thanh trên cùng. */
 export type RenderingNow = { id: number; number: number; pct: number | null; live: string | null; updatedAt: string };

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { LiveRefresh } from "@/components/live-refresh";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { VideoTile } from "@/components/studio-cards";
@@ -68,12 +69,15 @@ async function Grid({ searchParams }: { searchParams: PageProps<"/videos">["sear
       </p>
     );
   return (
-    <ul className="grid gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-      {list.map((v) => (
-        <li key={v.id}>
-          <VideoTile v={v} snapshot={stats.videos} />
-        </li>
-      ))}
-    </ul>
+    <>
+      <LiveRefresh initial={stats.metaAt} />
+      <ul className="grid gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+        {list.map((v) => (
+          <li key={v.id}>
+            <VideoTile v={v} snapshot={stats.videos} />
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }

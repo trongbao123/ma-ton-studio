@@ -9,6 +9,8 @@ import { bestThumb, youtubeIdFromUrl, youtubePatch, type YtInfo } from "./youtub
 /** Snapshot để trang mở lần đầu có số ngay (không cần migration — dùng bảng app_settings). */
 export const STATS_KEY = "yt_stats";
 export const CHANNEL_STATS_KEY = "yt_channel_stats";
+/** Mốc lần đồng bộ YouTube → DB gần nhất có thay đổi (vòng 60 giây hoặc webhook, khác instance) — SSE đọc để trang tự làm mới. */
+export const META_SYNC_KEY = "yt_meta_sync";
 
 const API = "https://www.googleapis.com/youtube/v3";
 /** Số liệu cũ hơn mức này mới gọi lại; cũng là thời gian nhớ trong bộ nhớ. */
@@ -34,9 +36,13 @@ let token: { refresh: string; value: string; at: number } | null = null;
 /** Đọc snapshot đã lưu (1 truy vấn). Lỗi DB → rỗng, UI chỉ ẩn số. */
 export async function readStatsSnapshot(): Promise<LiveStats> {
   try {
-    const rows = await db().select().from(appSettings).where(inArray(appSettings.key, [STATS_KEY, CHANNEL_STATS_KEY]));
+    const rows = await db().select().from(appSettings).where(inArray(appSettings.key, [STATS_KEY, CHANNEL_STATS_KEY, META_SYNC_KEY]));
     const get = (k: string) => rows.find((r) => r.key === k)?.value;
-    return { videos: (get(STATS_KEY) as YtStatsMap | undefined) ?? {}, channel: (get(CHANNEL_STATS_KEY) as ChannelStat | undefined) ?? null };
+    return {
+      videos: (get(STATS_KEY) as YtStatsMap | undefined) ?? {},
+      channel: (get(CHANNEL_STATS_KEY) as ChannelStat | undefined) ?? null,
+      metaAt: (get(META_SYNC_KEY) as { at?: number } | undefined)?.at ?? null,
+    };
   } catch {
     return emptyStats();
   }
@@ -149,6 +155,7 @@ async function syncSnippets(infos: Record<string, YtInfo>): Promise<number> {
     await db().update(videos).set({ ...patch, updatedAt: new Date() }).where(eq(videos.id, r.id));
     changed++;
   }
+  if (changed) await saveSnapshot(META_SYNC_KEY, { at: Date.now() });
   return changed;
 }
 
@@ -193,7 +200,7 @@ async function refresh(extraIds: string[]): Promise<LiveStats> {
     return snap;
   }
 
-  const result: LiveStats = { videos: { ...snap.videos }, channel: snap.channel };
+  const result: LiveStats = { videos: { ...snap.videos }, channel: snap.channel, metaAt: snap.metaAt };
   try {
     if (stale.length) {
       const { stats: fresh, infos } = await fetchVideoStats(stale, auth);
@@ -201,7 +208,11 @@ async function refresh(extraIds: string[]): Promise<LiveStats> {
         Object.assign(result.videos, fresh);
         await saveSnapshot(STATS_KEY, result.videos);
       }
-      await syncSnippets(infos).catch((e) => console.warn("Không đồng bộ được tiêu đề/mô tả từ YouTube:", e instanceof Error ? e.message : e));
+      const changed = await syncSnippets(infos).catch((e) => {
+        console.warn("Không đồng bộ được tiêu đề/mô tả từ YouTube:", e instanceof Error ? e.message : e);
+        return 0;
+      });
+      if (changed) result.metaAt = Date.now();
     }
     if (channelStale && Date.now() >= blockedUntil) {
       const channel = await fetchChannelStat(auth);

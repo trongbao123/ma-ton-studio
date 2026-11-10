@@ -1,4 +1,5 @@
 import { desc, eq } from "drizzle-orm";
+import { LiveRefresh } from "@/components/live-refresh";
 import { CircleAlert, FileClock } from "lucide-react";
 import Link from "next/link";
 import { connection } from "next/server";
@@ -159,13 +160,16 @@ async function RecentVideos() {
   const [list, stats] = await Promise.all([videoCards({ limit: 8 }), readStatsSnapshot()]);
   if (!list.length) return <p className="text-sm text-muted">Chưa có video. Duyệt một chương là video tự render.</p>;
   return (
-    <ul className="grid gap-x-5 gap-y-8 sm:grid-cols-2 xl:grid-cols-4">
-      {list.map((v) => (
-        <li key={v.id}>
-          <VideoTile v={v} snapshot={stats.videos} />
-        </li>
-      ))}
-    </ul>
+    <>
+      <LiveRefresh initial={stats.metaAt} />
+      <ul className="grid gap-x-5 gap-y-8 sm:grid-cols-2 xl:grid-cols-4">
+        {list.map((v) => (
+          <li key={v.id}>
+            <VideoTile v={v} snapshot={stats.videos} />
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 
