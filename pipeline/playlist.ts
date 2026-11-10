@@ -15,14 +15,29 @@ async function token() {
   return accessToken(auth.refreshToken);
 }
 
+/** POST YouTube API; 409/5xx (playlist vừa tạo, gọi dồn dập) thì thử lại có giãn cách. */
 async function yt(path: string, tok: string, body: unknown) {
-  const res = await fetch(`${API}/${path}`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`YouTube ${path.split("?")[0]} ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  return res.json();
+  let last = "";
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const res = await fetch(`${API}/${path}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) return res.json();
+    last = `${res.status}: ${(await res.text()).replace(/\s+/g, " ").slice(0, 300)}`;
+    if (res.status !== 409 && res.status < 500) break;
+    await new Promise((r) => setTimeout(r, 4000 * (attempt + 1)));
+  }
+  throw new Error(`YouTube ${path.split("?")[0]} ${last}`);
+}
+
+/** Id các video đã có trong playlist (tránh thêm trùng khi chạy lại). */
+async function playlistVideoIds(playlistId: string, tok: string) {
+  const res = await fetch(`${API}/playlistItems?part=contentDetails&maxResults=50&playlistId=${playlistId}`, { headers: { Authorization: `Bearer ${tok}` } });
+  if (!res.ok) return new Set<string>();
+  const j = (await res.json()) as { items?: { contentDetails?: { videoId?: string } }[] };
+  return new Set((j.items ?? []).map((i) => i.contentDetails?.videoId).filter(Boolean) as string[]);
 }
 
 async function savedIds(): Promise<Record<string, string>> {
@@ -60,6 +75,7 @@ export async function ensurePlaylist(seriesId: number, tok?: string) {
 export async function addToSeriesPlaylist(seriesId: number, youtubeId: string) {
   const tok = await token();
   const playlistId = await ensurePlaylist(seriesId, tok);
+  if ((await playlistVideoIds(playlistId, tok)).has(youtubeId)) return playlistId;
   await yt("playlistItems?part=snippet", tok, { snippet: { playlistId, resourceId: { kind: "youtube#video", videoId: youtubeId } } });
   return playlistId;
 }
@@ -77,5 +93,6 @@ export async function backfillPlaylist(seriesId: number) {
   for (const r of rows.filter((x) => !x.meta?.compilation)) {
     const id = await addToSeriesPlaylist(seriesId, r.ytId!);
     console.log(`  + chương ${r.number} → ${playlistUrl(id)}`);
+    await new Promise((res) => setTimeout(res, 2000));
   }
 }
