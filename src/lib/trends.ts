@@ -30,6 +30,8 @@ export type TrendVideo = {
   vph: number | null;
   outlierScore: number | null;
   publishedAt: string | null;
+  /** Thời lượng (giây) — ngách truyện audio, độ dài là tín hiệu quan trọng (FULL 6H…). */
+  durationSec?: number | null;
   url: string | null;
   thumbnail: string | null;
 };
@@ -106,6 +108,7 @@ const fmtNum = (n: number | null) => (n == null ? "?" : n >= 1_000_000 ? `${(n /
 export function videoLine(v: TrendVideo) {
   const parts = [`"${cut(v.title, 90)}"`, v.channel ? `kênh ${cut(v.channel, 30)}` : null, `${fmtNum(v.views)} view`];
   if (v.vph != null) parts.push(`${fmtNum(v.vph)} view/giờ`);
+  if (v.durationSec) parts.push(`dài ${(v.durationSec / 3600).toFixed(1)} giờ`);
   if (v.outlierScore != null) parts.push(`outlier ${v.outlierScore}`);
   if (v.publishedAt) parts.push(v.publishedAt.slice(0, 10));
   return `- ${parts.filter(Boolean).join(", ")}`;
@@ -145,7 +148,8 @@ export function parseVideos(text: string): TrendVideo[] {
       views: num(o.views ?? o.viewCount ?? o.viewsCount),
       vph: num(o.vph ?? o.viewsPerHour ?? o.viewPerHour),
       outlierScore: num(o.outlierScore ?? o.outlier ?? o.score),
-      publishedAt: str(o.publishedAt ?? o.publishDate ?? o.publishedDate ?? o.published),
+      publishedAt: str(o.publishedAt ?? o.videoPublishedAt ?? o.publishDate ?? o.publishedDate ?? o.published),
+      durationSec: num(o.videoDuration ?? o.duration ?? o.durationSec),
       url: urlRaw?.startsWith("http") ? urlRaw : isId ? `https://www.youtube.com/watch?v=${id}` : null,
       thumbnail: str(o.thumbnail ?? o.thumbnailUrl ?? o.thumbnailURL) ?? (isId ? `https://i.ytimg.com/vi/${id}/mqdefault.jpg` : null),
     };

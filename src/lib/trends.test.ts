@@ -51,7 +51,7 @@ describe("parseVideos", () => {
   it("đọc JSON lồng nhau, dựng url + thumbnail từ videoId", () => {
     const text = JSON.stringify({ videos: [{ title: "Tu tiên", channelTitle: "Kênh A", viewCount: "12,000", videoId: "abcdefghijk", outlierScore: 4.2 }] });
     expect(parseVideos(text)).toEqual([
-      { title: "Tu tiên", channel: "Kênh A", views: 12000, vph: null, outlierScore: 4.2, publishedAt: null, url: "https://www.youtube.com/watch?v=abcdefghijk", thumbnail: "https://i.ytimg.com/vi/abcdefghijk/mqdefault.jpg" },
+      { title: "Tu tiên", channel: "Kênh A", views: 12000, vph: null, outlierScore: 4.2, publishedAt: null, durationSec: null, url: "https://www.youtube.com/watch?v=abcdefghijk", thumbnail: "https://i.ytimg.com/vi/abcdefghijk/mqdefault.jpg" },
     ]);
   });
   it("đọc bảng markdown theo tên cột", () => {

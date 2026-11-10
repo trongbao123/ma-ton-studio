@@ -48,13 +48,13 @@ export async function scanTrends() {
   for (const seed of SEEDS) {
     const t = await call("vidiq_trending_videos", { titleQuery: seed, videoFormat: "long", channelCountry: "VN", videoTitleLanguage: "vi", videoPublishedAfter: after, sortBy: "vph", limit: PER_CALL });
     if (t) trending.push(...parseVideos(t));
-    const o = await call("vidiq_outliers", { keyword: seed, channelCountry: "VN", language: "vi", publishedWithin: "30d", minOutlierScore: 3, limit: PER_CALL });
-    if (o) outliers.push(...parseVideos(o));
+    // vidiq_outliers không hỗ trợ tiếng Việt (tự chuyển sang tìm tiếng Anh) → bỏ cho đỡ tốn credit.
   }
   const [rising, questions, comments] = await Promise.all([
     call("vidiq_keyword_research", { mode: "rising", niche: "truyện audio tu tiên tiên hiệp", country: "VN", limit: 20 }),
     call("vidiq_keyword_research", { mode: "questions", keyword: SEEDS[0], country: "VN", limit: 20 }),
-    call("vidiq_comment_insights", { mode: "discover", niche: "truyện audio tu tiên tiên hiệp", language: "vi" }),
+    // comment_insights chạy nền (phải poll job) — tạm bỏ.
+    Promise.resolve(null),
   ]);
   if (rising) texts.push({ label: "Từ khóa đang lên", text: rising });
   if (questions) texts.push({ label: "Câu hỏi người xem hay tìm", text: questions });
