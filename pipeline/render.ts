@@ -12,7 +12,7 @@ import { metaRequest, scenePrompts, scenesRequest, videoMeta } from "./prompts";
 import { ensureRelease, uploadAsset } from "./release";
 import { keepOrNextSlot } from "./schedule";
 import { loadSecrets } from "@/lib/secrets";
-import { generateTitles, keywordResearch, scoreTitles } from "./vidiq";
+import { generateTitles, genreSeeds, keywordResearch, scoreTitles } from "./vidiq";
 import { AI_NOTE, optimizeMeta } from "@/lib/seo-optimize";
 import { autoPublishEligible, publishToYoutube } from "./youtube";
 
@@ -301,14 +301,27 @@ async function ambientBed(dir: string) {
 
 async function thumbnail(dir: string, prompt: string, text: string, chapterNo: number) {
   const img = path.join(dir, "thumb-src.jpg");
-  await drawImage(prompt, img, { width: 1280, height: 768, seed: 42 });
+  await drawImage(`${prompt}, YouTube thumbnail, 16:9`, img, { width: 1280, height: 720, seed: 42 });
   const out = path.join(dir, "thumbnail.jpg");
+  // Chữ to 2 dòng bên TRÁI (ảnh chừa trống bên trái), nền tối dần để chữ nổi; nhãn chương góc trên.
+  const lines = splitThumbText(text.toUpperCase());
   const draw = BURN_TEXT
-    ? `,drawtext=fontfile=${filterPath(FONT)}:text='${escText(text.toUpperCase())}':fontsize=96:fontcolor=#FFD23F:borderw=8:bordercolor=black:x=(w-tw)/2:y=h-th-70,` +
-      `drawtext=fontfile=${filterPath(FONT)}:text='CHƯƠNG ${chapterNo}':fontsize=54:fontcolor=white:box=1:boxcolor=#B91C1C:boxborderw=18:x=40:y=40`
+    ? `,drawbox=x=0:y=0:w=iw*0.55:h=ih:color=black@0.35:t=fill,` +
+      lines
+        .map((l, i) => `drawtext=fontfile=${filterPath(FONT)}:text='${escText(l)}':fontsize=${lines.length > 1 ? 118 : 136}:fontcolor=${i ? "white" : "#FFD23F"}:borderw=10:bordercolor=black:x=50:y=(h/2)-${lines.length > 1 ? 130 : 70}+${i * 140}`)
+        .join(",") +
+      `,drawtext=fontfile=${filterPath(FONT)}:text='CHƯƠNG ${chapterNo}':fontsize=54:fontcolor=white:box=1:boxcolor=#B91C1C:boxborderw=18:x=50:y=50`
     : "";
-  await ffmpeg(["-i", img, "-vf", `${LOGO_CROP}scale=1280:720:force_original_aspect_ratio=increase:flags=lanczos,crop=1280:720:(iw-ow)/2:(ih-oh)*0.3,unsharp=5:5:0.6${draw}`, "-q:v", "3", out]);
+  await ffmpeg(["-i", img, "-vf", `${LOGO_CROP}scale=1280:720:force_original_aspect_ratio=increase:flags=lanczos,crop=1280:720:(iw-ow)/2:(ih-oh)*0.3,eq=contrast=1.12:saturation=1.25,unsharp=5:5:0.8${draw}`, "-q:v", "2", out]);
   return out;
+}
+
+/** "NUỐT XÁC THẦN LINH" → ["NUỐT XÁC", "THẦN LINH"] — chia đôi theo số chữ để chữ thật to. */
+export function splitThumbText(t: string) {
+  const w = t.trim().split(/\s+/).filter(Boolean);
+  if (w.length <= 2) return [w.join(" ")];
+  const mid = Math.ceil(w.length / 2);
+  return [w.slice(0, mid).join(" "), w.slice(mid).join(" ")];
 }
 
 /** Giọng đọc nén nhẹ (mono 64k) để nghe thử trên màn flow — file WAV gốc quá nặng. */
@@ -378,27 +391,28 @@ export async function renderVideo(videoId: number) {
     track.start("agent", { long: 2, ...(wantShort ? { short: 1 } : {}) });
     // vidIQ (nếu có key): từ khóa thật cho tiêu đề/mô tả/tag. Cache để chạy lại không tốn credit.
     const seo = process.env.VIDIQ_API_KEY
-      ? await cached(path.join(dir, "vidiq-keywords.json"), async () => {
-          track.log("agent", "vidIQ: nghiên cứu từ khóa");
-          return keywordResearch(`${s.title} ${s.genre}`);
+      ? await cached(path.join(dir, "vidiq-keywords-vn.json"), async () => {
+          track.log("agent", "vidIQ: nghiên cứu từ khóa theo thể loại (VN)");
+          return keywordResearch(genreSeeds(s.genre));
         })
       : null;
-    if (seo) track.log("agent", "vidIQ: đã có dữ liệu từ khóa");
-    track.set({ prompts: { meta: clip(metaRequest(s, c, seo)) } });
-    const m = await cached(path.join(dir, "meta.json"), () => videoMeta(s, c, seo));
+    if (seo) track.log("agent", `vidIQ: từ khóa ${seo.keywords.slice(0, 5).map((k) => `${k.keyword} (${k.overall})`).join(", ")}`);
+    const searchKeywords = seo?.keywords.map((k) => k.keyword) ?? [];
+    track.set({ prompts: { meta: clip(metaRequest(s, c, seo?.text)) } });
+    const m = await cached(path.join(dir, "meta-v2.json"), () => videoMeta(s, c, seo?.text));
     track.model("agent", textProvider().lastModel);
     // vidIQ chấm điểm tiêu đề gốc + 2 phương án, cộng thêm 3 tiêu đề vidIQ tự nghĩ (đã có điểm) → lấy tiêu đề điểm cao nhất.
     let title = m.title;
     let seoInfo: VideoMeta["seo"];
     const options = [m.title, ...(m.titleAlternatives ?? [])].filter(Boolean);
     if (process.env.VIDIQ_API_KEY && options.length > 1) {
-      const scores = await cached(path.join(dir, "vidiq-titles.json"), () => scoreTitles(options));
-      const ideas = await cached(path.join(dir, "vidiq-generated-titles.json"), () => generateTitles(m.title, m.description));
+      const scores = await cached(path.join(dir, "vidiq-titles-v2.json"), () => scoreTitles(options));
+      const ideas = await cached(path.join(dir, "vidiq-generated-titles-v2.json"), () => generateTitles(m.title, m.description));
       const all = [...options.map((t, i) => ({ title: t, score: scores?.[i] ?? null })), ...ideas.filter((x) => !options.includes(x.title))];
       if (all.some((x) => x.score != null)) {
         const best = all.reduce((b, x) => ((x.score ?? -1) > (b.score ?? -1) ? x : b));
         title = best.title;
-        seoInfo = { titleScore: best.score, titleOptions: all };
+        seoInfo = { titleScore: best.score, titleOptions: all, keywords: searchKeywords };
         track.log("agent", `vidIQ chấm tiêu đề: ${all.map((x) => `${x.score ?? "?"} — ${x.title}`).join(" | ")}`.slice(0, 600));
       }
     }
@@ -409,10 +423,10 @@ export async function renderVideo(videoId: number) {
       tags: m.tags,
       shortTitle: m.shortTitle,
       shortDescription: m.shortDescription,
-      ...(seoInfo ? { seo: seoInfo } : {}),
+      ...(seoInfo ? { seo: seoInfo } : searchKeywords.length ? { seo: { keywords: searchKeywords } } : {}),
     };
     // Magic fill: điểm SEO tổng < 90 thì AI sửa đúng tiêu chí đang mất điểm (tối đa 3 lượt). Cache để chạy lại không tốn lượt.
-    const fixed = await cached(path.join(dir, "meta-seo.json"), () =>
+    const fixed = await cached(path.join(dir, "meta-seo-v2.json"), () =>
       optimizeMeta(draft, { seriesTitle: s.title, chapterNumber: c.number, chapterTitle: c.title, summary: c.summary }, { log: (t) => track.log("agent", t) }),
     );
     const meta = fixed.meta;

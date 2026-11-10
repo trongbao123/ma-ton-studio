@@ -55,7 +55,7 @@ const isCaps = (s: string) => {
   return letters.length > 8 && letters === letters.toUpperCase();
 };
 
-export function scoreTitle(title: string, keywords: string[], tags: string[], vidiq?: number | null): SeoScore {
+export function scoreTitle(title: string, keywords: string[], tags: string[], vidiq?: number | null, search: string[] = []): SeoScore {
   const len = [...title].length;
   const kw = keywords.find((k) => has(title, k));
   const head = kw ? norm(title).indexOf(norm(kw)) <= norm(title).length * 0.4 : false;
@@ -69,6 +69,11 @@ export function scoreTitle(title: string, keywords: string[], tags: string[], vi
     check(!isCaps(title), "Không in hoa toàn bộ", 5),
     check(len <= 100, "Trong giới hạn 100 ký tự của YouTube", 10),
   ];
+  // Có dữ liệu vidIQ: tiêu đề phải chứa ít nhất 1 từ khóa người ta tìm thật (tên truyện tự đặt không ai tìm).
+  if (search.length) {
+    const hit = search.find((k) => has(title, k));
+    checks.push(check(!!hit, hit ? `Có từ khóa tìm kiếm thật "${hit}" (vidIQ)` : `Thiếu từ khóa tìm kiếm thật — nên có "${search[0]}"`, 30));
+  }
   const app = tally(checks);
   return vidiq != null ? { ...app, score: Math.round(vidiq), source: "vidiq" } : app;
 }
@@ -127,9 +132,11 @@ export function scoreShort(shortTitle: string, shortDescription: string, keyword
 }
 
 export function scoreMeta(m: VideoMeta, seriesTitle: string) {
-  const kw = focusKeywords(seriesTitle);
+  const search = m.seo?.keywords ?? [];
+  // Từ khóa tìm kiếm thật đứng trước tên truyện → tag đầu / đoạn đầu mô tả ưu tiên từ khóa có lượt tìm.
+  const kw = [...search.slice(0, 5), ...focusKeywords(seriesTitle)];
   return {
-    title: scoreTitle(m.title, kw, m.tags, m.seo?.titleScore),
+    title: scoreTitle(m.title, kw, m.tags, m.seo?.titleScore, search.slice(0, 8)),
     description: scoreDescription(m.description, kw, m.tags),
     tags: scoreTags(m.tags, kw, m.title, m.description),
     short: scoreShort(m.shortTitle, m.shortDescription, kw),

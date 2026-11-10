@@ -49,23 +49,51 @@ function textOf(result: unknown) {
     .trim();
 }
 
-/** Từ khóa YouTube liên quan + độ cạnh tranh/lượt tìm, dạng văn bản để đưa vào prompt viết tiêu đề/mô tả/tag. */
-export async function keywordResearch(seed: string): Promise<string | null> {
+export type Keyword = { keyword: string; volume: number; competition: number | null; overall: number; monthly: string };
+
+/** Đọc bảng markdown "| keyword | volume | competition | overall | estimatedMonthlySearch | …" của vidiq_keyword_research. */
+export function parseKeywordTable(text: string): Keyword[] {
+  const out: Keyword[] = [];
+  for (const line of text.split("\n")) {
+    const cells = line.split("|").map((c) => c.trim());
+    if (cells.length < 7 || cells[1] === "keyword" || /^-+$/.test(cells[1])) continue;
+    const volume = Number(cells[2]);
+    const overall = Number(cells[4]);
+    if (!cells[1] || !Number.isFinite(volume) || !Number.isFinite(overall)) continue;
+    out.push({ keyword: cells[1], volume, competition: Number.isFinite(Number(cells[3])) ? Number(cells[3]) : null, overall, monthly: cells[5] });
+  }
+  return out;
+}
+
+/** Từ khóa gốc theo thể loại — người xem tìm "truyện tu tiên", không ai tìm tên truyện mình tự đặt. */
+export function genreSeeds(genre: string) {
+  const g = genre.toLowerCase();
+  if (g.includes("huyền")) return ["truyện huyền huyễn", "truyện tu tiên", "truyện audio"];
+  if (g.includes("ma")) return ["truyện ma đạo", "truyện tu tiên", "truyện tiên hiệp"];
+  return ["truyện tu tiên", "truyện tiên hiệp", "tiên hiệp audio"];
+}
+
+/**
+ * Nghiên cứu từ khóa thật (Việt Nam) cho các từ khóa gốc của thể loại: gộp, bỏ từ khóa không có lượt tìm,
+ * xếp theo điểm tổng vidIQ (volume cao + cạnh tranh thấp). ~5 credit/từ khóa gốc.
+ */
+export async function keywordResearch(seeds: string[]): Promise<{ text: string; keywords: Keyword[] } | null> {
   const s = await connect();
-  if (!s) return null;
-  const tool = pick(s.tools, (n) => n.includes("keyword") && !n.includes("track")) ?? pick(s.tools, (n) => n.includes("search") && n.includes("trend"));
-  if (!tool) {
-    console.warn("⚠ vidIQ không có tool nghiên cứu từ khóa.");
-    return null;
+  if (!s || !s.tools.some((t) => t.name === "vidiq_keyword_research")) return null;
+  const all = new Map<string, Keyword>();
+  for (const seed of seeds) {
+    try {
+      const res = await s.client.callTool({ name: "vidiq_keyword_research", arguments: { mode: "research", keyword: seed, country: "VN", limit: 25 } });
+      if ((res as { isError?: boolean }).isError) throw new Error(textOf(res).slice(0, 200));
+      for (const k of parseKeywordTable(textOf(res))) if (k.volume > 0 && !all.has(k.keyword)) all.set(k.keyword, k);
+    } catch (e) {
+      console.warn(`⚠ vidIQ từ khóa "${seed}" lỗi:`, e instanceof Error ? e.message : e);
+    }
   }
-  try {
-    const res = await s.client.callTool({ name: tool.name, arguments: argsFor(tool, seed, ["keyword", "query", "keywords", "topic", "term", "seed"]) });
-    if ((res as { isError?: boolean }).isError) throw new Error(textOf(res).slice(0, 200));
-    return textOf(res).slice(0, 3500) || null;
-  } catch (e) {
-    console.warn("⚠ vidIQ nghiên cứu từ khóa lỗi:", e instanceof Error ? e.message : e);
-    return null;
-  }
+  const keywords = [...all.values()].sort((a, b) => b.overall - a.overall).slice(0, 20);
+  if (!keywords.length) return null;
+  const text = keywords.map((k) => `- "${k.keyword}": điểm ${k.overall}/100, volume ${k.volume}, cạnh tranh ${k.competition ?? "?"}, ~${k.monthly} lượt tìm/tháng`).join("\n");
+  return { text, keywords };
 }
 
 /** Điểm 0–100 cho từng tiêu đề (cùng thứ tự). Tool chấm 1 tiêu đề/lượt thì gọi lần lượt. null nếu không chấm được. */
@@ -82,7 +110,8 @@ export async function scoreTitles(titles: string[]): Promise<(number | null)[] |
   const out: (number | null)[] = [];
   for (const t of titles) {
     try {
-      const res = await s.client.callTool({ name: tool.name, arguments: argsFor(tool, t, ["title", "titles", "text", "query"]) });
+      // vidiq_score_title bắt buộc `type` (long/short) — thiếu là lỗi validate, trước đây vì vậy luôn trả null.
+      const res = await s.client.callTool({ name: tool.name, arguments: { ...argsFor(tool, t, ["title", "titles", "text", "query"]), type: "long" } });
       out.push((res as { isError?: boolean }).isError ? null : score(textOf(res)));
     } catch (e) {
       console.warn("⚠ vidIQ chấm tiêu đề lỗi:", e instanceof Error ? e.message : e);
@@ -128,6 +157,7 @@ export async function generateTitles(title: string, description: string): Promis
     const props = tool.inputSchema?.properties ?? {};
     const args: Record<string, unknown> = { title, description: description.slice(0, 2000) };
     if ("numTitles" in props) args.numTitles = 3;
+    if ("type" in props) args.type = "long";
     if ("language" in props) args.language = "vi";
     if ("regionCode" in props) args.regionCode = "VN";
     const res = await s.client.callTool({ name: tool.name, arguments: args });

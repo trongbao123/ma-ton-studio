@@ -8,9 +8,9 @@ export const AI_NOTE = "(Nội dung có sử dụng AI hỗ trợ giọng đọc
 export { SEO_TARGET };
 
 const fixSchema = z.object({
-  title: z.string().describe("Tiêu đề YouTube 50–70 ký tự, mở đầu bằng tên truyện, có số chương, không in hoa toàn bộ"),
+  title: z.string().describe("Tiêu đề YouTube 50–70 ký tự: có 1 từ khóa tìm kiếm thật (vd 'Truyện tu tiên'), móc câu gây tò mò, tên truyện, số chương; không in hoa toàn bộ"),
   description: z.string().describe("Mô tả 220–300 từ, 3–4 đoạn, câu đầu có tên truyện, nhắc tên truyện ≥ 2 lần, lồng ≥ 1/3 số tag, kêu gọi đăng ký/like, dòng cuối 3–5 hashtag"),
-  tags: z.array(z.string()).describe("15–25 tag không dấu, tổng 300–480 ký tự, tag đầu là tên truyện, có tag ngắn và tag dài, không trùng"),
+  tags: z.array(z.string()).describe("15–25 tag, tổng 300–480 ký tự, tag đầu là từ khóa tìm kiếm điểm cao nhất, có tên truyện, có tag ngắn và tag dài, không trùng"),
   shortTitle: z.string().describe("Tiêu đề Short ≤ 60 ký tự, có tên nhân vật hoặc tên truyện, có #shorts"),
   shortDescription: z.string().describe("1–2 câu có tên truyện, mời xem video full, kèm #shorts"),
 });
@@ -42,7 +42,7 @@ export async function optimizeMeta(meta: VideoMeta, ctx: Ctx, opts: { target?: n
         prompt: `Truyện: ${ctx.seriesTitle}
 Chương ${ctx.chapterNumber}: ${ctx.chapterTitle}${ctx.summary ? `\nTóm tắt chương: ${ctx.summary.slice(0, 1500)}` : ""}
 
-Metadata hiện tại (điểm SEO tổng ${bestScore}/100, cần ≥ ${target}):
+${best.seo?.keywords?.length ? `Từ khóa người xem tìm thật (vidIQ, Việt Nam, xếp theo điểm): ${best.seo.keywords.slice(0, 10).join(", ")}\n\n` : ""}Metadata hiện tại (điểm SEO tổng ${bestScore}/100, cần ≥ ${target}):
 ${JSON.stringify({ title: best.title, description: strip(best.description), tags: best.tags, shortTitle: best.shortTitle, shortDescription: best.shortDescription }, null, 1)}
 
 Các tiêu chí đang mất điểm — sửa đúng những điểm này, phần đã đạt thì giữ:
