@@ -211,7 +211,14 @@ function Studio({ data: initial, layout }: Props) {
               <span className="mx-1.5 opacity-50">/</span>#{v.id}
             </p>
             <h1 className="truncate text-base font-bold">
-              Chương {data.chapter.number} · {data.chapter.title}
+              {/* Bấm tiêu đề → về trang truyện. */}
+              <Link
+                href={`/series/${data.series.id}`}
+                title={`Về trang truyện ${data.series.title}`}
+                className="underline-offset-4 transition-colors hover:text-gold hover:underline"
+              >
+                Chương {data.chapter.number} · {data.chapter.title}
+              </Link>
             </h1>
           </div>
         </div>
