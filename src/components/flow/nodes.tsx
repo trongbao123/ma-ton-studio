@@ -52,7 +52,8 @@ const PILL: Record<CardState, string> = {
 
 const DOT: Record<CardState, string> = { done: "✓", run: "●", error: "!", quota: "⏳", wait: "○", idle: "○", skip: "–" };
 
-const handle = "!h-3 !w-3 !border-2 !border-[#0f0f13] !bg-[#6b6b78]";
+// Cổng nối ẩn (dây chạy liền vào mép thẻ) — chỉ là điểm neo, không cần chấm tròn lộ ra.
+const handle = "!h-2 !w-2 !min-h-0 !min-w-0 !border-0 !bg-transparent";
 const ring = (on?: boolean) => (on ? "outline outline-2 outline-offset-4 outline-amber-400" : "");
 
 /** `row`: hàng của thẻ trong cây, dùng để hiện lần lượt từ trên xuống. */

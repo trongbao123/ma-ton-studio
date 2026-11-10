@@ -12,7 +12,7 @@ export const TREE_ROWS: CardId[][] = [["trends"], ["chapter"], ["seo"], ["tts", 
 /** Bề rộng thẻ, khoảng hở giữa các nhánh song song và bước cách giữa hai hàng (px trên canvas). */
 export const CARD_WIDTH = 248;
 export const CARD_GAP = 40;
-export const ROW_PITCH = 170;
+export const ROW_PITCH = 205;
 
 /** Chỉ số hàng của thẻ — dùng để xếp lần lượt hiệu ứng xuất hiện từ trên xuống. */
 export const ROW_OF = Object.fromEntries(TREE_ROWS.flatMap((row, r) => row.map((id) => [id, r]))) as Record<CardId, number>;
