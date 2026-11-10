@@ -156,7 +156,7 @@ export async function generateTitles(title: string, description: string): Promis
   try {
     const props = tool.inputSchema?.properties ?? {};
     const args: Record<string, unknown> = { title, description: description.slice(0, 2000) };
-    if ("numTitles" in props) args.numTitles = 3;
+    if ("numTitles" in props) args.numTitles = 5;
     if ("type" in props) args.type = "long";
     if ("language" in props) args.language = "vi";
     if ("regionCode" in props) args.regionCode = "VN";
