@@ -458,13 +458,23 @@ async function renderInternalChapter(o: { videoId: number; s: Series; c: Chapter
   track.tick("agent", "long", `${n} prompt cảnh`);
   track.finish("agent");
 
+  track.set({ prompts: { scenes: clip(scenesRequest(look.characterLook, scenes.map((x) => x.text))) } });
   track.start("images", { long: n });
   track.start("video");
+  // Như video thường: ghi AI vẽ đã dùng + gửi từng ảnh lên kho để màn flow có "Ảnh từng cảnh" xem trước.
+  const imageModels = new Set<string>();
   const video = await buildStillVideo({
     dir, name: "long", narration: long, prompts, scenes, music,
     w: 1920, h: 1080, imgW: 1280, imgH: 768,
     on: {
-      image: async (i) => track.tick("images", "long", `Ảnh ${i + 1}/${n} xong`),
+      image: async (i, file, model) => {
+        if (model && !imageModels.has(model)) {
+          imageModels.add(model);
+          track.model("images", [...imageModels].map((m) => m.replace(/^@cf\/[^/]+\/|^black-forest-labs\//, "")).join(" + "));
+        }
+        if (await uploadPreview(videoId, releaseId, file)) track.sceneFile("long", i, path.basename(file));
+        track.tick("images", "long", `Ảnh ${i + 1}/${n} xong`);
+      },
       shots: (count) => track.total("video", "long", count),
       shot: () => track.tick("video", "long"),
       log: (text) => track.log("video", text),
