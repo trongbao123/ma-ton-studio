@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/
 import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
+import { recordCodexLimits } from "./codex-limits";
 import { QuotaExhaustedError } from "./gemini";
 import type { JsonRequest, TextProvider, TextRequest } from "./types";
 import { recordUsage } from "./usage";
@@ -227,6 +228,7 @@ export class CliProvider implements TextProvider {
         throw e;
       }
       if (!out.text) throw classify(this.kind, "trả về rỗng");
+      if (this.kind === "codex") await recordCodexLimits(cmd.env);
       if (this.kind === "codex" && this.persist) {
         const fresh = await readFile(path.join(home, ".codex", "auth.json"), "utf8").catch(() => "");
         if (fresh && fresh.trim() !== this.cred.trim()) await this.persist(fresh).catch((e) => console.warn("Không lưu được token Codex mới:", e));
@@ -331,6 +333,7 @@ export async function codexImage(
     const res = await runUntilImage(cmd, work, path.join(home, ".codex", "generated_images"));
     const img = await newestImage(path.join(home, ".codex", "generated_images"));
     if (!img) throw classify("codex", `${res.stderr}\n${res.stdout}`.trim().slice(-600) || "Codex không vẽ ra ảnh.");
+    await recordCodexLimits(cmd.env);
     if (persist) {
       const fresh = await readFile(path.join(home, ".codex", "auth.json"), "utf8").catch(() => "");
       if (fresh && fresh.trim() !== cred.trim()) await persist(fresh).catch((e) => console.warn("Không lưu được token Codex mới:", e));

@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { appSettings, chapters, series, videos } from "@/db/schema";
 import { loadSecrets } from "@/lib/secrets";
 import { accessToken, getYoutubeAuth, noAngle } from "@/lib/youtube";
+import { recordYoutubeUnits } from "@/lib/yt-units";
 
 const KEY = "yt_playlists";
 const API = "https://www.googleapis.com/youtube/v3";
@@ -24,6 +25,8 @@ async function yt(path: string, tok: string, body: unknown) {
       headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
+    // Mỗi lần gọi đều tốn unit, kể cả khi YouTube trả 409/5xx rồi phải thử lại.
+    await recordYoutubeUnits(path.startsWith("playlistItems") ? "playlistItemInsert" : "playlistInsert");
     if (res.ok) return res.json();
     last = `${res.status}: ${(await res.text()).replace(/\s+/g, " ").slice(0, 300)}`;
     if (res.status !== 409 && res.status < 500) break;
@@ -35,6 +38,7 @@ async function yt(path: string, tok: string, body: unknown) {
 /** Id các video đã có trong playlist (tránh thêm trùng khi chạy lại). */
 async function playlistVideoIds(playlistId: string, tok: string) {
   const res = await fetch(`${API}/playlistItems?part=contentDetails&maxResults=50&playlistId=${playlistId}`, { headers: { Authorization: `Bearer ${tok}` } });
+  await recordYoutubeUnits("playlistItemsList");
   if (!res.ok) return new Set<string>();
   const j = (await res.json()) as { items?: { contentDetails?: { videoId?: string } }[] };
   return new Set((j.items ?? []).map((i) => i.contentDetails?.videoId).filter(Boolean) as string[]);

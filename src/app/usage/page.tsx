@@ -2,11 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
-import { ChevronDown, ImageIcon } from "lucide-react";
+import { ChevronDown, ImageIcon, TrendingUp, Workflow } from "lucide-react";
 import { BrandIcon } from "@/components/brand-icons";
 import { Lamp } from "@/components/usage-lamp";
 import { LAMP_TEXT, lampOf, nextReset, SOURCES, untilText, type Source, type SourceDay, type SourceId } from "@/lib/ai/sources";
-import { vidiqBalance } from "@/lib/vidiq-balance";
+import { LIMIT_SOURCE_TEXT, levelOf, type LimitBrand, type LimitLevel, type LimitRow, type LimitWindow } from "@/lib/limits";
+import { loadLimits } from "@/lib/limits-data";
 import { configuredSources, lastQuotaDays, recentAiWork, usageByDay } from "@/lib/usage-data";
 
 export const metadata: Metadata = { title: "Hạn mức AI · Ma Tôn Studio" };
@@ -18,11 +19,11 @@ export default function UsagePage() {
         <h1 className="font-serif text-3xl font-extrabold sm:text-4xl">Hạn mức AI</h1>
         <p className="text-sm text-muted">Hôm nay mỗi AI đã làm bao nhiêu, còn lượt không, khi nào được làm mới — và AI nào đã làm video nào.</p>
       </header>
+      <Suspense fallback={<p className="text-sm text-muted">Đang hỏi hạn mức các nguồn…</p>}>
+        <Limits />
+      </Suspense>
       <Suspense fallback={<p className="text-sm text-muted">Đang tải…</p>}>
         <Ledger />
-      </Suspense>
-      <Suspense fallback={<p className="text-sm text-muted">Đang hỏi vidIQ…</p>}>
-        <VidiqCredits />
       </Suspense>
       <Suspense fallback={null}>
         <Work />
@@ -209,40 +210,85 @@ async function Work() {
   );
 }
 
-/** Credit vidIQ: từ khóa (~5/lượt gốc), chấm & gợi ý tiêu đề (~5/lượt), quét xu hướng (~25/lần). */
-async function VidiqCredits() {
-  await connection();
-  const b = await vidiqBalance();
-  const pct = b?.remaining != null && b.total ? Math.round((b.remaining / b.total) * 100) : null;
+const BAR: Record<LimitLevel, string> = { ok: "bg-emerald-500", warn: "bg-amber-400", danger: "bg-red-500" };
+const fmt = (n: number) => n.toLocaleString("vi-VN");
+const vnDateTime = (iso: string) => new Date(iso).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+
+function LimitMark({ brand }: { brand: LimitBrand }) {
+  const box = "grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-white/[.04]";
+  if (brand === "vidiq") return <span className={box}><TrendingUp size={17} className="text-sky-300" /></span>;
+  if (brand === "github") return <span className={box}><Workflow size={17} className="text-sky-300" /></span>;
   return (
-    <section aria-labelledby="vidiq" className="space-y-4">
-      <h2 id="vidiq" className="text-lg font-semibold">
-        vidIQ
-      </h2>
-      <div className="rounded-2xl border border-border bg-card p-5">
-        {!b ? (
-          <p className="text-sm text-muted">Chưa đọc được số dư vidIQ (chưa có key hoặc vidIQ không trả lời).</p>
-        ) : (
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
-              <p className="text-3xl font-bold tabular-nums">
-                {b.remaining ?? "?"}
-                {b.total != null && <span className="text-base font-normal text-muted"> / {b.total} credit</span>}
-              </p>
-              {b.used != null && <p className="text-sm text-muted">đã dùng {b.used}</p>}
-              {b.plan && <p className="text-sm text-muted">gói {b.plan}</p>}
-              {b.resetAt && <p className="text-sm text-muted">làm mới: {new Date(b.resetAt).toString() !== "Invalid Date" ? new Date(b.resetAt).toLocaleDateString("vi-VN") : b.resetAt}</p>}
-            </div>
-            {pct != null && (
-              <div className="h-2 overflow-hidden rounded-full bg-zinc-800">
-                <div className={`h-full rounded-full ${pct < 15 ? "bg-red-500" : pct < 40 ? "bg-amber-400" : "bg-emerald-500"}`} style={{ width: `${pct}%` }} />
-              </div>
-            )}
-            <p className="text-xs text-muted">Mỗi video tốn ~25–45 credit (từ khóa 3 lượt, chấm + gợi ý tiêu đề); quét xu hướng ~25 credit/ngày.</p>
-            {b.remaining == null && <pre className="overflow-x-auto whitespace-pre-wrap text-xs text-muted">{b.raw}</pre>}
-          </div>
-        )}
+    <span className={box}>
+      <BrandIcon id={brand} size={18} />
+    </span>
+  );
+}
+
+function WindowBar({ w, now }: { w: LimitWindow; now: Date }) {
+  const level = levelOf(w.percent);
+  const reset = w.resetsAt ? new Date(w.resetsAt) : null;
+  const amount =
+    w.used != null && w.total != null ? `${fmt(w.used)} / ${fmt(w.total)} ${w.unit}` : w.used != null ? `${fmt(w.used)} ${w.unit} (chưa rõ mốc)` : w.percent != null ? `${w.percent}%` : "—";
+  return (
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 text-xs">
+        <span className="truncate font-mono text-zinc-300">{w.label}</span>
+        <span className="tabular-nums">
+          {amount}
+          {w.percent != null && w.used != null && w.total != null && <span className="text-muted"> · {w.percent}%</span>}
+        </span>
       </div>
+      <div className="h-2 overflow-hidden rounded-full bg-zinc-800" role="progressbar" aria-valuenow={w.percent ?? undefined} aria-valuemin={0} aria-valuemax={100} aria-label={w.label}>
+        {w.percent != null && <div className={`h-full rounded-full ${BAR[level]}`} style={{ width: `${w.percent}%` }} />}
+      </div>
+      {reset && <p className="text-[11px] text-muted">Làm mới {vnDateTime(w.resetsAt!)} · {untilText(reset, now)}</p>}
+    </div>
+  );
+}
+
+function LimitCard({ row, now }: { row: LimitRow; now: Date }) {
+  return (
+    <li className="space-y-3 px-4 py-4 sm:px-5">
+      <div className="flex items-center gap-3">
+        <LimitMark brand={row.brand} />
+        <span className="min-w-0 flex-1 truncate font-medium">{row.name}</span>
+        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] ${row.source === "api" ? "border-jade/40 text-jade" : row.source === "none" ? "border-border text-muted" : "border-gold/40 text-gold"}`}>
+          {LIMIT_SOURCE_TEXT[row.source]}
+        </span>
+      </div>
+      {row.windows.length > 0 && (
+        <div className="space-y-3 sm:pl-12">
+          {row.windows.map((w) => (
+            <WindowBar key={w.label} w={w} now={now} />
+          ))}
+        </div>
+      )}
+      {(row.note || row.asOf) && (
+        <p className="text-xs text-muted sm:pl-12">
+          {row.note}
+          {row.asOf && ` Đo lúc ${vnDateTime(row.asOf)}.`}
+        </p>
+      )}
+    </li>
+  );
+}
+
+async function Limits() {
+  await connection();
+  const rows = await loadLimits();
+  const now = new Date();
+  return (
+    <section aria-labelledby="limits" className="space-y-4">
+      <h2 id="limits" className="text-lg font-semibold">
+        Hạn mức
+      </h2>
+      <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">
+        {rows.map((r) => (
+          <LimitCard key={r.id} row={r} now={now} />
+        ))}
+      </ul>
+      <p className="text-xs text-muted">Số đọc từ nhà cung cấp được nhớ 5 phút. Neon và Vercel chưa có token đọc hạn mức nên chưa hiện.</p>
     </section>
   );
 }

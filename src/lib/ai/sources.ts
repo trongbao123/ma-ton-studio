@@ -76,21 +76,24 @@ export function bySource(rows: UsageRow[]): Partial<Record<SourceId, SourceDay>>
   return out;
 }
 
+/** Nửa đêm kế tiếp giờ Los Angeles (Google, YouTube reset quota theo mốc này): tìm giờ UTC trong 26 giờ tới mà ở LA là 00:00. */
+export function nextPacificMidnight(now = new Date()): Date | null {
+  const la = (d: Date) => d.toLocaleString("en-US", { timeZone: "America/Los_Angeles", hour12: false, hour: "2-digit", minute: "2-digit" });
+  const start = new Date(Math.ceil(now.getTime() / 3_600_000) * 3_600_000);
+  for (let h = 0; h < 26; h++) {
+    const d = new Date(start.getTime() + h * 3_600_000);
+    if (la(d) === "00:00" || la(d) === "24:00") return d;
+  }
+  return null;
+}
+
 /** Lần reset kế tiếp (ms) cho nguồn reset theo ngày; null nếu không reset theo giờ cố định. */
 export function nextReset(id: SourceId, now = new Date()): Date | null {
   if (id === "cloudflare") {
     const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
     return d;
   }
-  if (id === "gemini-free" || id === "voice") {
-    // Nửa đêm giờ Los Angeles: tìm giờ UTC trong 26 giờ tới mà ở LA là 00:00.
-    const la = (d: Date) => d.toLocaleString("en-US", { timeZone: "America/Los_Angeles", hour12: false, hour: "2-digit", minute: "2-digit" });
-    const start = new Date(Math.ceil(now.getTime() / 3_600_000) * 3_600_000);
-    for (let h = 0; h < 26; h++) {
-      const d = new Date(start.getTime() + h * 3_600_000);
-      if (la(d) === "00:00" || la(d) === "24:00") return d;
-    }
-  }
+  if (id === "gemini-free" || id === "voice") return nextPacificMidnight(now);
   return null;
 }
 

@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { appSettings } from "@/db/schema";
 import { decrypt, encrypt } from "./crypto";
+import { recordYoutubeUnits } from "./yt-units";
 
 export const YT_KEY = "youtube";
 export type YoutubeAuth = { refreshToken: string; channel: string | null; connectedAt: string };
@@ -108,5 +109,6 @@ export async function updateYoutubeSnippet(youtubeId: string, s: { title: string
       snippet: { title: noAngle(s.title).slice(0, 100), description: noAngle(s.description).slice(0, 5000), tags: cleanTags(s.tags), categoryId: "24", defaultLanguage: "vi" },
     }),
   });
+  await recordYoutubeUnits("videoUpdate");
   if (!res.ok) throw new Error(`YouTube từ chối cập nhật: ${res.status} ${(await res.text()).slice(0, 200)}`);
 }

@@ -7,6 +7,7 @@ import { db } from "@/db";
 import { chapters, series, videos } from "@/db/schema";
 import { escapeHtml, notify, WEB_URL } from "@/lib/notify";
 import { accessToken, cleanTags, getYoutubeAuth, noAngle, YoutubeAuthError } from "@/lib/youtube";
+import { recordYoutubeUnits } from "@/lib/yt-units";
 import { Tracker } from "./progress";
 import { keepOrNextSlot } from "./schedule";
 
@@ -36,6 +37,7 @@ async function uploadVideo(token: string, u: Upload) {
       },
     }),
   });
+  if (init.ok) await recordYoutubeUnits("videoUpload");
   const location = init.headers.get("location");
   if (!init.ok || !location) throw new Error(`YouTube từ chối upload: ${init.status} ${(await init.text()).slice(0, 300)}`);
   const res = await fetch(location, {
@@ -55,6 +57,7 @@ async function setThumbnail(token: string, videoId: string, file: string) {
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "image/jpeg" },
     body: new Uint8Array(await readFile(file)),
   });
+  await recordYoutubeUnits("thumbnailSet");
   if (!res.ok) throw new Error(`${res.status} ${(await res.text()).slice(0, 200)}`);
 }
 
