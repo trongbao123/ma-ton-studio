@@ -305,9 +305,11 @@ function Studio({ data: initial, layout }: Props) {
             onInit={() => centerOn(selected)}
             nodesConnectable={false}
             defaultViewport={{ x: 0, y: 0, zoom: 1 }}
-            minZoom={0.85}
+            minZoom={0.3}
             maxZoom={1.5}
             zoomOnScroll={false}
+            // Giữ ⌘/Ctrl + cuộn (hoặc chụm 2 ngón trên trackpad) để thu nhỏ/phóng to; cuộn thường thì kéo ngang.
+            zoomActivationKeyCode={["Meta", "Control"]}
             zoomOnDoubleClick={false}
             panOnScroll
             panOnScrollMode={PanOnScrollMode.Horizontal}
