@@ -13,3 +13,19 @@ describe("fluxSize", () => {
     expect(h % 64).toBe(0);
   });
 });
+
+describe("ảnh bị chặn kiểm duyệt", () => {
+  it("nhận ra lỗi moderation của OpenAI, không nhầm với hết lượt", async () => {
+    const { isModerationBlock } = await import("./images");
+    expect(isModerationBlock(new Error('codex (gói) lỗi: ... safety_violations=[self-harm, violence]. "code": "moderation_blocked"'))).toBe(true);
+    expect(isModerationBlock(new Error("rate limit reached"))).toBe(false);
+  });
+  it("prompt dịu: bỏ từ máu me, giữ bố cục, thêm ràng buộc an toàn", async () => {
+    const { softenPrompt } = await import("./images");
+    const p = softenPrompt("Lin Yuan stabbing the giant toad, blood spraying, corpses of hunters around, glowing green poison mist, low angle");
+    expect(p).not.toMatch(/blood spraying|corpses|stabbing/i);
+    expect(p).toContain("giant toad");
+    expect(p).toContain("glowing green poison mist");
+    expect(p).toContain("no blood");
+  });
+});

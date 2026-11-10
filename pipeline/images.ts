@@ -101,9 +101,31 @@ export function drawImage(prompt: string, outFile: string, opts: DrawOpts): Prom
   return job;
 }
 
+/** OpenAI chặn prompt vì kiểm duyệt (bạo lực, máu me…) — khác hết lượt: sửa prompt là vẽ được. */
+export const isModerationBlock = (e: unknown) => /moderation_blocked|safety_violations|content_policy/i.test(e instanceof Error ? e.message : String(e));
+
+/** Từ ngữ hay làm prompt cảnh đánh nhau bị chặn — bỏ đi, giữ không khí căng thẳng mà không máu me. */
+const GRAPHIC = /\b(blood(y|ied|stained|-soaked)?|gore|gory|wounds?|wounded|bleeding|corpses?|dead bod(y|ies)|severed|dismember\w*|decapitat\w*|impal\w*|stab(bed|bing|s)?|slit|gash(es)?|mutilat\w*|carnage|massacre|torture\w*|suicid\w*|self-harm|kill(s|ed|ing)?|murder\w*|guts|entrails|skulls?|bones? (piercing|breaking)|broken bones?|crushed skull)\b/gi;
+
+/** Bản prompt "dịu" để vẽ lại khi bị chặn kiểm duyệt: bỏ từ máu me, thêm ràng buộc an toàn, giữ bố cục và cảm xúc. */
+export function softenPrompt(prompt: string) {
+  const clean = prompt.replace(GRAPHIC, "").replace(/\s+([,.;])/g, "$1").replace(/,\s*,+/g, ",").replace(/\s{2,}/g, " ").trim();
+  return `${clean}, dramatic but non-graphic, no blood, no gore, no injuries, no dead bodies, epic fantasy energy and tension instead of violence, cinematic, PG-13`;
+}
+
 async function codexDraw(prompt: string, outFile: string, model: string, opts: DrawOpts) {
+  const draw = (p: string) => codexImage(process.env.CODEX_AUTH_JSON!, p, aspect(opts), (fresh) => saveSecret("CODEX_AUTH_JSON", fresh));
   try {
-    await saveImage(outFile, await codexImage(process.env.CODEX_AUTH_JSON!, prompt, aspect(opts), (fresh) => saveSecret("CODEX_AUTH_JSON", fresh)));
+    let buf: Buffer;
+    try {
+      buf = await draw(prompt);
+    } catch (e) {
+      // Bị chặn kiểm duyệt: vẽ lại 1 lần bằng prompt dịu thay vì bỏ sang AI khác (Cloudflare có thể đã hết quota → cả chương phải chờ).
+      if (!isModerationBlock(e)) throw e;
+      console.warn("⚠ Ảnh bị OpenAI chặn kiểm duyệt — vẽ lại bằng prompt dịu hơn");
+      buf = await draw(softenPrompt(prompt));
+    }
+    await saveImage(outFile, buf);
     void recordUsage(model, false);
   } catch (e) {
     if (e instanceof QuotaExhaustedError) void recordUsage(model, true);
