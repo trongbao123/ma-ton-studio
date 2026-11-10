@@ -28,14 +28,15 @@ async function ChapterDetail({ params }: { params: Promise<{ id: string }> }) {
   const id = parseId((await params).id);
   const [c] = await db().select().from(chapters).where(eq(chapters.id, id));
   if (!c) notFound();
-  const [[s], [prev], [next], [video]] = await Promise.all([
+  const approved = c.status === "approved";
+  const [[s], [prev], [next], [video], prompt] = await Promise.all([
     db().select({ id: series.id, title: series.title }).from(series).where(eq(series.id, c.seriesId)),
     neighbour(c.seriesId, c.number - 1),
     neighbour(c.seriesId, c.number + 1),
     db().select({ id: videos.id }).from(videos).where(and(eq(videos.chapterId, c.id), sql`${videos.meta}->'compilation' is null`)).orderBy(desc(videos.id)).limit(1),
+    approved ? null : manualPrompt(c),
   ]);
   const words = c.content.trim() ? c.content.trim().split(/\s+/).length : 0;
-  const approved = c.status === "approved";
 
   return (
     <div className="space-y-6">
@@ -55,7 +56,7 @@ async function ChapterDetail({ params }: { params: Promise<{ id: string }> }) {
           {!approved && (
             <>
               <WriteButton chapterId={c.id} label={c.content ? "AI viết lại" : "AI viết chương"} />
-              <CopyButton text={await manualPrompt(c)} label="Copy prompt (dán vào ChatGPT)" />
+              <CopyButton text={prompt ?? ""} label="Copy prompt (dán vào ChatGPT)" />
             </>
           )}
           {approved && video && (

@@ -10,18 +10,18 @@ import type { ProviderId } from "./routing";
 export type CliCheck = { ok: boolean; model?: string; error?: string; at: string };
 export type CliStatus = Partial<Record<ProviderId, CliCheck>>;
 
-const KEY = "ai_cli_status";
+export const CLI_STATUS_KEY = "ai_cli_status";
 
 export async function loadCliStatus(): Promise<CliStatus> {
   if (!process.env.DATABASE_URL) return {};
-  const [row] = await db().select({ value: appSettings.value }).from(appSettings).where(eq(appSettings.key, KEY)).catch(() => []);
+  const [row] = await db().select({ value: appSettings.value }).from(appSettings).where(eq(appSettings.key, CLI_STATUS_KEY)).catch(() => []);
   return (row?.value ?? {}) as CliStatus;
 }
 
 export async function saveCliStatus(value: CliStatus) {
   await db()
     .insert(appSettings)
-    .values({ key: KEY, value })
+    .values({ key: CLI_STATUS_KEY, value })
     .onConflictDoUpdate({ target: appSettings.key, set: { value, updatedAt: new Date() } });
 }
 

@@ -11,9 +11,8 @@ const ORIGINAL: Record<string, string | undefined> = Object.fromEntries(NAMES.ma
 let loadedAt = 0;
 let stored: Record<string, string> = {};
 
-async function readStored(): Promise<Record<string, string>> {
-  const [row] = await db().select({ value: appSettings.value }).from(appSettings).where(eq(appSettings.key, SECRETS_KEY));
-  const v = (row?.value ?? {}) as Record<string, unknown>;
+function parseStored(raw: unknown): Record<string, string> {
+  const v = (raw ?? {}) as Record<string, unknown>;
   return Object.fromEntries(
     NAMES.flatMap((n) => {
       if (typeof v[n] !== "string" || !v[n]) return [];
@@ -27,10 +26,37 @@ async function readStored(): Promise<Record<string, string>> {
   );
 }
 
+async function readStored(): Promise<Record<string, string>> {
+  const [row] = await db().select({ value: appSettings.value }).from(appSettings).where(eq(appSettings.key, SECRETS_KEY));
+  return parseStored(row?.value);
+}
+
 /** Bản đã mã hoá đang lưu trong DB (để ghi lại các key khác không phải giải mã/mã hoá lại). */
 async function readRaw(): Promise<Record<string, string>> {
   const [row] = await db().select({ value: appSettings.value }).from(appSettings).where(eq(appSettings.key, SECRETS_KEY));
   return (row?.value ?? {}) as Record<string, string>;
+}
+
+/** Đưa key (đã giải mã) vào process.env — key trên web thắng key môi trường; xoá trên web thì quay về giá trị gốc. */
+function applyToEnv() {
+  for (const n of NAMES) {
+    const v = stored[n] ?? ORIGINAL[n];
+    if (v) process.env[n] = v;
+    else delete process.env[n];
+  }
+}
+
+/** Còn trong 60 giây nhớ của lần nạp trước. */
+export const secretsFresh = () => Date.now() - loadedAt < 60_000;
+
+/**
+ * Nạp key từ bản ghi app_settings đã đọc sẵn (loader gộp nhiều khoá vào một truy vấn) — khỏi tốn thêm một vòng tới DB.
+ * `raw` là giá trị của khoá SECRETS_KEY (undefined nếu chưa có).
+ */
+export function applySecrets(raw: unknown) {
+  stored = parseStored(raw);
+  loadedAt = Date.now();
+  applyToEnv();
 }
 
 /**
@@ -40,7 +66,7 @@ async function readRaw(): Promise<Record<string, string>> {
  */
 export async function loadSecrets(force = false) {
   if (!process.env.DATABASE_URL) return;
-  if (!force && Date.now() - loadedAt < 60_000) return;
+  if (!force && secretsFresh()) return;
   try {
     stored = await readStored();
     loadedAt = Date.now();
@@ -48,11 +74,7 @@ export async function loadSecrets(force = false) {
     console.warn("Không đọc được key lưu trên web:", e instanceof Error ? e.message : e);
     return;
   }
-  for (const n of NAMES) {
-    const v = stored[n] ?? ORIGINAL[n];
-    if (v) process.env[n] = v;
-    else delete process.env[n];
-  }
+  applyToEnv();
 }
 
 export async function secretStatus(): Promise<SecretStatus[]> {

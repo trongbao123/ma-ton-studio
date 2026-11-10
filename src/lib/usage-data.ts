@@ -27,8 +27,7 @@ export async function usageByDay(days: string[]) {
 
 /** Nguồn nào đã cấu hình (có key / gói đã kết nối) — trang Hạn mức phân biệt "chưa dùng" với "chưa có". */
 export async function configuredSources(): Promise<Partial<Record<SourceId, boolean>>> {
-  await loadSecrets();
-  const cli = await loadCliStatus();
+  const [, cli] = await Promise.all([loadSecrets(), loadCliStatus()]);
   const has = (k: string) => Boolean(process.env[k]);
   return {
     "claude-plan": Boolean(cli["claude-cli"]?.ok),

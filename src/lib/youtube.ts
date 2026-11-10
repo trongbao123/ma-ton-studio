@@ -62,12 +62,16 @@ export async function accessToken(refreshToken: string) {
   return (await token({ refresh_token: refreshToken, grant_type: "refresh_token" })).access_token!;
 }
 
+/** Bản ghi app_settings[YT_KEY] → thông tin kênh. Token lưu mã hoá; token cũ (trước khi có mã hoá) vẫn đọc được. */
+export function parseYoutubeAuth(raw: unknown): YoutubeAuth | null {
+  const v = raw as Partial<YoutubeAuth> | undefined;
+  if (!v?.refreshToken) return null;
+  return { refreshToken: decrypt(v.refreshToken), channel: v.channel ?? null, connectedAt: v.connectedAt ?? "" };
+}
+
 export async function getYoutubeAuth(): Promise<YoutubeAuth | null> {
   const [row] = await db().select({ value: appSettings.value }).from(appSettings).where(eq(appSettings.key, YT_KEY));
-  const v = row?.value as Partial<YoutubeAuth> | undefined;
-  if (!v?.refreshToken) return null;
-  // Token lưu mã hoá; token cũ (trước khi có mã hoá) vẫn đọc được.
-  return { refreshToken: decrypt(v.refreshToken), channel: v.channel ?? null, connectedAt: v.connectedAt ?? "" };
+  return parseYoutubeAuth(row?.value);
 }
 
 export async function saveYoutubeAuth(auth: YoutubeAuth | null) {

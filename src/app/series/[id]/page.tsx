@@ -25,9 +25,8 @@ export default function SeriesPage({ params }: PageProps<"/series/[id]">) {
 async function SeriesDetail({ params }: { params: Promise<{ id: string }> }) {
   await connection();
   const id = parseId((await params).id);
-  const [s] = await db().select().from(series).where(eq(series.id, id));
+  const [[s], list] = await Promise.all([db().select().from(series).where(eq(series.id, id)), listChapters(id)]);
   if (!s) notFound();
-  const list = await listChapters(id);
 
   return (
     <div className="space-y-8">

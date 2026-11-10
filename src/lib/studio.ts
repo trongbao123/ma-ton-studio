@@ -1,4 +1,4 @@
-import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
+import { count, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { chapters, series, videos, type Video } from "@/db/schema";
 import { TITLES, type NodeId } from "@/lib/flow/model";
@@ -14,6 +14,8 @@ export type SeriesCard = {
   approved: number;
   /** Video mới nhất có thumbnail — làm bìa truyện. */
   coverVideoId: number | null;
+  /** Id asset của thumbnail bìa — đưa vào URL để cache ảnh lâu dài. */
+  coverVersion: number | null;
 };
 
 export async function seriesCards(): Promise<SeriesCard[]> {
@@ -32,13 +34,13 @@ export async function seriesCards(): Promise<SeriesCard[]> {
     .groupBy(series.id)
     .orderBy(desc(series.createdAt));
   const covers = await db()
-    .select({ seriesId: chapters.seriesId, id: sql<number>`max(${videos.id})`.mapWith(Number) })
+    .selectDistinctOn([chapters.seriesId], { seriesId: chapters.seriesId, id: videos.id, assets: videos.assets })
     .from(videos)
     .innerJoin(chapters, eq(chapters.id, videos.chapterId))
     .where(sql`${videos.assets} ? 'thumbnail.jpg'`)
-    .groupBy(chapters.seriesId);
-  const cover = new Map(covers.map((c) => [c.seriesId, c.id]));
-  return rows.map((r) => ({ ...r, coverVideoId: cover.get(r.id) ?? null }));
+    .orderBy(chapters.seriesId, desc(videos.id));
+  const cover = new Map(covers.map((c) => [c.seriesId, c]));
+  return rows.map((r) => ({ ...r, coverVideoId: cover.get(r.id)?.id ?? null, coverVersion: cover.get(r.id)?.assets["thumbnail.jpg"] ?? null }));
 }
 
 export type VideoCard = {
@@ -49,6 +51,8 @@ export type VideoCard = {
   durationSec: number | null;
   publishAt: string | null;
   hasThumb: boolean;
+  /** Id asset của thumbnail (null = chưa có). */
+  thumbVersion: number | null;
   chapterNo: number;
   chapterTitle: string;
   seriesTitle: string;
@@ -99,6 +103,7 @@ export async function videoCards(opts: { limit?: number; statuses?: Video["statu
     durationSec: v.durationSec,
     publishAt: v.publishAt?.toISOString() ?? null,
     hasThumb: Boolean(v.assets["thumbnail.jpg"]),
+    thumbVersion: v.assets["thumbnail.jpg"] ?? null,
     youtubeVideoId: v.youtubeVideoId,
     youtubeShortId: v.youtubeShortId,
     compilation: v.meta?.compilation ? { from: v.meta.compilation.from, to: v.meta.compilation.to } : null,
@@ -131,17 +136,16 @@ export async function todo() {
 
 /** Đếm nhanh cho dòng số liệu đầu trang. */
 export async function counters() {
-  const [row] = await db()
-    .select({
-      rendering: sql<number>`count(*) filter (where ${videos.status} in ('queued','rendering'))`.mapWith(Number),
-      ready: sql<number>`count(*) filter (where ${videos.status} = 'ready')`.mapWith(Number),
-      scheduled: sql<number>`count(*) filter (where ${videos.uploadStatus} = 'scheduled' and ${videos.publishAt} > now())`.mapWith(Number),
-      published: sql<number>`count(*) filter (where ${videos.status} = 'published')`.mapWith(Number),
-    })
-    .from(videos);
-  const [{ drafts }] = await db()
-    .select({ drafts: count() })
-    .from(chapters)
-    .where(and(eq(chapters.status, "draft")));
+  const [[row], [{ drafts }]] = await Promise.all([
+    db()
+      .select({
+        rendering: sql<number>`count(*) filter (where ${videos.status} in ('queued','rendering'))`.mapWith(Number),
+        ready: sql<number>`count(*) filter (where ${videos.status} = 'ready')`.mapWith(Number),
+        scheduled: sql<number>`count(*) filter (where ${videos.uploadStatus} = 'scheduled' and ${videos.publishAt} > now())`.mapWith(Number),
+        published: sql<number>`count(*) filter (where ${videos.status} = 'published')`.mapWith(Number),
+      })
+      .from(videos),
+    db().select({ drafts: count() }).from(chapters).where(eq(chapters.status, "draft")),
+  ]);
   return { ...row, drafts };
 }

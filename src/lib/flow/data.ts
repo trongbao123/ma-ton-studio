@@ -1,15 +1,18 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { aiUsage, appSettings, chapters, series, videos } from "@/db/schema";
 import { LAYOUT_KEY, mergeLayout } from "./layout";
 import { configuredImageModel, containingCompilation, pickImageModel, type CompilationRef } from "./derive";
-import { IMAGE_ROUTING_KEY, normalizeImageRouting } from "@/lib/ai/routing";
+import { IMAGE_ROUTING_KEY, normalizeImageRouting, normalizeRouting, ROUTING_KEY } from "@/lib/ai/routing";
+import { assetUrl } from "@/lib/asset-url";
 import { quotaDay } from "@/lib/ai/usage";
-import { INSIGHT_MAX_AGE_DAYS, loadTrends, scannedWithin, type TrendsData } from "@/lib/trends";
-import { availableProviders, loadRouting } from "@/lib/ai";
-import { loadCliStatus, withCliStatus } from "@/lib/ai/cli-status";
-import { loadSecrets } from "@/lib/secrets";
-import { getYoutubeAuth } from "@/lib/youtube";
+import { INSIGHT_MAX_AGE_DAYS, scannedWithin, TRENDS_KEY, type TrendsData } from "@/lib/trends";
+import { availableProviders } from "@/lib/ai";
+import { CLI_STATUS_KEY, withCliStatus, type CliStatus } from "@/lib/ai/cli-status";
+import { applySecrets, secretsFresh } from "@/lib/secrets";
+import { SECRETS_KEY } from "@/lib/secret-keys";
+import { parseYoutubeAuth, YT_KEY } from "@/lib/youtube";
 import type { FlowData, TrendsView } from "./model";
 
 /** Rút gọn kết quả quét xu hướng cho màn flow (không gửi dữ liệu thô). */
@@ -26,12 +29,15 @@ function trendsView(t: TrendsData | null): TrendsView | null {
   };
 }
 
-/** Các bản gộp có chứa video chương này (lọc ở DB bằng jsonb, chọn bản mới nhất bằng hàm thuần). */
-async function compilationsOf(videoId: number): Promise<CompilationRef | null> {
-  const rows = await db()
+/** Truy vấn các bản gộp có chứa video chương này (lọc ở DB bằng jsonb). */
+const compilationRows = (videoId: number) =>
+  db()
     .select({ id: videos.id, meta: videos.meta, status: videos.status, youtubeVideoId: videos.youtubeVideoId })
     .from(videos)
     .where(sql`${videos.meta}->'compilation'->'videoIds' @> ${JSON.stringify([videoId])}::jsonb`);
+
+/** Chọn bản gộp mới nhất bằng hàm thuần. */
+function compilationOf(videoId: number, rows: Awaited<ReturnType<typeof compilationRows>>): CompilationRef | null {
   const refs = rows.flatMap((r) =>
     r.meta?.compilation
       ? [{ id: r.id, from: r.meta.compilation.from, to: r.meta.compilation.to, videoIds: r.meta.compilation.videoIds, youtubeVideoId: r.youtubeVideoId, status: r.status }]
@@ -40,34 +46,44 @@ async function compilationsOf(videoId: number): Promise<CompilationRef | null> {
   return containingCompilation(videoId, refs);
 }
 
-export async function loadFlowData(videoId: number): Promise<FlowData | null> {
+/** Mọi khoá app_settings màn flow cần — đọc MỘT lần thay vì 7 truy vấn riêng. */
+const SETTING_KEYS = [SECRETS_KEY, YT_KEY, ROUTING_KEY, IMAGE_ROUTING_KEY, CLI_STATUS_KEY, TRENDS_KEY, LAYOUT_KEY];
+
+/**
+ * Dữ liệu màn flow + bố cục đã lưu. Đúng 2 vòng tới DB: (1) video + chương + truyện + tóm tắt chương trước;
+ * (2) một lô gồm toàn bộ app_settings cần, các bản gộp, lượt dùng ảnh — gửi chung một request HTTP.
+ */
+export async function loadFlowPage(videoId: number): Promise<{ data: FlowData; layout: ReturnType<typeof mergeLayout> } | null> {
+  const prev = alias(chapters, "prev_chapter");
   const [row] = await db()
-    .select({ v: videos, c: chapters, s: series })
+    .select({ v: videos, c: chapters, s: series, prevSummary: prev.summary })
     .from(videos)
     .innerJoin(chapters, eq(chapters.id, videos.chapterId))
     .innerJoin(series, eq(series.id, chapters.seriesId))
+    .leftJoin(prev, and(eq(prev.seriesId, chapters.seriesId), eq(prev.number, sql`${chapters.number} - 1`)))
     .where(eq(videos.id, videoId));
   if (!row) return null;
   const { v, c, s } = row;
   const tracked = v.progress?.steps.images?.model;
-  const [[prev], yt, [img], routing, , cli, trends, compiledInto, usage] = await Promise.all([
+  const [settingRows, compRows, usage] = await db().batch([
+    db().select({ key: appSettings.key, value: appSettings.value }).from(appSettings).where(inArray(appSettings.key, SETTING_KEYS)),
+    compilationRows(v.id),
+    // Pipeline chưa ghi model ảnh (video cũ) thì suy từ lượt dùng trong ngày render; đã ghi thì lô này trả rỗng.
     db()
-      .select({ summary: chapters.summary })
-      .from(chapters)
-      .where(and(eq(chapters.seriesId, s.id), eq(chapters.number, c.number - 1))),
-    getYoutubeAuth(),
-    db().select({ value: appSettings.value }).from(appSettings).where(eq(appSettings.key, IMAGE_ROUTING_KEY)),
-    loadRouting(true),
-    loadSecrets(),
-    loadCliStatus(),
-    loadTrends(),
-    compilationsOf(v.id),
-    // Pipeline chưa ghi model ảnh (video cũ) thì suy từ lượt dùng trong ngày render.
-    tracked ? Promise.resolve([]) : db().select({ model: aiUsage.model, calls: aiUsage.calls }).from(aiUsage).where(eq(aiUsage.day, quotaDay(v.updatedAt))),
+      .select({ model: aiUsage.model, calls: aiUsage.calls })
+      .from(aiUsage)
+      .where(tracked ? sql`false` : eq(aiUsage.day, quotaDay(v.updatedAt))),
   ]);
+  const setting = Object.fromEntries(settingRows.map((r) => [r.key, r.value]));
+  if (process.env.DATABASE_URL && !secretsFresh()) applySecrets(setting[SECRETS_KEY]);
+  const routing = normalizeRouting(setting[ROUTING_KEY] ?? null);
+  const cli = (setting[CLI_STATUS_KEY] ?? {}) as CliStatus;
+  const yt = parseYoutubeAuth(setting[YT_KEY]);
+  const trends = (setting[TRENDS_KEY] as TrendsData | undefined) ?? null;
+  const compiledInto = compilationOf(v.id, compRows);
   const content = c.content.trim();
 
-  return {
+  const data: FlowData = {
     video: {
       id: v.id,
       status: v.status,
@@ -77,7 +93,7 @@ export async function loadFlowData(videoId: number): Promise<FlowData | null> {
       durationSec: v.durationSec,
       youtubeUrl: v.youtubeUrl,
       meta: v.meta,
-      files: Object.fromEntries(Object.keys(v.assets).map((f) => [f, `/api/videos/${v.id}/${f}`])),
+      files: Object.fromEntries(Object.entries(v.assets).map(([f, assetId]) => [f, assetUrl(v.id, f, assetId)])),
       createdAt: v.createdAt.toISOString(),
       updatedAt: v.updatedAt.toISOString(),
       progress: v.progress,
@@ -104,19 +120,20 @@ export async function loadFlowData(videoId: number): Promise<FlowData | null> {
       makeShort: s.makeShort,
       autoPublish: s.autoPublish,
     },
-    prevSummary: prev?.summary || null,
+    prevSummary: row.prevSummary || null,
     youtube: { connected: Boolean(yt), channel: yt?.channel ?? null },
     trends: trendsView(trends),
     compiledInto,
     ai: {
-      image: pickImageModel({ tracked, usage, configured: configuredImageModel(normalizeImageRouting(img?.value), Boolean(process.env.CODEX_AUTH_JSON)) }),
+      image: pickImageModel({ tracked, usage, configured: configuredImageModel(normalizeImageRouting(setting[IMAGE_ROUTING_KEY]), Boolean(process.env.CODEX_AUTH_JSON)) }),
       text: { story: routing.story, meta: routing.meta, scenes: routing.scenes },
       available: withCliStatus(availableProviders(), cli),
     },
   };
+  return { data, layout: mergeLayout(setting[LAYOUT_KEY]) };
 }
 
-export async function getFlowLayout() {
-  const [row] = await db().select({ value: appSettings.value }).from(appSettings).where(eq(appSettings.key, LAYOUT_KEY));
-  return mergeLayout(row?.value);
+/** Dữ liệu màn flow (không kèm bố cục) — cho API / luồng SSE. */
+export async function loadFlowData(videoId: number): Promise<FlowData | null> {
+  return (await loadFlowPage(videoId))?.data ?? null;
 }
