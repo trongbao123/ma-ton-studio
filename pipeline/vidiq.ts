@@ -151,7 +151,11 @@ export function parseScoredTitles(text: string): { title: string; score: number 
  * vidIQ tự nghĩ tiêu đề kèm điểm (phần "Magic Fill" cho tiêu đề — vidIQ MCP không có Magic Fill mô tả/tag).
  * ~5 credit/lượt. Lỗi / không có tool thì trả [] để pipeline chạy tiếp như thường.
  */
-export async function generateTitles(title: string, description: string): Promise<{ title: string; score: number | null }[]> {
+export async function generateTitles(
+  title: string,
+  description: string,
+  more: { previous?: string[]; threshold?: number } = {},
+): Promise<{ title: string; score: number | null }[]> {
   const s = await connect();
   if (!s || process.env.VIDIQ_SCORE_TITLES === "0") return [];
   const tool = pick(s.tools, (n) => n.includes("generate") && n.includes("title"));
@@ -163,6 +167,9 @@ export async function generateTitles(title: string, description: string): Promis
     if ("type" in props) args.type = "long";
     if ("language" in props) args.language = "vi";
     if ("regionCode" in props) args.regionCode = "VN";
+    // Vòng sau: báo vidIQ các tiêu đề đã thử để nó nghĩ hướng khác, và chỉ trả tiêu đề đạt ngưỡng điểm.
+    if (more.previous?.length && "previousTitles" in props) args.previousTitles = more.previous.slice(0, 20);
+    if (more.threshold && "scoreThreshold" in props) args.scoreThreshold = more.threshold;
     const res = await s.client.callTool({ name: tool.name, arguments: args });
     if ((res as { isError?: boolean }).isError) throw new Error(textOf(res).slice(0, 200));
     return parseScoredTitles(textOf(res));
@@ -170,6 +177,25 @@ export async function generateTitles(title: string, description: string): Promis
     console.warn("⚠ vidIQ gợi ý tiêu đề lỗi:", e instanceof Error ? e.message : e);
     return [];
   }
+}
+
+export type ScoredTitle = { title: string; score: number | null };
+
+/**
+ * Chọn tiêu đề điểm vidIQ cao nhất, cố đạt `target` (mặc định 90): chấm các phương án AI viết + vidIQ gợi ý,
+ * chưa đạt thì xin vidIQ thêm (báo tiêu đề đã thử, đặt ngưỡng điểm), tối đa `rounds` vòng. ~5 credit/lượt gọi.
+ */
+export async function pickBestTitle(options: string[], description: string, target = 90, rounds = 3): Promise<{ best: ScoredTitle; all: ScoredTitle[] } | null> {
+  const scores = await scoreTitles(options);
+  const all: ScoredTitle[] = options.map((t, i) => ({ title: t, score: scores?.[i] ?? null }));
+  const top = () => all.reduce((b, x) => ((x.score ?? -1) > (b.score ?? -1) ? x : b));
+  for (let i = 0; i < rounds && (top().score ?? 0) < target; i++) {
+    const ideas = await generateTitles(top().title, description, i ? { previous: all.map((x) => x.title), threshold: target } : {});
+    const fresh = ideas.filter((x) => !all.some((y) => y.title === x.title));
+    if (!fresh.length) break;
+    all.push(...fresh);
+  }
+  return all.some((x) => x.score != null) ? { best: top(), all } : null;
 }
 
 /** Tên + mô tả các tool vidIQ đang mở (không tốn credit) — để xem có tool kiểu Magic Fill không. */

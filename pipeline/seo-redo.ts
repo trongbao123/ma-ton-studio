@@ -9,7 +9,7 @@ import { AI_NOTE, optimizeMeta } from "@/lib/seo-optimize";
 import { loadSecrets } from "@/lib/secrets";
 import { updateYoutubeSnippet } from "@/lib/youtube";
 import { videoMeta } from "./prompts";
-import { closeVidiq, generateTitles, genreSeeds, keywordResearch, scoreTitles } from "./vidiq";
+import { closeVidiq, genreSeeds, keywordResearch, pickBestTitle } from "./vidiq";
 
 export async function redoSeo(videoId: number) {
   await loadSecrets(true);
@@ -27,11 +27,10 @@ export async function redoSeo(videoId: number) {
   console.log(`  Meta mới bởi ${textProvider().lastModel}`);
 
   const options = [m.title, ...(m.titleAlternatives ?? [])].filter(Boolean);
-  const scores = await scoreTitles(options);
-  const ideas = await generateTitles(m.title, m.description);
-  const all = [...options.map((t, i) => ({ title: t, score: scores?.[i] ?? null })), ...ideas.filter((x) => !options.includes(x.title))];
+  const picked = await pickBestTitle(options, m.description);
+  const all = picked?.all ?? options.map((title) => ({ title, score: null }));
   for (const x of all) console.log(`  ${x.score ?? "?"} — ${x.title}`);
-  const best = all.reduce((b, x) => ((x.score ?? -1) > (b.score ?? -1) ? x : b));
+  const best = picked?.best ?? all[0];
 
   // Giữ phần ghi công nhạc (nếu có) ở cuối mô tả cũ.
   const credit = v.meta.description.match(/\n\nNhạc nền:[\s\S]*$/)?.[0] ?? "";
