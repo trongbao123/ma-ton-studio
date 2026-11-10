@@ -1,9 +1,9 @@
 "use client";
 
-import { ChevronDown, ChevronUp, PanelRightClose, PanelRightOpen } from "lucide-react";
+import { ChevronDown, ChevronUp, Maximize2, PanelRightClose, PanelRightOpen, X } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { rerenderAction } from "@/app/actions";
 import { ActionForm } from "@/components/action-form";
 import { MAIN_ORDER, type CanvasNodeId, type Pos } from "@/lib/flow/layout";
@@ -58,11 +58,85 @@ const POLL_MS = 2000;
 const noopSubscribe = () => () => {};
 
 /** 6 dòng nhật ký mới nhất của mọi bước, mới nhất trước — chạy ở thanh dưới cùng. */
+/** Toàn bộ nhật ký các bước, mới nhất trước (thanh nhật ký cuộn được, hộp "Xem đầy đủ" hiện hết). */
 function recentLog(d: FlowData) {
   return Object.entries(d.video.progress?.steps ?? {})
     .flatMap(([id, p]) => (p?.log ?? []).map((l) => ({ ...l, text: `${TITLES[id as NodeId]}: ${l.text}` })))
-    .sort((a, b) => b.at.localeCompare(a.at))
-    .slice(0, 6);
+    .sort((a, b) => b.at.localeCompare(a.at));
+}
+
+/** Chiều cao thanh nhật ký (desktop): mặc định = bố cục cũ; kéo mép trên để đổi, nhớ theo trình duyệt. */
+const LOG_H_KEY = "flow:logH";
+const LOG_H_DEFAULT = 110;
+const LOG_H_MIN = 60;
+const clampLogH = (h: number) => Math.round(Math.min(Math.max(h, LOG_H_MIN), Math.max(LOG_H_MIN, window.innerHeight * 0.7)));
+
+function useLogHeight(): [number, (h: number, save?: boolean) => void] {
+  const [h, setH] = useState(LOG_H_DEFAULT);
+  useEffect(() => {
+    try {
+      const v = Number(localStorage.getItem(LOG_H_KEY));
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- đọc localStorage sau khi hydrate để server/client khớp nhau
+      if (v > 0) setH(clampLogH(v));
+    } catch {
+      /* bỏ qua */
+    }
+  }, []);
+  const set = useCallback((next: number, save = false) => {
+    const v = clampLogH(next);
+    setH(v);
+    if (save)
+      try {
+        localStorage.setItem(LOG_H_KEY, String(v));
+      } catch {
+        /* bỏ qua */
+      }
+  }, []);
+  return [h, set];
+}
+
+type LogLine = { at: string; text: string; tone?: "error" };
+
+function LogList({ lines, className = "" }: { lines: LogLine[]; className?: string }) {
+  return (
+    <ul className={`space-y-1.5 ${className}`}>
+      {lines.map((l, i) => (
+        <li key={i} className={l.tone === "error" ? "text-red-400" : ""}>
+          {l.at && <b className="mr-2 tabular-nums text-foreground">{l.at}</b>}
+          {l.text}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Hộp xem toàn bộ nhật ký (thẻ <dialog> gốc: Esc / bấm nền để đóng). */
+function LogDialog({ open, onClose, lines }: { open: boolean; onClose: () => void; lines: LogLine[] }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const d = ref.current;
+    if (!d) return;
+    if (open && !d.open) d.showModal();
+    if (!open && d.open) d.close();
+  }, [open]);
+  return (
+    <dialog
+      ref={ref}
+      onClose={onClose}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+      className="m-auto h-[min(85dvh,900px)] w-[min(92vw,1000px)] rounded-2xl border border-border bg-[#111115] p-0 text-sm text-muted backdrop:bg-black/70"
+    >
+      <div className="flex h-full flex-col">
+        <div className="flex items-center justify-between border-b border-border px-5 py-3">
+          <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">Nhật ký · {lines.length} dòng</p>
+          <button type="button" onClick={onClose} aria-label="Đóng" className="rounded-lg p-1.5 text-muted hover:bg-white/5 hover:text-foreground">
+            <X size={18} />
+          </button>
+        </div>
+        <LogList lines={lines} className="flex-1 overflow-y-auto px-5 py-4" />
+      </div>
+    </dialog>
+  );
 }
 
 /** Video còn đang chạy (render / chờ máy nhận job / upload YouTube) thì cần cập nhật trực tiếp. */
@@ -116,6 +190,12 @@ function Studio({ data: initial, layout }: Props) {
   const [selected, setSelected] = useState<CardId>(() => firstOpen(cards));
   const v = data.video;
   const [label, tone] = STATUS_LABEL[v.status];
+  const logLines: LogLine[] = [
+    ...recentLog(data).map((l) => ({ at: formatTime(l.at).slice(0, 5), text: l.text })),
+    ...(v.status === "failed" && v.error ? [{ at: "", text: v.error.slice(0, 500), tone: "error" as const }] : []),
+    { at: formatTime(v.updatedAt), text: label },
+    { at: formatTime(v.createdAt), text: "Tạo video" },
+  ];
   // Chỉ tính trên client (cần giờ hiện tại) để HTML server và lần hydrate đầu giống nhau.
   const onClient = useSyncExternalStore(noopSubscribe, () => true, () => false);
   const stale = onClient && isStale(v);
@@ -126,6 +206,29 @@ function Studio({ data: initial, layout }: Props) {
   // Thu gọn bảng chi tiết / nhật ký để canvas rộng hơn; nhớ theo trình duyệt.
   const [panelOpen, setPanelOpen] = usePref("flow:panel", true);
   const [logOpen, setLogOpen] = usePref("flow:log", true);
+  const [logH, setLogH] = useLogHeight();
+  const [logFull, setLogFull] = useState(false);
+  // Kéo mép trên thanh nhật ký: kéo lên = nhật ký cao hơn, canvas thấp lại.
+  const startDrag = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      const y0 = e.clientY;
+      const h0 = logH;
+      let last = h0;
+      const move = (ev: PointerEvent) => {
+        last = h0 + (y0 - ev.clientY);
+        setLogH(last);
+      };
+      const up = () => {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        setLogH(last, true);
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+    },
+    [logH, setLogH],
+  );
 
   const [resetCount, setResetCount] = useState(0);
   const select = useCallback(
@@ -197,7 +300,10 @@ function Studio({ data: initial, layout }: Props) {
         data-panel={panelOpen ? "open" : "closed"}
         className="flow-grid grid shrink-0 grid-cols-1 content-start lg:min-h-0 lg:flex-1 lg:shrink lg:overflow-hidden"
       >
-        <div className={`area-canvas relative min-w-0 border-b border-border ${logOpen ? "h-[640px] lg:h-[calc(100dvh-230px)] lg:min-h-[560px]" : "h-[640px] lg:h-full"}`}>
+        <div
+          style={{ "--log-h": `${logH}px` } as React.CSSProperties}
+          className={`area-canvas relative min-w-0 border-b border-border ${logOpen ? "h-[640px] lg:h-[calc(100dvh-120px-var(--log-h))] lg:min-h-[240px]" : "h-[640px] lg:h-full"}`}
+        >
           <FlowCanvas cards={cards} subs={subs} layout={layout} selected={selected} panelOpen={panelOpen} resetCount={resetCount} onPick={select} />
           <p className="pointer-events-none absolute bottom-3 left-4 text-xs text-zinc-500">Kéo để dời · ⌘/Ctrl + cuộn để zoom</p>
         </div>
@@ -226,30 +332,35 @@ function Studio({ data: initial, layout }: Props) {
             </button>
           )}
         </div>
-        <section className={`area-log min-w-0 px-5 text-sm text-muted ${logOpen ? "py-4 lg:overflow-y-auto" : "py-2"}`}>
-          <button
-            type="button"
-            onClick={() => setLogOpen(!logOpen)}
-            className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500 hover:text-foreground"
-          >
-            Nhật ký {logOpen ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
-          </button>
-          <ul className={`space-y-1.5 ${logOpen ? "" : "hidden"}`}>
-            <li>
-              <b className="mr-2 tabular-nums text-foreground">{formatTime(v.createdAt)}</b>Tạo video
-            </li>
-            <li>
-              <b className="mr-2 tabular-nums text-foreground">{formatTime(v.updatedAt)}</b>
-              {label}
-            </li>
-            {v.status === "failed" && v.error && <li className="text-red-400">{v.error.slice(0, 200)}</li>}
-            {recentLog(data).map((l, i) => (
-              <li key={i}>
-                <b className="mr-2 tabular-nums text-foreground">{formatTime(l.at).slice(0, 5)}</b>
-                {l.text}
-              </li>
-            ))}
-          </ul>
+        <section className={`area-log relative min-w-0 px-5 text-sm text-muted ${logOpen ? "py-4 lg:overflow-y-auto" : "py-2"}`}>
+          {logOpen && (
+            <div
+              role="separator"
+              aria-orientation="horizontal"
+              aria-label="Kéo để đổi chiều cao nhật ký"
+              title="Kéo để phóng to / thu nhỏ nhật ký"
+              onPointerDown={startDrag}
+              className="absolute inset-x-0 top-0 z-10 hidden h-2 -translate-y-1 cursor-row-resize touch-none hover:bg-sky-500/40 active:bg-sky-500/60 lg:block"
+            />
+          )}
+          <div className="mb-2 flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setLogOpen(!logOpen)}
+              className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500 hover:text-foreground"
+            >
+              Nhật ký {logOpen ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+            </button>
+            <button
+              type="button"
+              onClick={() => setLogFull(true)}
+              className="ml-auto flex items-center gap-1.5 text-xs text-zinc-500 hover:text-foreground"
+            >
+              <Maximize2 size={13} /> Xem đầy đủ
+            </button>
+          </div>
+          <LogList lines={logLines} className={logOpen ? "" : "hidden"} />
+          <LogDialog open={logFull} onClose={() => setLogFull(false)} lines={logLines} />
         </section>
       </div>
     </div>

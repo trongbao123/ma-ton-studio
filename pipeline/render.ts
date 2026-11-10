@@ -250,7 +250,7 @@ export async function buildVideo(opts: {
   const music = opts.music ?? (await ambientBed(dir));
   const audio = [
     "-stream_loop", "-1", "-i", music,
-    "-filter_complex", `[2:a]volume=${music.endsWith("ambient.wav") ? 0.25 : 0.16}[m];[1:a][m]amix=inputs=2:duration=first:normalize=0[a]`,
+    "-filter_complex", `[2:a]volume=${music.endsWith("ambient.wav") ? 0.4 : 0.28}[m];[1:a][m]amix=inputs=2:duration=first:normalize=0[a]`,
     "-map", "0:v", "-map", "[a]",
   ];
   await once(out, (tmp) =>

@@ -12,10 +12,10 @@ const STILL_GOP = String(STILL_FPS * 5);
 
 /** Mức tiếng sau khi chuẩn hoá: giọng đọc -16 LUFS (chuẩn YouTube/podcast). */
 export const VOICE_LUFS = -16;
-/** Nhạc nền trước khi tự hạ: ≈ -15 dB; khi có giọng sidechain hạ thêm ~9–12 dB → ≈ -24 dB dưới giọng. */
-export const MUSIC_GAIN = 0.18;
+/** Nhạc nền trước khi tự hạ: ≈ -10 dB; khi có giọng sidechain (ratio 3) hạ thêm ~5–7 dB → ≈ -17 dB dưới giọng — nghe rõ nhạc mà không lấn giọng (trước 0,18 + ratio 6 thì gần như chìm). */
+export const MUSIC_GAIN = 0.3;
 /** Nền "ma đạo" tự sinh vốn nhỏ hơn nhạc thật nên cho to hơn một chút. */
-export const AMBIENT_GAIN = 0.3;
+export const AMBIENT_GAIN = 0.45;
 const MUSIC_FADE_IN = 3;
 const MUSIC_FADE_OUT = 5;
 export const AUDIO_BITRATE = "192k";
@@ -93,7 +93,7 @@ export function episodeAudioGraph(o: { seconds: number; musicGain: number; voice
   return [
     `[1:a]${level},aresample=${AUDIO_RATE},aformat=sample_fmts=fltp:channel_layouts=stereo,asplit=2[vo][sc]`,
     `[2:a]aresample=${AUDIO_RATE},aformat=sample_fmts=fltp:channel_layouts=stereo,volume=${o.musicGain},afade=t=in:st=0:d=${MUSIC_FADE_IN},afade=t=out:st=${fadeOutAt}:d=${MUSIC_FADE_OUT}[mu]`,
-    "[mu][sc]sidechaincompress=threshold=0.04:ratio=6:attack=30:release=600:makeup=1[md]",
+    "[mu][sc]sidechaincompress=threshold=0.04:ratio=3:attack=30:release=600:makeup=1[md]",
     "[vo][md]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.9[a]",
   ].join(";");
 }
