@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { availableProviders, canRun, providerFor } from "@/lib/ai";
 import { codexImage } from "@/lib/ai/cli";
+import { closeVidiq, keywordResearch, listVidiqTools, scoreTitles } from "./vidiq";
 import { saveCliStatus, type CliStatus } from "@/lib/ai/cli-status";
 import { defaultRouting, isCli, PROVIDERS } from "@/lib/ai/routing";
 import { loadSecrets } from "@/lib/secrets";
@@ -54,6 +55,15 @@ async function main() {
       failed++;
       console.log(`✗ Codex vẽ ảnh: ${e instanceof Error ? e.message : e}`);
     }
+  }
+  // Chẩn đoán vidIQ: tool đang mở + kết quả thật cho từ khóa thể loại (in ra log, không ảnh hưởng exit code).
+  if (process.env.VIDIQ_API_KEY && process.env.VIDIQ_DEBUG !== "0") {
+    for (const t of await listVidiqTools()) console.log(`  vidIQ tool: ${t.name} (${t.args.join(", ")}) — ${t.description.slice(0, 120)}`);
+    for (const seed of ["truyện tiên hiệp", "Thần Ma Táng Cổ Thôn Thiên Lục"]) {
+      console.log(`  vidIQ "${seed}":\n${(await keywordResearch(seed))?.slice(0, 1500) ?? "(không có)"}`);
+    }
+    console.log(`  vidIQ chấm: ${JSON.stringify(await scoreTitles(["Thần Ma Táng Cổ Chương 3 | Truyện Tiên Hiệp Hay Nhất", "Truyện tiên hiệp: Thiếu niên nuốt xác thần, một đao chém tông môn"]))}`);
+    await closeVidiq();
   }
   await saveCliStatus(status);
   process.exit(failed ? 1 : 0);
