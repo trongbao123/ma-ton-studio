@@ -8,6 +8,7 @@ import { SeriesCover, VideoTile } from "@/components/studio-cards";
 import { db } from "@/db";
 import { aiUsage } from "@/db/schema";
 import { quotaDay } from "@/lib/ai/usage";
+import { readStatsSnapshot } from "@/lib/youtube-stats";
 import { counters, seriesCards, todo, videoCards } from "@/lib/studio";
 
 export default function HomePage() {
@@ -155,13 +156,13 @@ async function Covers() {
 
 async function RecentVideos() {
   await connection();
-  const list = await videoCards({ limit: 8 });
+  const [list, stats] = await Promise.all([videoCards({ limit: 8 }), readStatsSnapshot()]);
   if (!list.length) return <p className="text-sm text-muted">Chưa có video. Duyệt một chương là video tự render.</p>;
   return (
     <ul className="grid gap-x-5 gap-y-8 sm:grid-cols-2 xl:grid-cols-4">
       {list.map((v) => (
         <li key={v.id}>
-          <VideoTile v={v} />
+          <VideoTile v={v} snapshot={stats.videos} />
         </li>
       ))}
     </ul>

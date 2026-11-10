@@ -19,6 +19,7 @@ import { rerenderAction, resetFlowLayoutAction, saveFlowLayoutAction } from "@/a
 import { ActionForm } from "@/components/action-form";
 import { DEFAULT_POSITIONS, MAIN_ORDER, type CanvasNodeId, type Pos } from "@/lib/flow/layout";
 import { buildFlow, formatSlot, formatTime, isStale, STATUS_LABEL, TITLES, type CardId, type CardState, type CardView, type FlowData, type Issue, type NodeId } from "@/lib/flow/model";
+import { useLive, useLiveVideo } from "@/lib/live/store";
 import { Inspector } from "./inspector";
 import { nodeTypes } from "./nodes";
 
@@ -98,12 +99,14 @@ const isLive = (d: FlowData) =>
   (d.video.status === "rendering" && !isStale(d.video)) || d.video.uploadStatus === "uploading" || (d.video.status === "queued" && !d.video.error);
 
 /**
- * Dữ liệu màn flow cập nhật gần realtime: hỏi `/api/flow/[id]` mỗi 2s khi video đang chạy và tab đang mở.
+ * Dữ liệu màn flow cập nhật realtime qua luồng SSE dùng chung (/api/live?video=id).
+ * SSE hỏng liên tục (conn = "fallback") thì quay về hỏi `/api/flow/[id]` mỗi 2s khi video đang chạy và tab đang mở.
  * Next ẩn trang đã rời bằng <Activity> → effect bị dọn, interval tự dừng.
  */
 function useLiveFlow(initial: FlowData) {
   const [data, setData] = useState(initial);
   const [seen, setSeen] = useState(initial);
+  const [seenPush, setSeenPush] = useState<FlowData | null>(null);
   // Server gửi dữ liệu mới (sau action revalidate) thì lấy luôn.
   if (seen !== initial) {
     setSeen(initial);
@@ -111,8 +114,16 @@ function useLiveFlow(initial: FlowData) {
   }
   const live = isLive(data);
   const id = data.video.id;
+  useLiveVideo(id);
+  const { flow, conn } = useLive();
+  // Bản đẩy từ SSE; bỏ qua bản cũ hơn dữ liệu đang có (vd còn sót từ lần xem trước của store dùng chung).
+  if (flow && flow !== seenPush && flow.video.id === id) {
+    setSeenPush(flow);
+    if (flow.video.updatedAt >= data.video.updatedAt) setData(flow);
+  }
+  const polling = live && conn === "fallback";
   useEffect(() => {
-    if (!live) return;
+    if (!polling) return;
     let stopped = false;
     const timer = setInterval(async () => {
       if (document.visibilityState !== "visible") return;
@@ -123,7 +134,7 @@ function useLiveFlow(initial: FlowData) {
       stopped = true;
       clearInterval(timer);
     };
-  }, [live, id]);
+  }, [polling, id]);
   return { data, live };
 }
 

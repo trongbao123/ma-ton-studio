@@ -1,7 +1,9 @@
 import { CircleAlert, Clock3, Loader2, Radio, Upload } from "lucide-react";
 import Link from "next/link";
 import { BrandIcon } from "@/components/brand-icons";
+import { YtStats } from "@/components/yt-stats";
 import { formatSlot, STATUS_LABEL } from "@/lib/flow/model";
+import type { YtStatsMap } from "@/lib/live/types";
 import type { SeriesCard, VideoCard } from "@/lib/studio";
 
 /**
@@ -90,7 +92,8 @@ function VideoState({ v }: { v: VideoCard }) {
   return <span className="text-muted">{STATUS_LABEL[v.status][0]}</span>;
 }
 
-export function VideoTile({ v }: { v: VideoCard }) {
+/** `snapshot`: số liệu YouTube đã lưu, để thẻ có số ngay trước khi luồng realtime nối xong. */
+export function VideoTile({ v, snapshot }: { v: VideoCard; snapshot?: YtStatsMap }) {
   return (
     <Link href={`/videos/${v.id}`} className="group block focus-visible:outline-offset-4">
       <div className="relative aspect-video overflow-hidden rounded-xl border border-border bg-[#14151c]">
@@ -115,6 +118,13 @@ export function VideoTile({ v }: { v: VideoCard }) {
         <div className="text-xs">
           <VideoState v={v} />
         </div>
+        {(v.youtubeVideoId || v.youtubeShortId) && (
+          <YtStats
+            longId={v.youtubeVideoId}
+            shortId={v.youtubeShortId}
+            initial={{ long: v.youtubeVideoId ? snapshot?.[v.youtubeVideoId] : undefined, short: v.youtubeShortId ? snapshot?.[v.youtubeShortId] : undefined }}
+          />
+        )}
       </div>
     </Link>
   );

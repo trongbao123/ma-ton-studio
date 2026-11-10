@@ -1,6 +1,7 @@
 "use client";
 
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
+import { YtStats } from "@/components/yt-stats";
 import { BrandIcon, STEP_ICONS, type BrandId } from "@/components/brand-icons";
 import { CARD_STATE_TEXT, type CardState, type CardView } from "@/lib/flow/model";
 import { CARD_WIDTH } from "@/lib/flow/layout";
@@ -88,6 +89,12 @@ export function CardNode({ data }: NodeProps<Node<CardNodeData>>) {
             </p>
           ))}
         </div>
+
+        {view.yt && (
+          <div className="text-zinc-400">
+            <YtStats longId={view.yt.longId} shortId={view.yt.shortId} />
+          </div>
+        )}
 
         {view.chips.length > 0 && (
           <div className="flex flex-wrap gap-1">

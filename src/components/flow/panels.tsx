@@ -7,6 +7,7 @@ import { AudioLines, Check, ChevronDown, Wand2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { disconnectYoutubeAction, markPublishedAction, optimizeSeoAction, retryPublishAction, setTaskAiAction, updateFlowSettingsAction } from "@/app/actions";
 import { BrandIcon } from "@/components/brand-icons";
+import { YtStats } from "@/components/yt-stats";
 import { DEFAULT_MODEL, PROVIDERS, type ProviderId, type Route } from "@/lib/ai/routing";
 import { ActionForm } from "@/components/action-form";
 import { CopyButton } from "@/components/copy-button";
@@ -825,6 +826,13 @@ function Youtube({ data, tab }: PanelProps) {
           <p className="mt-0.5 text-xs text-muted">{data.youtube.channel ?? data.series.title}</p>
         </div>
       </div>
+
+      {(v.youtubeVideoId || v.youtubeShortId) && (
+        <Sec title="Số liệu YouTube">
+          <YtStats longId={v.youtubeVideoId} shortId={v.youtubeShortId} large />
+          <p className="mt-1.5 text-[11px] text-muted">Cập nhật mỗi phút · YouTube báo lượt xem trễ vài phút</p>
+        </Sec>
+      )}
 
       <Sec title="Kênh YouTube">
         {data.youtube.connected ? (

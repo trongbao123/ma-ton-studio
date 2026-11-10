@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { VideoTile } from "@/components/studio-cards";
 import type { Video } from "@/db/schema";
 import { videoCards } from "@/lib/studio";
+import { readStatsSnapshot } from "@/lib/youtube-stats";
 
 const FILTERS: { id: string; label: string; statuses?: Video["status"][] }[] = [
   { id: "all", label: "Tất cả" },
@@ -57,7 +58,7 @@ async function Tabs({ searchParams }: { searchParams: PageProps<"/videos">["sear
 async function Grid({ searchParams }: { searchParams: PageProps<"/videos">["searchParams"] }) {
   await connection();
   const f = await current(searchParams);
-  const list = await videoCards({ statuses: f.statuses });
+  const [list, stats] = await Promise.all([videoCards({ statuses: f.statuses }), readStatsSnapshot()]);
   if (!list.length)
     return (
       <p className="rounded-xl border border-dashed border-border p-10 text-center text-muted">
@@ -68,7 +69,7 @@ async function Grid({ searchParams }: { searchParams: PageProps<"/videos">["sear
     <ul className="grid gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
       {list.map((v) => (
         <li key={v.id}>
-          <VideoTile v={v} />
+          <VideoTile v={v} snapshot={stats.videos} />
         </li>
       ))}
     </ul>

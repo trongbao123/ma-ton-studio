@@ -41,6 +41,8 @@ export type CardView = {
   warning?: string;
   /** 0–1 khi đang chạy có đếm */
   progress?: number;
+  /** Id YouTube để hiện lượt xem / thích / bình luận (thẻ YouTube). */
+  yt?: { longId: string | null; shortId: string | null };
 };
 /** Một việc đang kẹt / cần làm — hiện ở dải phía trên canvas, bấm để mở thẻ liên quan. */
 export type Issue = { tone: "error" | "warn" | "info"; text: string; card: CardId };
@@ -345,6 +347,7 @@ function youtubeCard(d: FlowData, base: Base): CardView {
     metrics: [v.publishAt ? `Lịch ${formatSlot(v.publishAt)}` : "Chưa có lịch đăng"],
     chips: c ? [`Trong bản gộp chương ${c.from}–${c.to}`] : [],
     links,
+    ...(v.youtubeVideoId || v.youtubeShortId ? { yt: { longId: v.youtubeVideoId, shortId: v.youtubeShortId } } : {}),
   };
 }
 

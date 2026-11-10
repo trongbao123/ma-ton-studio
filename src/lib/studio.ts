@@ -58,6 +58,9 @@ export type VideoCard = {
   live: string | null;
   /** 0–1, tiến độ cả video khi đang render. */
   pct: number | null;
+  /** Id video YouTube (dài / Short) để hiện lượt xem — null khi chưa đăng. */
+  youtubeVideoId: string | null;
+  youtubeShortId: string | null;
 };
 
 const RENDER: NodeId[] = ["agent", "tts", "images", "video"];
@@ -96,6 +99,8 @@ export async function videoCards(opts: { limit?: number; statuses?: Video["statu
     durationSec: v.durationSec,
     publishAt: v.publishAt?.toISOString() ?? null,
     hasThumb: Boolean(v.assets["thumbnail.jpg"]),
+    youtubeVideoId: v.youtubeVideoId,
+    youtubeShortId: v.youtubeShortId,
     compilation: v.meta?.compilation ? { from: v.meta.compilation.from, to: v.meta.compilation.to } : null,
     ...r,
     ...(v.status === "rendering" ? liveSummary(v.progress) : { live: null, pct: null }),
