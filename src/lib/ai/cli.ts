@@ -6,6 +6,7 @@ import path from "node:path";
 import { z } from "zod";
 import { QuotaExhaustedError } from "./gemini";
 import type { JsonRequest, TextProvider, TextRequest } from "./types";
+import { recordUsage } from "./usage";
 
 /**
  * Gọi Claude Code / Codex / Gemini CLI ở chế độ không giao diện, đăng nhập bằng gói Pro/Plus của người dùng
@@ -216,14 +217,22 @@ export class CliProvider implements TextProvider {
       await mkdir(work, { recursive: true });
       const res = await run(cmd, work);
       const last = cmd.outFile ? await readFile(cmd.outFile, "utf8").catch(() => "") : undefined;
-      if (res.code !== 0 && !last && !lastJson(res.stdout)) throw classify(this.kind, `${res.stderr}\n${res.stdout}`.trim().slice(-600));
-      const out = parseOutput(this.kind, res.stdout, last);
+      let out: ReturnType<typeof parseOutput>;
+      try {
+        if (res.code !== 0 && !last && !lastJson(res.stdout)) throw classify(this.kind, `${res.stderr}\n${res.stdout}`.trim().slice(-600));
+        out = parseOutput(this.kind, res.stdout, last);
+      } catch (e) {
+        // Hết lượt gói → ghi lại để trang Hạn mức AI hiện "chạm giới hạn".
+        if (e instanceof QuotaExhaustedError) void recordUsage(`${this.model || this.kind} (gói)`, true);
+        throw e;
+      }
       if (!out.text) throw classify(this.kind, "trả về rỗng");
       if (this.kind === "codex" && this.persist) {
         const fresh = await readFile(path.join(home, ".codex", "auth.json"), "utf8").catch(() => "");
         if (fresh && fresh.trim() !== this.cred.trim()) await this.persist(fresh).catch((e) => console.warn("Không lưu được token Codex mới:", e));
       }
       this.lastModel = `${out.model ?? (this.model || this.kind)} (gói)`;
+      void recordUsage(this.lastModel, false);
       return out.text;
     } finally {
       await rm(home, { recursive: true, force: true }).catch(() => {});

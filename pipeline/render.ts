@@ -147,7 +147,7 @@ export async function buildVideo(opts: {
   /** Short: chữ lớn 2 giây đầu để giữ người lướt; thanh tiến độ mảnh trên đỉnh. */
   hook?: string; progressBar?: boolean;
   /** Báo tiến độ cho màn flow: ảnh vẽ xong (lần đầu), tổng số shot, từng shot xong, việc ghép. */
-  on?: { image?: (i: number, file: string) => Promise<void>; shots?: (n: number) => void; shot?: () => void; log?: (text: string) => void };
+  on?: { image?: (i: number, file: string, model?: string) => Promise<void>; shots?: (n: number) => void; shot?: () => void; log?: (text: string) => void };
 }) {
   const { dir, name, narration, prompts, scenes, w, h, on } = opts;
   // Mỗi ảnh (1 scene) tách thành nhiều cảnh ~10s với kiểu máy quay khác nhau.
@@ -169,8 +169,8 @@ export async function buildVideo(opts: {
   const draw = (i: number, img: string) => {
     if (!drawn.has(i)) {
       drawn.set(i, (async () => {
-        await drawImage(prompts[i].prompt, img, { width: opts.imgW, height: opts.imgH, seed: 1000 + i * 7 });
-        await on?.image?.(i, img);
+        const model = await drawImage(prompts[i].prompt, img, { width: opts.imgW, height: opts.imgH, seed: 1000 + i * 7 });
+        await on?.image?.(i, img, model);
       })());
     }
     return drawn.get(i)!;
@@ -473,10 +473,16 @@ export async function renderVideo(videoId: number) {
     // ── Vẽ ảnh + dựng video chạy đan xen: shot nào có ảnh là dựng luôn.
     track.start("images", { long: n, ...(short ? { short: SHORT_SCENES } : {}) });
     track.start("video");
+    // AI vẽ thực sự đã dùng (Cloudflare, rồi DeepInfra khi hết quota…) — hiện trên node Vẽ ảnh và trang Hạn mức AI.
+    const imageModels = new Set<string>();
     const hooks = (which: "long" | "short") => {
       const label = which === "long" ? "Dài" : "Short";
       return {
-        image: async (i: number, file: string) => {
+        image: async (i: number, file: string, model?: string) => {
+          if (model && !imageModels.has(model)) {
+            imageModels.add(model);
+            track.model("images", [...imageModels].map((m) => m.replace(/^@cf\/[^/]+\/|^black-forest-labs\//, "")).join(" + "));
+          }
           if (await uploadPreview(videoId, releaseId, file)) track.sceneFile(which, i, path.basename(file));
           track.tick("images", which, `${label} · ảnh ${i + 1} xong`);
         },

@@ -176,8 +176,8 @@ async function UsageToday() {
     <section className="space-y-4 border-t border-border pt-8">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-lg font-semibold">AI đã dùng hôm nay</h2>
-        <Link href="/settings/ai" className="text-sm text-muted hover:text-foreground">
-          Cài đặt AI
+        <Link href="/usage" className="text-sm text-muted hover:text-foreground">
+          Xem hạn mức
         </Link>
       </div>
       {rows.length === 0 ? (

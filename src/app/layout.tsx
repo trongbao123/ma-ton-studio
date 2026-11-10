@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Be_Vietnam_Pro, Noto_Serif } from "next/font/google";
+import { Suspense } from "react";
 import { AppShell } from "@/components/app-shell";
+import { TopStatus } from "@/components/top-status";
 import "./globals.css";
 
 const font = Be_Vietnam_Pro({
@@ -25,7 +27,15 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="vi" className={`${font.variable} ${serif.variable} h-full antialiased`}>
       <body className="min-h-full font-sans">
-        <AppShell>{children}</AppShell>
+        <AppShell
+          status={
+            <Suspense fallback={null}>
+              <TopStatus />
+            </Suspense>
+          }
+        >
+          {children}
+        </AppShell>
       </body>
     </html>
   );

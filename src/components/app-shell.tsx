@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, Clapperboard, LayoutDashboard, LogOut, Menu, Plus, Sparkles, X, type LucideIcon } from "lucide-react";
+import { BookOpen, Clapperboard, Gauge, LayoutDashboard, LogOut, Menu, Plus, Sparkles, X, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Suspense, useState, type ReactNode } from "react";
@@ -10,6 +10,7 @@ const NAV: { href: string; label: string; icon: LucideIcon; match: (p: string) =
   { href: "/", label: "Xưởng truyện", icon: LayoutDashboard, match: (p) => p === "/" },
   { href: "/series", label: "Truyện", icon: BookOpen, match: (p) => p.startsWith("/series") || p.startsWith("/chapters") },
   { href: "/videos", label: "Video", icon: Clapperboard, match: (p) => p.startsWith("/videos") },
+  { href: "/usage", label: "Hạn mức AI", icon: Gauge, match: (p) => p.startsWith("/usage") },
   { href: "/settings/ai", label: "Cài đặt AI", icon: Sparkles, match: (p) => p.startsWith("/settings") },
 ];
 
@@ -63,7 +64,7 @@ function Nav({ path, onNavigate }: { path: string; onNavigate?: () => void }) {
 }
 
 /** Khung app: menu dọc bên trái trên máy tính, thanh trên + ngăn kéo trên điện thoại. Màn flow video tự phủ toàn màn hình. */
-export function AppShell({ children }: { children: ReactNode }) {
+export function AppShell({ children, status }: { children: ReactNode; status?: ReactNode }) {
   const [open, setOpen] = useState(false);
   const brand = (
     <Link href="/" className="flex items-center gap-3" onClick={() => setOpen(false)}>
@@ -117,7 +118,15 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       )}
 
-      <main className="mx-auto w-full max-w-[1560px] px-4 py-8 sm:px-8 lg:px-10 lg:py-10">{children}</main>
+      <div className="min-w-0">
+        {/* Thanh trạng thái: dính trên cùng ở máy tính; trên điện thoại nằm ngay dưới thanh tiêu đề. */}
+        {status && (
+          <div className="flex min-h-14 items-center border-b border-border bg-background/85 px-4 py-2 backdrop-blur sm:px-8 lg:sticky lg:top-0 lg:z-10 lg:px-10">
+            {status}
+          </div>
+        )}
+        <main className="mx-auto w-full max-w-[1560px] px-4 py-8 sm:px-8 lg:px-10 lg:py-10">{children}</main>
+      </div>
     </div>
   );
 }

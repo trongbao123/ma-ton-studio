@@ -4,6 +4,7 @@ import OpenAI from "openai";
 import { db } from "@/db";
 import { appSettings } from "@/db/schema";
 import { QuotaExhaustedError } from "@/lib/ai";
+import { recordUsage } from "@/lib/ai/usage";
 import { DEFAULT_IMAGE_MODEL, IMAGE_PROVIDERS, IMAGE_ROUTING_KEY, normalizeImageRouting, type ImageProviderId, type ImageRoute } from "@/lib/ai/routing";
 
 /** Pollinations free không key: 1 ảnh / 45 giây / IP → xếp hàng tuần tự. Chỉ dùng khi không cấu hình Cloudflare. */
@@ -84,18 +85,25 @@ export async function imagesReady() {
  * tất cả hết quota → QuotaExhaustedError để video chờ lượt sau (ảnh đã vẽ được cache).
  * Không chèn ảnh Pollinations free xấu khi đã có Cloudflare.
  */
-export async function drawImage(prompt: string, outFile: string, opts: DrawOpts) {
-  if (await validImage(outFile)) return;
+/** Trả tên model đã vẽ (undefined nếu ảnh có sẵn trong cache) — để màn flow / trang Hạn mức biết AI nào vẽ. */
+export async function drawImage(prompt: string, outFile: string, opts: DrawOpts): Promise<string | undefined> {
+  if (await validImage(outFile)) return undefined;
   await rm(outFile, { force: true });
   const list = await imageRouting();
   let quota = 0;
   let last: unknown;
   for (const r of list) {
     try {
-      if (r.provider === "gemini") return await geminiImage(prompt, outFile, r.model || DEFAULT_IMAGE_MODEL.gemini, opts);
-      if (r.provider === "openai") return await openaiImage(prompt, outFile, r.model || DEFAULT_IMAGE_MODEL.openai, opts);
-      if (r.provider === "deepinfra") return await deepinfraFlux(prompt, outFile, r.model || DEFAULT_IMAGE_MODEL.deepinfra, opts);
-      return await (hasCloudflare() ? cloudflareFlux(prompt, outFile, r.model || CF_MODEL) : pollinations(prompt, outFile, opts));
+      const model = r.model || DEFAULT_IMAGE_MODEL[r.provider];
+      if (r.provider === "gemini") await geminiImage(prompt, outFile, model, opts);
+      else if (r.provider === "openai") await openaiImage(prompt, outFile, model, opts);
+      else if (r.provider === "deepinfra") await deepinfraFlux(prompt, outFile, model, opts);
+      else if (hasCloudflare()) await cloudflareFlux(prompt, outFile, r.model || CF_MODEL);
+      else {
+        await pollinations(prompt, outFile, opts);
+        return "pollinations";
+      }
+      return r.provider === "cloudflare" ? r.model || CF_MODEL : model;
     } catch (e) {
       last = e;
       if (e instanceof QuotaExhaustedError) quota++;
@@ -129,7 +137,11 @@ async function geminiImage(prompt: string, outFile: string, model: string, opts:
       const body = await res.json().catch(() => ({}));
       const blocks: Block[] = (body?.steps ?? []).flatMap((s: { content?: Block[] }) => s.content ?? []);
       const data: string | undefined = body?.output_image?.data ?? blocks.findLast((b) => b.type === "image" && b.data)?.data;
-      if (res.ok && data) return saveImage(outFile, Buffer.from(data, "base64"));
+      if (res.ok && data) {
+        await saveImage(outFile, Buffer.from(data, "base64"));
+        void recordUsage(model, false);
+        return;
+      }
       last = `${res.status} ${body?.error?.message ?? "không có ảnh"}`;
       if (res.status === 429 && /per day|quota|billing/i.test(last)) throw new QuotaExhaustedError(`Gemini hết quota vẽ ảnh: ${last}`);
       if (res.status !== 429 && res.status < 500) break;
@@ -157,6 +169,7 @@ async function openaiImage(prompt: string, outFile: string, model: string, opts:
     const data = res.data?.[0]?.b64_json;
     if (!data) throw new Error("OpenAI không trả ảnh");
     await saveImage(outFile, Buffer.from(data, "base64"));
+    void recordUsage(model, false);
   } catch (e) {
     if (e instanceof OpenAI.RateLimitError && /insufficient_quota|quota|billing/i.test(e.message)) {
       throw new QuotaExhaustedError(`OpenAI hết hạn mức vẽ ảnh: ${e.message}`);
@@ -191,9 +204,16 @@ async function deepinfraFlux(prompt: string, outFile: string, model: string, opt
     } else {
       const body = await res.json().catch(() => ({}));
       const data: string | undefined = body?.data?.[0]?.b64_json;
-      if (res.ok && data) return saveImage(outFile, Buffer.from(data, "base64"));
+      if (res.ok && data) {
+        await saveImage(outFile, Buffer.from(data, "base64"));
+        void recordUsage(model, false);
+        return;
+      }
       last = `${res.status} ${JSON.stringify(body?.error ?? body?.detail ?? body).slice(0, 200)}`;
-      if (res.status === 402 || /insufficient|balance|payment|billing/i.test(last)) throw new QuotaExhaustedError(`DeepInfra hết tiền / chưa thêm thẻ: ${last}`);
+      if (res.status === 402 || /insufficient|balance|payment|billing/i.test(last)) {
+        void recordUsage(model, true);
+        throw new QuotaExhaustedError(`DeepInfra hết tiền / chưa thêm thẻ: ${last}`);
+      }
       // Kích thước lạ bị từ chối → thử khung vuông chuẩn (ffmpeg tự cắt khung sau).
       if (res.status === 400 || res.status === 422) {
         if (size === "1024x1024") break;
@@ -222,10 +242,14 @@ async function cloudflareFlux(prompt: string, outFile: string, model = CF_MODEL)
       const image = body?.result?.image;
       if (res.ok && image) {
         await saveImage(outFile, Buffer.from(image, "base64"));
+        void recordUsage(model, false);
         return;
       }
       last = `${res.status} ${JSON.stringify(body?.errors ?? body).slice(0, 200)}`;
-      if (res.status === 429 && isDaily(last)) throw new QuotaExhaustedError("Hết quota ảnh Cloudflare — video chờ lượt sau.");
+      if (res.status === 429 && isDaily(last)) {
+        void recordUsage(model, true);
+        throw new QuotaExhaustedError("Hết quota ảnh Cloudflare — video chờ lượt sau.");
+      }
     } catch (e) {
       if (e instanceof QuotaExhaustedError) throw e;
       last = String(e);
