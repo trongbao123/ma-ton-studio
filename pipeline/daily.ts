@@ -103,8 +103,11 @@ async function dispatchCompilations() {
     const range = `${batch[0].number}–${batch[batch.length - 1].number}`;
     try {
       // Chế độ tập: ghép ngay trong job daily (đỡ phút Actions của job riêng, kịp 15h); bản gộp 5 chương cũ bị tắt.
-      if (s.episodeChapters > 0) await compileSeries(s.id);
-      else await dispatchCompile(s.id);
+      if (s.episodeChapters > 0) {
+        // Đang viết bù kho (tới 6 chương/ngày) thì 1 lượt có thể đủ 2 tập: ghép tối đa 2, lượt 2 tự bỏ qua nếu chưa đủ chương.
+        await compileSeries(s.id);
+        await compileSeries(s.id);
+      } else await dispatchCompile(s.id);
       console.log(`🎞 ${s.title}: ${s.episodeChapters > 0 ? "dựng tập" : "kích hoạt bản gộp"} chương ${range}`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

@@ -3,8 +3,13 @@
 import type { VideoMeta } from "@/db/schema";
 import { formatTimestamp } from "./compile-plan";
 
-/** Số tập tối đa chờ đăng — đủ kho thì thôi viết, không đốt quota AI và phút Actions. */
-export const EPISODE_BUFFER = 2;
+/**
+ * Kho tập chờ đăng (đã dựng + hẹn giờ sẵn trên YouTube): 4 tập = 4 ngày dự phòng — GitHub bỏ lượt cron,
+ * hết quota AI/ảnh một ngày thì lịch đăng vẫn đều. Đủ kho thì thôi viết, không đốt quota AI và phút Actions.
+ */
+export const EPISODE_BUFFER = 4;
+/** Kho chưa đủ thì được viết tới gấp mấy lần chỉ tiêu ngày để bù (6 chương/ngày ≈ 136 ảnh, vừa quota ảnh free). */
+export const CATCH_UP_FACTOR = 2;
 /** Ảnh tối đa mỗi video chương: 3 chương/ngày × 30 ≈ 90 ảnh, vừa quota ảnh free. */
 export const EPISODE_MAX_IMAGES = 30;
 /** Video chương nội bộ: 1 ảnh ~60 giây. */
@@ -23,12 +28,14 @@ export function vnDay(at = new Date()) {
 export const writtenMarker = (seriesId: number) => `_written_${seriesId}`;
 
 /**
- * Số chương cần viết thêm lượt này: còn chỉ tiêu ngày VÀ kho chưa vượt `maxEpisodes` tập
+ * Số chương cần viết thêm lượt này: viết trước liên tục tới khi kho đủ `maxEpisodes` tập, đến ngày thì đăng
  * (kho tính theo chương: tập chờ đăng × chương/tập + chương lẻ chưa vào tập).
+ * Mỗi ngày tối đa CATCH_UP_FACTOR × chỉ tiêu: viết đúng chỉ tiêu thì kho không bao giờ dày lên (đăng 1 tập = viết 1 tập),
+ * lỡ 1 lượt là hụt. Kho đầy thì chỉ viết bù đúng phần đã đăng.
  */
 export function chaptersToWrite(o: { chaptersPerDay: number; writtenToday: number; stockChapters: number; episodeChapters: number; maxEpisodes?: number }) {
   const room = (o.maxEpisodes ?? EPISODE_BUFFER) * o.episodeChapters - o.stockChapters;
-  return Math.max(0, Math.min(o.chaptersPerDay - o.writtenToday, room));
+  return Math.max(0, Math.min(o.chaptersPerDay * CATCH_UP_FACTOR - o.writtenToday, room));
 }
 
 /** Đoạn mở đầu cao trào: ~7 giây đổi 1 ảnh, 3–6 ảnh. */

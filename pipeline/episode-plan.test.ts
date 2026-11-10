@@ -20,13 +20,13 @@ describe("vnDay", () => {
 
 describe("chaptersToWrite", () => {
   const base = { chaptersPerDay: 3, writtenToday: 0, stockChapters: 0, episodeChapters: 3 };
-  it("đầu ngày, kho trống: viết đủ 3", () => expect(chaptersToWrite(base)).toBe(3));
-  it("đã viết đủ hôm nay: 0 (marker, không đếm theo updatedAt)", () => expect(chaptersToWrite({ ...base, writtenToday: 3 })).toBe(0));
-  it("đã viết 1: còn 2", () => expect(chaptersToWrite({ ...base, writtenToday: 1 })).toBe(2));
-  it("kho 1 tập chờ đăng (3 chương): vẫn viết đủ 3 (tối đa 2 tập)", () => expect(chaptersToWrite({ ...base, stockChapters: 3 })).toBe(3));
-  it("kho đã 2 tập: 0", () => expect(chaptersToWrite({ ...base, stockChapters: 6 })).toBe(0));
-  it("kho 1 tập + 2 chương lẻ: chỉ viết 1", () => expect(chaptersToWrite({ ...base, stockChapters: 5 })).toBe(1));
-  it("không âm khi kho vượt", () => expect(chaptersToWrite({ ...base, stockChapters: 9 })).toBe(0));
+  it("đầu ngày, kho trống: viết bù tới gấp đôi chỉ tiêu (6)", () => expect(chaptersToWrite(base)).toBe(6));
+  it("đã viết gấp đôi hôm nay: 0 (marker, không đếm theo updatedAt)", () => expect(chaptersToWrite({ ...base, writtenToday: 6 })).toBe(0));
+  it("đã viết 4: còn 2", () => expect(chaptersToWrite({ ...base, writtenToday: 4 })).toBe(2));
+  it("kho 2 tập: vẫn viết tiếp (giữ 4 tập)", () => expect(chaptersToWrite({ ...base, stockChapters: 6 })).toBe(6));
+  it("kho đã 4 tập: 0", () => expect(chaptersToWrite({ ...base, stockChapters: 12 })).toBe(0));
+  it("kho 3 tập + 2 chương lẻ: chỉ viết 1", () => expect(chaptersToWrite({ ...base, stockChapters: 11 })).toBe(1));
+  it("không âm khi kho vượt", () => expect(chaptersToWrite({ ...base, stockChapters: 15 })).toBe(0));
 });
 
 describe("imageCount", () => {

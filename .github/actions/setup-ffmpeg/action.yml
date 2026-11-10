@@ -1,0 +1,41 @@
+name: setup-ffmpeg
+description: >
+  ffmpeg + ffprobe dựng sẵn (static 7.0.2, johnvansickle.com), cache giữa các lượt chạy.
+  Thay `apt-get install ffmpeg` — mất 20 giây tới 6,5 phút tuỳ mirror apt — bằng ~5 giây.
+  Bản tải về thiếu bộ lọc app cần thì tự quay về apt-get như cũ.
+runs:
+  using: composite
+  steps:
+    - id: cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.ffmpeg
+        key: ffmpeg-static-7.0.2-amd64
+    - if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        mkdir -p ~/.ffmpeg
+        for u in https://johnvansickle.com/ffmpeg/releases/ffmpeg-7.0.2-amd64-static.tar.xz \
+                 https://johnvansickle.com/ffmpeg/old-releases/ffmpeg-7.0.2-amd64-static.tar.xz; do
+          curl -fsSL --retry 3 "$u" | tar -xJ --strip-components=1 -C ~/.ffmpeg --wildcards '*/ffmpeg' '*/ffprobe' && break
+        done
+    - shell: bash
+      run: |
+        F="$HOME/.ffmpeg/ffmpeg"
+        ok=1
+        [ -x "$F" ] && [ -x "$HOME/.ffmpeg/ffprobe" ] || ok=0
+        if [ $ok = 1 ]; then
+          filters=$("$F" -hide_banner -filters 2>/dev/null)
+          for f in ass drawtext zoompan xfade loudnorm sidechaincompress ebur128 amix alimiter; do
+            echo "$filters" | grep -qE "^ [.A-Z|]+ $f " || { echo "ffmpeg tĩnh thiếu bộ lọc $f"; ok=0; }
+          done
+          "$F" -hide_banner -encoders 2>/dev/null | grep -q libx264 || { echo "ffmpeg tĩnh thiếu libx264"; ok=0; }
+        fi
+        if [ $ok = 1 ]; then
+          echo "$HOME/.ffmpeg" >> "$GITHUB_PATH"
+          "$F" -hide_banner -version | head -1
+        else
+          # Xoá để bước cache không lưu bản hỏng; dùng apt như trước.
+          rm -rf "$HOME/.ffmpeg"
+          sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends ffmpeg
+        fi
