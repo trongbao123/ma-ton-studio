@@ -142,7 +142,7 @@ export async function crossfadeGroup(clips: { file: string; seconds: number; fad
 }
 
 export async function buildVideo(opts: {
-  dir: string; name: string; narration: Narration; prompts: ScenePrompt[]; scenes: { start: number; end: number }[];
+  dir: string; name: string; narration: Narration; music?: string | null; prompts: ScenePrompt[]; scenes: { start: number; end: number }[];
   w: number; h: number; imgW: number; imgH: number; fontSize: number; marginV: number; titleCard?: string;
   /** Short: chữ lớn 2 giây đầu để giữ người lướt; thanh tiến độ mảnh trên đỉnh. */
   hook?: string; progressBar?: boolean;
@@ -225,10 +225,10 @@ export async function buildVideo(opts: {
   // Thanh tiến độ vàng mảnh trên đỉnh Short: người xem thấy còn bao lâu nên ít lướt qua.
   const bar = opts.progressBar ? `,drawbox=x=0:y=0:w='iw*t/${narration.seconds.toFixed(2)}':h=12:color=0xFFD23F@0.95:t=fill` : "";
   on?.log?.("Trộn giọng đọc, nhạc nền, phụ đề");
-  const music = (await pickMusic()) ?? (await ambientBed(dir));
+  const music = opts.music ?? (await ambientBed(dir));
   const audio = [
     "-stream_loop", "-1", "-i", music,
-    "-filter_complex", `[2:a]volume=${music.endsWith("ambient.wav") ? 0.25 : 0.1}[m];[1:a][m]amix=inputs=2:duration=first:normalize=0[a]`,
+    "-filter_complex", `[2:a]volume=${music.endsWith("ambient.wav") ? 0.25 : 0.16}[m];[1:a][m]amix=inputs=2:duration=first:normalize=0[a]`,
     "-map", "0:v", "-map", "[a]",
   ];
   await once(out, (tmp) =>
@@ -273,11 +273,20 @@ function escText(s: string) {
   return s.replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "\u2019").replace(/%/g, "\\%");
 }
 
-/** Nhạc nền tuỳ chọn: bỏ file .mp3 (bản quyền free, vd YouTube Audio Library) vào pipeline/music/. */
-async function pickMusic() {
+/**
+ * Nhạc nền trong pipeline/music/ (Kevin MacLeod, incompetech.com — CC BY 4.0: được kiếm tiền, phải ghi công).
+ * Chọn theo id video để chạy lại vẫn đúng bài đã ghi công trong mô tả.
+ */
+async function pickMusic(seed: number) {
   const dir = path.resolve("pipeline/music");
-  const files = (await readdir(dir).catch(() => [] as string[])).filter((f) => f.endsWith(".mp3"));
-  return files.length ? path.join(dir, files[Math.floor(Math.random() * files.length)]) : null;
+  const files = (await readdir(dir).catch(() => [] as string[])).filter((f) => f.endsWith(".mp3")).sort();
+  return files.length ? path.join(dir, files[seed % files.length]) : null;
+}
+
+/** Dòng ghi công bắt buộc của giấy phép CC BY 4.0. */
+export function musicCredit(file: string) {
+  const title = path.basename(file, ".mp3");
+  return `Nhạc nền: "${title}" – Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/`;
 }
 
 /**
@@ -429,7 +438,11 @@ export async function renderVideo(videoId: number) {
     const fixed = await cached(path.join(dir, "meta-seo-v2.json"), () =>
       optimizeMeta(draft, { seriesTitle: s.title, chapterNumber: c.number, chapterTitle: c.title, summary: c.summary }, { log: (t) => track.log("agent", t) }),
     );
-    const meta = fixed.meta;
+    const music = await pickMusic(videoId);
+    // Ghi công nhạc nền (bắt buộc với CC BY) — gắn sau bước tối ưu SEO để AI không xoá mất.
+    const meta: VideoMeta = music
+      ? { ...fixed.meta, description: `${fixed.meta.description}\n\n${musicCredit(music)}`, shortDescription: `${fixed.meta.shortDescription}\n\n${musicCredit(music)}` }
+      : fixed.meta;
     track.log("agent", fixed.rounds ? `Điểm SEO: ${fixed.from} → ${fixed.score} sau ${fixed.rounds} lượt tối ưu` : `Điểm SEO: ${fixed.score} (đạt)`);
     await db().update(videos).set({ meta }).where(eq(videos.id, videoId));
 
@@ -509,6 +522,7 @@ export async function renderVideo(videoId: number) {
       dir, name: "long", narration: long, prompts: longPrompts, scenes: longScenes,
       w: 1920, h: 1080, imgW: 1280, imgH: 768, fontSize: 62, marginV: 70,
       titleCard: `${s.title}\n\nChương ${c.number}: ${c.title}`,
+      music,
       on: hooks("long"),
     });
 
@@ -520,7 +534,7 @@ export async function renderVideo(videoId: number) {
         const shortVideo = await buildVideo({
           dir: shortDir, name: "short", narration: short, prompts: shortPrompts, scenes: shortScenes,
           w: 1080, h: 1920, imgW: 768, imgH: 1408, fontSize: 80, marginV: 520,
-          hook: m.thumbnailText, progressBar: true,
+          hook: m.thumbnailText, progressBar: true, music,
           on: hooks("short"),
         });
         extras.push(shortVideo.out);
