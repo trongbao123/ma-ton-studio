@@ -14,6 +14,7 @@ import {
   type Node,
   type NodeChange,
 } from "@xyflow/react";
+import { ChevronDown, ChevronUp, PanelRightClose, PanelRightOpen } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, useTransition } from "react";
 import { rerenderAction, resetFlowLayoutAction, saveFlowLayoutAction } from "@/app/actions";
@@ -210,8 +211,13 @@ function Studio({ data: initial, layout }: Props) {
     ? [{ tone: "warn", text: "Video kẹt ở \"đang render\" — job có thể đã bị huỷ, bấm Render lại", card: "video" }, ...baseIssues]
     : baseIssues;
 
+  // Thu gọn bảng chi tiết / nhật ký để canvas rộng hơn; nhớ theo trình duyệt.
+  const [panelOpen, setPanelOpen] = usePref("flow:panel", true);
+  const [logOpen, setLogOpen] = usePref("flow:log", true);
+
   const select = (id: CardId) => {
     setSelected(id);
+    setPanelOpen(true);
     centerOn(id, 300);
     setNodes((ns) => ns.map((n) => ({ ...n, data: { ...n.data, selected: n.id === id } })));
   };
@@ -284,8 +290,11 @@ function Studio({ data: initial, layout }: Props) {
       <IssueStrip issues={issues} onPick={select} />
 
       {/* Dưới 1024px trang cuộn dọc: canvas → chi tiết → nhật ký. Từ 1024px: canvas + nhật ký bên trái, chi tiết cố định bên phải (cuộn riêng). */}
-      <div className="flow-grid grid shrink-0 grid-cols-1 content-start lg:min-h-0 lg:flex-1 lg:shrink lg:overflow-hidden">
-        <div className="area-canvas relative h-[580px] min-w-0 border-b border-border">
+      <div
+        data-panel={panelOpen ? "open" : "closed"}
+        className="flow-grid grid shrink-0 grid-cols-1 content-start lg:min-h-0 lg:flex-1 lg:shrink lg:overflow-hidden"
+      >
+        <div className={`area-canvas relative min-w-0 border-b border-border ${logOpen ? "h-[580px]" : "h-[580px] lg:h-full"}`}>
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -312,12 +321,40 @@ function Studio({ data: initial, layout }: Props) {
           </ReactFlow>
           <p className="pointer-events-none absolute right-4 top-3 text-xs text-zinc-500">Kéo hoặc cuộn ngang để xem các bước khác</p>
         </div>
-        <div className="area-insp flex min-h-0 flex-col [&>aside]:flex-1">
-          <Inspector data={data} cards={cards} selected={selected} />
+        <div className="area-insp relative flex min-h-0 flex-col [&>aside]:flex-1">
+          {panelOpen ? (
+            <>
+              <button
+                type="button"
+                onClick={() => setPanelOpen(false)}
+                title="Thu gọn bảng chi tiết"
+                className="absolute right-3 top-3 z-10 hidden rounded-lg border border-border bg-card p-1.5 text-muted hover:text-foreground lg:block"
+              >
+                <PanelRightClose size={18} />
+              </button>
+              <Inspector data={data} cards={cards} selected={selected} />
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setPanelOpen(true)}
+              title="Mở bảng chi tiết"
+              className="flex h-full w-full flex-col items-center gap-3 border-l border-border bg-card/60 pt-4 text-muted hover:text-foreground"
+            >
+              <PanelRightOpen size={18} />
+              <span className="text-xs font-semibold tracking-wider [writing-mode:vertical-rl]">CHI TIẾT · {cards[selected]?.title}</span>
+            </button>
+          )}
         </div>
-        <section className="area-log min-w-0 px-5 py-4 text-sm text-muted lg:overflow-y-auto">
-          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">Nhật ký</h2>
-          <ul className="space-y-1.5">
+        <section className={`area-log min-w-0 px-5 text-sm text-muted ${logOpen ? "py-4 lg:overflow-y-auto" : "py-2"}`}>
+          <button
+            type="button"
+            onClick={() => setLogOpen(!logOpen)}
+            className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500 hover:text-foreground"
+          >
+            Nhật ký {logOpen ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+          </button>
+          <ul className={`space-y-1.5 ${logOpen ? "" : "hidden"}`}>
             <li>
               <b className="mr-2 tabular-nums text-foreground">{formatTime(v.createdAt)}</b>Tạo video
             </li>
@@ -337,4 +374,37 @@ function Studio({ data: initial, layout }: Props) {
       </div>
     </div>
   );
+}
+
+/** Tuỳ chọn hiển thị nhớ trong localStorage (lỗi / chế độ ẩn danh thì dùng mặc định). Server luôn render mặc định. */
+const prefListeners = new Set<() => void>();
+function readPref(key: string, initial: boolean) {
+  try {
+    const v = localStorage.getItem(key);
+    return v == null ? initial : v === "1";
+  } catch {
+    return initial;
+  }
+}
+function usePref(key: string, initial: boolean): [boolean, (v: boolean) => void] {
+  const value = useSyncExternalStore(
+    (cb) => {
+      prefListeners.add(cb);
+      return () => prefListeners.delete(cb);
+    },
+    () => readPref(key, initial),
+    () => initial,
+  );
+  const set = useCallback(
+    (v: boolean) => {
+      try {
+        localStorage.setItem(key, v ? "1" : "0");
+      } catch {
+        /* bỏ qua */
+      }
+      prefListeners.forEach((l) => l());
+    },
+    [key],
+  );
+  return [value, set];
 }
