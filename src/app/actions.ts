@@ -10,6 +10,7 @@ import { LAYOUT_KEY, mergeLayout, type Pos } from "@/lib/flow/layout";
 import { draftBible, planChapters, writeChapterStep, type WriteMode } from "@/lib/story/service";
 import { dispatchPublish, dispatchRender, dispatchTrends, queueVideo } from "@/lib/story/videos";
 import { saveYoutubeAuth, updateYoutubeSnippet } from "@/lib/youtube";
+import { syncFromYoutube } from "@/lib/youtube-stats";
 import { optimizeMeta, SEO_TARGET } from "@/lib/seo-optimize";
 import { VOICES } from "@/lib/flow/voices";
 import { availableProviders, canRun, loadRouting, providerFor } from "@/lib/ai";
@@ -258,6 +259,11 @@ export async function optimizeSeoAction(videoId: number): Promise<ActionState> {
       .innerJoin(series, eq(series.id, chapters.seriesId))
       .where(eq(videos.id, videoId));
     if (!row?.v.meta) throw new Error("Video chưa có tiêu đề/mô tả để tối ưu.");
+    // Bản trên YouTube là bản đúng (người dùng hay sửa tay): kéo về trước để Magic fill sửa tiếp từ đó, không ghi đè mất.
+    if (await syncFromYoutube([row.v.youtubeVideoId, row.v.youtubeShortId].filter((x): x is string => Boolean(x)))) {
+      const [fresh] = await db().select({ meta: videos.meta }).from(videos).where(eq(videos.id, videoId));
+      if (fresh?.meta) row.v.meta = fresh.meta;
+    }
     const { v, c, s } = row;
     const r = await optimizeMeta(v.meta!, { seriesTitle: s.title, chapterNumber: c.number, chapterTitle: c.title, summary: c.summary });
     if (r.score <= r.from) return `Đã thử ${r.rounds} lượt nhưng chưa tăng được điểm (đang ${r.from}). Thử lại hoặc đổi AI viết tiêu đề/mô tả.`;

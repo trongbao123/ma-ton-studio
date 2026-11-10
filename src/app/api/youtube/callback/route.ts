@@ -1,5 +1,6 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { after, NextResponse, type NextRequest } from "next/server";
 import { loadSecrets } from "@/lib/secrets";
+import { ensureWebsub } from "@/lib/websub";
 import { exchangeCode, redirectUri, saveYoutubeAuth } from "@/lib/youtube";
 
 export async function GET(request: NextRequest) {
@@ -15,6 +16,8 @@ export async function GET(request: NextRequest) {
   if (!code || !state || state !== url.searchParams.get("state")) return back("error");
   try {
     await saveYoutubeAuth(await exchangeCode(code, redirectUri(url.origin)));
+    // Kênh mới / kết nối lại: đăng ký webhook ngay (không chờ daily). Lỗi chỉ ghi log.
+    after(() => ensureWebsub({ force: true }).catch((e) => console.warn("WebSub:", e instanceof Error ? e.message : e)));
     return back("connected");
   } catch (e) {
     console.error("Kết nối YouTube lỗi:", e);

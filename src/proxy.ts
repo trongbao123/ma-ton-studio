@@ -3,7 +3,8 @@ import { isAuthorized } from "@/lib/auth";
 import { SESSION_COOKIE, verifySession } from "@/lib/session";
 
 // Trang công khai: Google bắt buộc để duyệt OAuth (trang chủ + chính sách bảo mật) và trang đăng nhập — không chứa dữ liệu.
-const PUBLIC = new Set(["/about", "/privacy", "/login"]);
+// Webhook YouTube (WebSub): hub của Google gọi không đăng nhập — route tự kiểm chữ ký HMAC.
+const PUBLIC = new Set(["/about", "/privacy", "/login", "/api/youtube/websub"]);
 
 export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;

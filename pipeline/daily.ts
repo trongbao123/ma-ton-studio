@@ -8,6 +8,7 @@ import { maxContinues } from "@/lib/story/prompts";
 import { quotaDay } from "@/lib/ai/usage";
 import { aiUsage } from "@/db/schema";
 import { loadSecrets } from "@/lib/secrets";
+import { ensureWebsub } from "@/lib/websub";
 import { compileSeries, compileState, seriesRows, withStaleAsFailed } from "./compile";
 import { chaptersToWrite, episodeBacklog, vnDay, writtenMarker } from "./episode-plan";
 import { renderVideo } from "./render";
@@ -132,6 +133,10 @@ const BUFFER = 3;
 
 async function main() {
   await loadSecrets(true);
+  // Webhook YouTube (đổi tiêu đề/mô tả → app kéo về ngay): gia hạn khi sắp hết hạn. Lỗi không chặn daily.
+  await ensureWebsub()
+    .then((r) => console.log(`WebSub: ${r}`))
+    .catch((e) => console.warn("⚠ WebSub:", e instanceof Error ? e.message : e));
   const failures: string[] = [];
   await renderQueue(failures);
 
