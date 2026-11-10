@@ -257,7 +257,8 @@ export function quotaCard(v: Pick<FlowData["video"], "status" | "error">): CardI
   return /ảnh|image|cloudflare|deepinfra|flux/i.test(v.error) ? "images" : "seo";
 }
 
-const thumbOf = (d: FlowData) => d.video.files["thumbnail.jpg"];
+// Ảnh trên YouTube (đổi tay trong Studio) ưu tiên hơn ảnh app dựng.
+const thumbOf = (d: FlowData) => d.video.meta?.yt?.thumb ?? d.video.files["thumbnail.jpg"];
 const reuseText = (c: NonNullable<VideoMeta["compilation"]>) => `dùng lại từ chương ${c.from}–${c.to}`;
 
 function trendsCard(d: FlowData): CardView {

@@ -777,15 +777,26 @@ const DownloadLink = ({ href, text }: { href?: string; text: string }) =>
 
 function ThumbnailOut({ data, tab }: PanelProps) {
   const src = data.video.files["thumbnail.jpg"];
+  const live = data.video.meta?.yt?.thumb;
   if (tab === "in") return <Empty text="Thumbnail do bước Ảnh cảnh tạo ra, theo tiêu đề / mô tả từ thẻ SEO & Thumbnail." />;
   if (tab === "log") return <StepLog data={data} id="images" />;
-  if (!src) return <Empty text="Chưa có thumbnail." />;
+  if (!src && !live) return <Empty text="Chưa có thumbnail." />;
   return (
-    <Sec title="Thumbnail">
-      {/* eslint-disable-next-line @next/next/no-img-element -- file từ GitHub Release qua redirect */}
-      <img src={src} alt="Thumbnail" width={640} height={360} loading="lazy" decoding="async" className="aspect-video w-full rounded-xl border border-border object-cover" />
-      <DownloadLink href={src} text="⬇ Thumbnail" />
-    </Sec>
+    <>
+      {live && live !== src && (
+        <Sec title="Đang dùng trên YouTube">
+          {/* eslint-disable-next-line @next/next/no-img-element -- ảnh YouTube (i.ytimg.com) */}
+          <img src={live} alt="Thumbnail trên YouTube" width={640} height={360} loading="lazy" decoding="async" className="aspect-video w-full rounded-xl border border-border object-cover" />
+        </Sec>
+      )}
+      {src && (
+        <Sec title={live ? "App dựng lúc render" : "Thumbnail"}>
+          {/* eslint-disable-next-line @next/next/no-img-element -- file từ GitHub Release qua redirect */}
+          <img src={src} alt="Thumbnail" width={640} height={360} loading="lazy" decoding="async" className="aspect-video w-full rounded-xl border border-border object-cover" />
+          <DownloadLink href={src} text="⬇ Thumbnail" />
+        </Sec>
+      )}
+    </>
   );
 }
 
@@ -842,7 +853,8 @@ function Youtube({ data, tab }: PanelProps) {
   if (tab === "log") return <StepLog data={data} id="youtube" />;
   const v = data.video;
   const m = v.meta;
-  const thumb = v.files["thumbnail.jpg"];
+  // Thumbnail đang chạy trên YouTube (đồng bộ về, kể cả đổi tay trong Studio) — không có mới dùng ảnh app dựng.
+  const thumb = m?.yt?.thumb ?? v.files["thumbnail.jpg"];
   const hasShort = Boolean(v.files["short.mp4"]);
   const link = (id: string) => (
     <a href={`https://youtu.be/${id}`} target="_blank" className="text-sky-400 underline">
@@ -853,7 +865,7 @@ function Youtube({ data, tab }: PanelProps) {
     <>
       <div className="mb-5 overflow-hidden rounded-xl border border-border">
         <div className="relative aspect-video bg-gradient-to-br from-red-950 to-slate-950">
-          {/* eslint-disable-next-line @next/next/no-img-element -- file từ GitHub Release qua redirect */}
+          {/* eslint-disable-next-line @next/next/no-img-element -- ảnh YouTube (i.ytimg.com) hoặc file GitHub Release qua redirect */}
           {thumb && <img src={thumb} alt="" className="h-full w-full object-cover" />}
           {v.durationSec ? <span className="absolute bottom-2 right-2 rounded bg-black/80 px-1.5 text-[11px] font-semibold">{clock(v.durationSec)}</span> : null}
         </div>
@@ -895,7 +907,7 @@ function Youtube({ data, tab }: PanelProps) {
 
       <Sec title="Đăng tự động" right={auto.note && <span className="text-[11px] text-emerald-400">{auto.note}</span>}>
         <Toggle on={auto.value} onChange={auto.save} label="Render xong tự upload + lên lịch" />
-        <Row k="Trạng thái" v={<span className={v.uploadStatus === "failed" ? "text-red-400" : ""}>{UPLOAD_TEXT[v.uploadStatus]}</span>} />
+        <Row k="Trạng thái" v={<span className={v.uploadStatus === "failed" ? "text-red-400" : ""}>{v.uploadStatus === "scheduled" && m?.yt?.privacy === "public" ? "đã đăng (công khai)" : UPLOAD_TEXT[v.uploadStatus]}</span>} />
         <Row k="Nhãn AI" v="Có — khai báo nội dung do AI tạo khi đăng" />
         {data.compiledInto && (
           <Row
