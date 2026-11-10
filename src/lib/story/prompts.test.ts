@@ -54,6 +54,11 @@ describe("outlinePrompt", () => {
     expect(outlinePrompt(s, [ch(1), ch(2)], 5).prompt).toContain("từ chương 3 đến chương 7");
     expect(outlinePrompt(s, [], 10).prompt).toContain("từ chương 1 đến chương 10");
   });
+
+  it("chỉ chèn xu hướng khi có", () => {
+    expect(outlinePrompt(s, [], 5).prompt).not.toContain("Xu hướng khán giả");
+    expect(outlinePrompt(s, [], 5, "- Chủ đề đang hot: trùng sinh").prompt).toContain("Xu hướng khán giả hiện tại");
+  });
 });
 
 describe("chapterPrompt", () => {

@@ -7,7 +7,7 @@ import { db } from "@/db";
 import { appSettings, chapters, series, videos } from "@/db/schema";
 import { LAYOUT_KEY, mergeLayout, type Pos } from "@/lib/flow/layout";
 import { draftBible, planChapters, writeChapterStep, type WriteMode } from "@/lib/story/service";
-import { dispatchPublish, dispatchRender, queueVideo } from "@/lib/story/videos";
+import { dispatchPublish, dispatchRender, dispatchTrends, queueVideo } from "@/lib/story/videos";
 import { saveYoutubeAuth, updateYoutubeSnippet } from "@/lib/youtube";
 import { optimizeMeta, SEO_TARGET } from "@/lib/seo-optimize";
 import { VOICES } from "@/lib/flow/voices";
@@ -127,6 +127,15 @@ export async function rerenderAction(videoId: number): Promise<ActionState> {
     await dispatchRender(videoId);
     revalidatePath("/videos", "layout");
     return "Đã xếp hàng render lại.";
+  });
+}
+
+/** Quét lại xu hướng YouTube: báo GitHub Actions chạy (mất vài phút, trang tự có dữ liệu mới khi xong). */
+export async function scanTrendsAction(): Promise<ActionState> {
+  return attempt(async () => {
+    if (!(await dispatchTrends())) throw new Error("Chưa cấu hình GH_TOKEN / GH_REPO nên không gọi được GitHub Actions.");
+    revalidatePath("/trends");
+    return "Đã xếp hàng quét — khoảng 2–3 phút nữa tải lại trang.";
   });
 }
 

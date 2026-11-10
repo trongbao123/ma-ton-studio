@@ -115,6 +115,15 @@ async function dispatchCompilations() {
   }
 }
 
+/** Quét xu hướng nếu hôm nay chưa quét (cần vidIQ). */
+async function scanTrendsDaily() {
+  if (!process.env.VIDIQ_API_KEY) return;
+  const { scanTrends, trendsScannedToday } = await import("./trends");
+  if (await trendsScannedToday()) return;
+  console.log("📈 Quét xu hướng YouTube");
+  await scanTrends();
+}
+
 /**
  * Chạy 3 tiếng/lần: render hàng đợi trước, rồi viết chương tới khi đủ chỉ tiêu ngày hoặc hết quota free.
  * Hết quota không phải lỗi — lần chạy sau làm tiếp.
@@ -166,6 +175,8 @@ async function main() {
   }
 
   await renderQueue(failures);
+  // Xu hướng YouTube: tối đa 1 lần/ngày; lỗi không làm hỏng job.
+  await scanTrendsDaily().catch((e) => console.warn("⚠ Quét xu hướng lỗi:", e instanceof Error ? e.message : e));
   await dispatchCompilations().catch((e) => failures.push(`bản gộp: ${e instanceof Error ? e.message : e}`));
   if (failures.length) {
     await notify(`❌ <b>Job tự động có lỗi</b>\n${escapeHtml(failures.join("\n").slice(0, 800))}`);

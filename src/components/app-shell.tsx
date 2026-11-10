@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, Clapperboard, Gauge, LayoutDashboard, LogOut, Menu, Plus, Sparkles, X, type LucideIcon } from "lucide-react";
+import { BookOpen, Clapperboard, Gauge, LayoutDashboard, LogOut, Menu, Plus, Sparkles, TrendingUp, X, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Suspense, useState, type ReactNode } from "react";
@@ -10,6 +10,7 @@ const NAV: { href: string; label: string; icon: LucideIcon; match: (p: string) =
   { href: "/", label: "Xưởng truyện", icon: LayoutDashboard, match: (p) => p === "/" },
   { href: "/series", label: "Truyện", icon: BookOpen, match: (p) => p.startsWith("/series") || p.startsWith("/chapters") },
   { href: "/videos", label: "Video", icon: Clapperboard, match: (p) => p.startsWith("/videos") },
+  { href: "/trends", label: "Xu hướng", icon: TrendingUp, match: (p) => p.startsWith("/trends") },
   { href: "/usage", label: "Hạn mức AI", icon: Gauge, match: (p) => p.startsWith("/usage") },
   { href: "/settings/ai", label: "Cài đặt AI", icon: Sparkles, match: (p) => p.startsWith("/settings") },
 ];

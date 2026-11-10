@@ -8,6 +8,7 @@ import { escapeHtml, notify, WEB_URL } from "@/lib/notify";
 import { drawImage, imagesReady } from "./images";
 import { duration, ffmpeg, filterPath, once, pool } from "./ffmpeg";
 import { Tracker } from "./progress";
+import { freshInsights, loadTrends, seoHints } from "@/lib/trends";
 import { metaRequest, scenePrompts, scenesRequest, videoMeta } from "./prompts";
 import { ensureRelease, uploadAsset } from "./release";
 import { keepOrNextSlot } from "./schedule";
@@ -408,8 +409,10 @@ export async function renderVideo(videoId: number) {
       : null;
     if (seo) track.log("agent", `vidIQ: từ khóa ${seo.keywords.slice(0, 5).map((k) => `${k.keyword} (${k.overall})`).join(", ")}`);
     const searchKeywords = seo?.keywords.map((k) => k.keyword) ?? [];
-    track.set({ prompts: { meta: clip(metaRequest(s, c, seo?.text)) } });
-    const m = await cached(path.join(dir, "meta-v2.json"), () => videoMeta(s, c, seo?.text));
+    // Mẫu tiêu đề/thumbnail đang ăn view (quét xu hướng trong 7 ngày) — không có thì SEO như cũ.
+    const trendHints = seoHints(freshInsights(await loadTrends()));
+    track.set({ prompts: { meta: clip(metaRequest(s, c, seo?.text, trendHints)) } });
+    const m = await cached(path.join(dir, "meta-v2.json"), () => videoMeta(s, c, seo?.text, trendHints));
     track.model("agent", textProvider().lastModel);
     // vidIQ chấm điểm tiêu đề gốc + 2 phương án, cộng thêm 3 tiêu đề vidIQ tự nghĩ (đã có điểm) → lấy tiêu đề điểm cao nhất.
     let title = m.title;
@@ -471,7 +474,7 @@ export async function renderVideo(videoId: number) {
     // 1 ảnh ~25s (tách ~2–3 cảnh), tối đa 30 ảnh để vừa quota Cloudflare free 1 ngày.
     const n = Math.min(30, Math.max(6, Math.round(long.seconds / 25)));
     const longScenes = splitScenes(long.cues, n, long.seconds);
-    track.set({ prompts: { meta: clip(metaRequest(s, c)), scenes: clip(scenesRequest(m.characterLook, longScenes.map((x) => x.text))) } });
+    track.set({ prompts: { meta: clip(metaRequest(s, c, undefined, trendHints)), scenes: clip(scenesRequest(m.characterLook, longScenes.map((x) => x.text))) } });
     const longPrompts = await cached(path.join(dir, `long-scenes-${n}.json`), () => scenePrompts(m.characterLook, longScenes.map((x) => x.text)));
     track.tick("agent", "long", `${n} prompt cảnh video dài`);
     let shortScenes = short ? splitScenes(short.cues, SHORT_SCENES, short.seconds) : [];
@@ -601,11 +604,12 @@ export async function renderVideo(videoId: number) {
 }
 
 // CLI: tsx pipeline/render.ts <videoId>  |  "seo:<videoId>" = chỉ làm lại SEO + cập nhật YouTube (không render)
-// |  "compile:<seriesId>" = gộp các chương đã render thành video dài 1–2 giờ.
+// |  "compile:<seriesId>" = gộp các chương đã render thành video dài 1–2 giờ  |  "trends" = quét xu hướng YouTube (vidIQ + AI).
 if (process.argv[1]?.endsWith("render.ts")) {
   const arg = process.argv[2] ?? "";
   const runJob = () => {
     if (arg.startsWith("seo:")) return import("./seo-redo").then((x) => x.redoSeo(Number(arg.slice(4))));
+    if (arg === "trends") return import("./trends").then((x) => x.scanTrends());
     if (arg.startsWith("compile:")) return import("./compile").then((x) => x.compileSeries(Number(arg.slice(8))));
     return renderVideo(Number(arg));
   };

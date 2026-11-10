@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Chapter, Series } from "@/db/schema";
 import { textProvider } from "@/lib/ai";
+import type { SeoTrendHints } from "@/lib/trends";
 
 // Phong cách donghua 3D (hoạt hình tiên hiệp 3D Trung Quốc) — kiểu khán giả kênh tu tiên quen mắt.
 const ART_STYLE =
@@ -20,19 +21,23 @@ const metaSchema = z.object({
 });
 
 /** System + prompt gửi AI — tách ra để màn flow hiện lại đúng thứ đã gửi. */
-export function metaRequest(s: Series, c: Chapter, seo?: string | null) {
+export function metaRequest(s: Series, c: Chapter, seo?: string | null, trends?: SeoTrendHints | null) {
   const keywords = seo
     ? `\n\nTừ khóa người xem Việt Nam tìm thật trên YouTube (vidIQ, xếp theo điểm — điểm cao = nhiều lượt tìm, ít cạnh tranh). Tiêu đề PHẢI chứa 1 từ khóa top đầu; đoạn đầu mô tả và tag đầu dùng từ khóa điểm cao; không nhồi nhét:\n${seo}`
     : "";
+  // Xu hướng hiện tại của ngách (vidIQ): tham khảo, không bắt chước nguyên văn.
+  const trendNote = trends
+    ? `\n\nXu hướng đang ăn view của ngách (tham khảo cách đặt, KHÔNG sao chép nguyên văn):${trends.titlePatterns.length ? `\n- Mẫu tiêu đề: ${trends.titlePatterns.join(" | ")}` : ""}${trends.thumbnailPatterns.length ? `\n- Mẫu thumbnail: ${trends.thumbnailPatterns.join(" | ")}` : ""}`
+    : "";
   return {
     system: "Bạn là chuyên gia YouTube kênh truyện audio tiên hiệp Việt Nam, tối ưu CTR và retention.",
-    prompt: `Truyện: ${s.title}\nCốt truyện: ${s.premise}\nNhân vật/bối cảnh:\n${s.bible.slice(0, 3000)}\n\nChương ${c.number}: ${c.title}\n${c.content}${keywords}`,
+    prompt: `Truyện: ${s.title}\nCốt truyện: ${s.premise}\nNhân vật/bối cảnh:\n${s.bible.slice(0, 3000)}\n\nChương ${c.number}: ${c.title}\n${c.content}${keywords}${trendNote}`,
   };
 }
 
-export async function videoMeta(s: Series, c: Chapter, seo?: string | null) {
+export async function videoMeta(s: Series, c: Chapter, seo?: string | null, trends?: SeoTrendHints | null) {
   return textProvider().generateJson({
-    ...metaRequest(s, c, seo),
+    ...metaRequest(s, c, seo, trends),
     schema: metaSchema,
     temperature: 0.8,
     // Tiêu đề/mô tả quyết định lượt bấm → dùng model tốt (Gemini: danh sách quality, không phải flash-lite).

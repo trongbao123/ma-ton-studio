@@ -17,7 +17,12 @@ export function dispatchPublish(videoId: number) {
   return dispatch("publish.yml", videoId);
 }
 
-async function dispatch(workflow: string, videoId: number) {
+/** Quét xu hướng YouTube (render.yml với video_id = "trends"). */
+export function dispatchTrends() {
+  return dispatch("render.yml", "trends");
+}
+
+async function dispatch(workflow: string, videoId: number | string) {
   const token = process.env.GH_TOKEN;
   const repo = process.env.GH_REPO;
   if (!token || !repo || process.env.GITHUB_ACTIONS) return false;

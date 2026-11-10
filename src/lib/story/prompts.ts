@@ -58,14 +58,17 @@ export const outlineSchema = z.object({
 });
 export type OutlineDraft = z.infer<typeof outlineSchema>;
 
-export function outlinePrompt(s: Series, previous: Chapter[], count: number) {
+/** `trends`: đoạn xu hướng khán giả hiện tại (trendsBrief) — có thì lồng vào, không có thì dàn ý như cũ. */
+export function outlinePrompt(s: Series, previous: Chapter[], count: number, trends?: string | null) {
   const startAt = (previous.at(-1)?.number ?? 0) + 1;
   return {
     system: WRITER_SYSTEM,
     prompt: `${storyContext(s, previous)}
 
 Lên dàn ý cho ${count} chương tiếp theo, từ chương ${startAt} đến chương ${startAt + count - 1}.
-Mỗi chương đẩy truyện tiến lên, có ít nhất một điểm sướng (thăng cấp, vả mặt, đoạt bảo, thắng trận); cứ 3–5 chương có một bước ngoặt lớn hoặc trận đấu cao trào. Ghi rõ trong dàn ý cấp bậc nhân vật chính thay đổi thế nào.`,
+Mỗi chương đẩy truyện tiến lên, có ít nhất một điểm sướng (thăng cấp, vả mặt, đoạt bảo, thắng trận); cứ 3–5 chương có một bước ngoặt lớn hoặc trận đấu cao trào. Ghi rõ trong dàn ý cấp bậc nhân vật chính thay đổi thế nào.${
+      trends ? `\n\nXu hướng khán giả hiện tại (từ YouTube) — lồng ghép tự nhiên, không phá mạch truyện:\n${trends}` : ""
+    }`,
   };
 }
 

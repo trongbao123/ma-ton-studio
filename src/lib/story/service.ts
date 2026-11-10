@@ -2,6 +2,7 @@ import { and, asc, eq, lt } from "drizzle-orm";
 import { db } from "@/db";
 import { chapters, series, type Chapter } from "@/db/schema";
 import { textProvider } from "@/lib/ai";
+import { freshInsights, loadTrends, trendsBrief } from "@/lib/trends";
 import {
   bibleSchema,
   biblePrompt,
@@ -22,7 +23,7 @@ export async function planChapters(seriesId: number, count: number) {
   const s = await getSeries(seriesId);
   const previous = await listChapters(seriesId);
   const { chapters: drafts } = await textProvider().generateJson({
-    ...outlinePrompt(s, previous, count),
+    ...outlinePrompt(s, previous, count, trendsBrief(freshInsights(await loadTrends()))),
     schema: outlineSchema,
     temperature: 0.9,
     task: "story",
