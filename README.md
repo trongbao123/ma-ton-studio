@@ -71,3 +71,12 @@ Repo private chỉ có ~2.000 phút Actions/tháng; 1 tập/ngày dùng ~1.800�
 3. SSH vào máy, chép `scripts/oracle-runner.sh` lên rồi chạy với token (repo → Settings → Actions → Runners → New self-hosted runner):
    `TOKEN=<token> bash oracle-runner.sh`
 4. Repo → Settings → Secrets and variables → Actions → **Variables** → `RUNNER_LABEL` = `oracle`. Xoá biến là quay về máy GitHub.
+
+### Hoặc chạy trên Railway (dễ hơn Oracle)
+Thư mục `runner/` là container GitHub runner (image chính chủ `actions-runner`), Railway Hobby (~$5/tháng, đã gồm $5 tiền dùng).
+
+1. GitHub → Settings → Developer settings → **Fine-grained tokens** → Generate: chỉ repo `ma-ton-studio`, quyền **Administration: Read and write** → copy token.
+2. [railway.com](https://railway.com) → đăng nhập bằng GitHub → New Project → **Deploy from GitHub repo** → chọn repo này.
+3. Service vừa tạo → Settings → **Root Directory** = `runner` (Railway tự dùng `runner/Dockerfile`, `runner/railway.json`).
+4. Variables: `GH_PAT` = token ở bước 1 (tuỳ chọn `RUNNERS` = 2, `LABEL` = railway).
+5. Deploy xong, repo → Settings → Actions → Runners thấy `railway-1`, `railway-2` Idle → đặt biến repo `RUNNER_LABEL` = `railway`.
