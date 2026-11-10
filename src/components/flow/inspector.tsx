@@ -1,8 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { FlowData, NodeId, StepView } from "@/lib/flow/model";
-import { brandOfModel } from "@/components/brand-icons";
+import { CARD_STATE_TEXT, type CardId, type CardView, type FlowData } from "@/lib/flow/model";
 import { NodeIcon } from "./nodes";
 import { PANELS, type Tab } from "./panels";
 
@@ -12,18 +11,16 @@ const TABS: [Tab, string][] = [
   ["log", "Nhật ký"],
 ];
 
-const STATE_TEXT = { done: "Đã xong", run: "Đang chạy", error: "Lỗi", wait: "Đang chờ", skip: "Bỏ qua" } as const;
-
 type Props = {
   data: FlowData;
-  steps: Record<NodeId, StepView>;
-  selected: NodeId;
+  cards: Record<CardId, CardView>;
+  selected: CardId;
   /** Trên điện thoại inspector là bottom sheet — `open` là đang kéo lên. */
   open: boolean;
   onToggle: (open: boolean) => void;
 };
 
-export function Inspector({ data, steps, selected, open, onToggle }: Props) {
+export function Inspector({ data, cards, selected, open, onToggle }: Props) {
   const [tab, setTab] = useState<Tab>("out");
   const [shown, setShown] = useState(selected);
   // Đổi node thì về tab đầu.
@@ -31,7 +28,7 @@ export function Inspector({ data, steps, selected, open, onToggle }: Props) {
     setShown(selected);
     setTab("out");
   }
-  const view = steps[selected];
+  const view = cards[selected];
   const Panel = PANELS[selected];
 
   return (
@@ -44,12 +41,12 @@ export function Inspector({ data, steps, selected, open, onToggle }: Props) {
       <div className="px-5 pt-2 md:pt-5">
         <div className="flex items-center gap-3" onClick={() => onToggle(true)}>
           <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-border bg-card text-lg">
-            <NodeIcon id={selected} brand={selected === "agent" ? brandOfModel(data.video.progress?.steps.agent?.model) : null} size={20} />
+            <NodeIcon id={selected} brand={selected === "trends" ? null : view.ai?.brand} size={20} />
           </div>
           <div className="min-w-0 flex-1">
             <h3 className="truncate text-[15px] font-bold">{view.title}</h3>
             <p className="truncate text-xs text-muted">
-              {STATE_TEXT[view.state]} · {view.subtitle}
+              {CARD_STATE_TEXT[view.state]} · {view.subtitle}
               {view.warning && <span className="text-amber-400"> · {view.warning}</span>}
             </p>
           </div>

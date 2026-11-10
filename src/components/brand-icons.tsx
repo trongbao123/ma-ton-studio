@@ -9,6 +9,7 @@ import {
   ImagePlus,
   NotebookText,
   ScrollText,
+  Search,
   Tag,
   TrendingUp,
   type LucideIcon,
@@ -50,6 +51,9 @@ export function brandOfModel(model: string | null | undefined): BrandId | null {
 
 /** Icon nét cho các bước không có thương hiệu riêng. */
 export const STEP_ICONS: Record<string, LucideIcon> = {
+  trends: TrendingUp,
+  chapter: BookOpenCheck,
+  seo: Search,
   trigger: BookOpenCheck,
   agent: BrainCircuit,
   model: Cpu,

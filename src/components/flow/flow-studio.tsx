@@ -17,9 +17,8 @@ import Link from "next/link";
 import { useEffect, useMemo, useState, useSyncExternalStore, useTransition } from "react";
 import { rerenderAction, resetFlowLayoutAction, saveFlowLayoutAction } from "@/app/actions";
 import { ActionForm } from "@/components/action-form";
-import { DEFAULT_POSITIONS, MAIN_ORDER, SUB_NODES, type CanvasNodeId, type Pos } from "@/lib/flow/layout";
-import { buildFlow, formatSlot, formatTime, isStale, STATUS_LABEL, TITLES, type FlowData, type NodeId, type StepView } from "@/lib/flow/model";
-import { brandOfModel } from "@/components/brand-icons";
+import { DEFAULT_POSITIONS, MAIN_ORDER, type CanvasNodeId, type Pos } from "@/lib/flow/layout";
+import { buildFlow, formatSlot, formatTime, isStale, STATUS_LABEL, TITLES, type CardId, type CardState, type CardView, type FlowData, type Issue, type NodeId } from "@/lib/flow/model";
 import { Inspector } from "./inspector";
 import { nodeTypes } from "./nodes";
 
@@ -33,38 +32,20 @@ export function FlowStudio(props: Props) {
   );
 }
 
-const EDGE_COLOR = { done: "#2f7d4f", run: "#38bdf8", error: "#7f1d1d", wait: "#3b3b46", skip: "#2a2a31" } as const;
+const EDGE_COLOR: Record<CardState, string> = { done: "#2f7d4f", run: "#38bdf8", error: "#7f1d1d", quota: "#b45309", wait: "#3b3b46", idle: "#3b3b46", skip: "#2a2a31" };
 
-/** Node con hiện dữ liệu thật khi có (vd model AI đã chạy). */
-function subData(id: string, data: FlowData, steps: Record<NodeId, StepView>) {
-  const s = SUB_NODES.find((x) => x.id === id)!;
-  const state = steps[s.parent].state;
-  const model = data.video.progress?.steps.agent?.model;
-  if (id === "model") return { id, state, title: s.title, subtitle: model ?? s.subtitle, brand: brandOfModel(model) };
-  if (id === "imageModel") {
-    const m = data.ai.imageModel;
-    return { id, state, title: "AI vẽ ảnh", subtitle: m.replace(/^@cf\/[^/]+\//, ""), brand: brandOfModel(m) };
-  }
-  return { id, state, title: s.title, subtitle: s.subtitle };
+function buildNodes(cards: Record<CardId, CardView>, layout: Record<CanvasNodeId, Pos>, selected: CardId): Node[] {
+  return MAIN_ORDER.map((id) => ({
+    id,
+    type: "card",
+    position: layout[id],
+    data: { view: cards[id], selected: id === selected },
+  }));
 }
 
-const agentBrand = (data: FlowData) => brandOfModel(data.video.progress?.steps.agent?.model);
-
-function buildNodes(data: FlowData, steps: Record<NodeId, StepView>, layout: Record<CanvasNodeId, Pos>, selected: NodeId): Node[] {
-  return [
-    ...MAIN_ORDER.map((id) => ({
-      id,
-      type: id === "agent" ? "agent" : "step",
-      position: layout[id],
-      data: { view: steps[id], selected: id === selected, brand: id === "agent" ? agentBrand(data) : null },
-    })),
-    ...SUB_NODES.map((s) => ({ id: s.id, type: "sub", position: layout[s.id], data: subData(s.id, data, steps) })),
-  ];
-}
-
-function buildEdges(steps: Record<NodeId, StepView>): Edge[] {
-  const main = MAIN_ORDER.slice(1).map((id, i) => {
-    const state = steps[id].state;
+function buildEdges(cards: Record<CardId, CardView>): Edge[] {
+  return MAIN_ORDER.slice(1).map((id, i) => {
+    const state = cards[id].state;
     return {
       id: `e-${id}`,
       source: MAIN_ORDER[i],
@@ -73,29 +54,32 @@ function buildEdges(steps: Record<NodeId, StepView>): Edge[] {
       style: { stroke: EDGE_COLOR[state], strokeWidth: 2 },
     };
   });
-  // Dây tới node con: chạy hiệu ứng khi node cha đang làm, xanh lá khi xong.
-  const subs = SUB_NODES.map((s) => {
-    const state = steps[s.parent].state;
-    return {
-      id: `s-${s.id}`,
-      source: s.parent,
-      sourceHandle: s.slot ?? "sub",
-      target: s.id,
-      animated: state === "run",
-      style: {
-        stroke: state === "run" ? "#38bdf8" : state === "done" ? "#2f7d4f" : "#4a4a56",
-        strokeWidth: 1.6,
-        strokeDasharray: "4 5",
-        opacity: state === "wait" || state === "skip" ? 0.5 : 1,
-      },
-    };
-  });
-  return [...main, ...subs];
 }
 
-/** Mặc định mở node đầu tiên chưa xong — thường là chỗ người dùng cần xem. */
-function firstOpen(steps: Record<NodeId, StepView>): NodeId {
-  return MAIN_ORDER.find((id) => steps[id].state !== "done") ?? "video";
+/** Mặc định mở thẻ đầu tiên chưa xong — thường là chỗ người dùng cần xem (Xu hướng chỉ là bối cảnh nên bỏ qua). */
+function firstOpen(cards: Record<CardId, CardView>): CardId {
+  return MAIN_ORDER.find((id) => id !== "trends" && cards[id].state !== "done") ?? "video";
+}
+
+const ISSUE_TONE: Record<Issue["tone"], string> = {
+  error: "border-red-500/40 bg-red-950/60 text-red-200",
+  warn: "border-amber-500/40 bg-amber-950/50 text-amber-200",
+  info: "border-sky-500/40 bg-sky-950/50 text-sky-200",
+};
+
+/** Dải "Đang kẹt / cần làm" phía trên canvas — ẩn khi không có gì. Bấm một việc để mở thẻ liên quan. */
+function IssueStrip({ issues, onPick }: { issues: Issue[]; onPick: (id: CardId) => void }) {
+  if (!issues.length) return null;
+  return (
+    <div role="status" className="flex flex-wrap items-center gap-2 border-b border-border bg-[#111115] px-4 py-2 text-xs">
+      <b className="shrink-0 text-zinc-300">Đang kẹt / cần làm</b>
+      {issues.map((i) => (
+        <button key={i.text} type="button" onClick={() => onPick(i.card)} title={i.text} className={`max-w-full truncate rounded-full border px-2.5 py-0.5 text-left ${ISSUE_TONE[i.tone]}`}>
+          {i.text.slice(0, 160)}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 const POLL_MS = 2000;
@@ -145,22 +129,22 @@ function useLiveFlow(initial: FlowData) {
 
 function Studio({ data: initial, layout }: Props) {
   const { data, live } = useLiveFlow(initial);
-  const { steps, notice } = useMemo(() => buildFlow(data), [data]);
-  const [selected, setSelected] = useState<NodeId>(() => firstOpen(steps));
+  const { cards, issues: baseIssues } = useMemo(() => buildFlow(data), [data]);
+  const [selected, setSelected] = useState<CardId>(() => firstOpen(cards));
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [nodes, setNodes, onNodesChange] = useNodesState(buildNodes(data, steps, layout, selected));
-  const edges = useMemo(() => buildEdges(steps), [steps]);
+  const [nodes, setNodes, onNodesChange] = useNodesState(buildNodes(cards, layout, selected));
+  const edges = useMemo(() => buildEdges(cards), [cards]);
   const { fitView, getNodes } = useReactFlow();
   const [, startTransition] = useTransition();
   const measured = useNodesInitialized();
   // useNodesState chỉ lấy giá trị đầu — dữ liệu mới từ server (render lại, đã đăng, polling) phải đẩy vào node, giữ nguyên vị trí.
   useEffect(() => {
-    setNodes((ns) => ns.map((n) => ({ ...n, data: n.id in steps ? { ...n.data, view: steps[n.id as NodeId], brand: n.id === "agent" ? agentBrand(data) : null } : subData(n.id, data, steps) })));
-  }, [steps, data, setNodes]);
+    setNodes((ns) => ns.map((n) => ({ ...n, data: { ...n.data, view: cards[n.id as CardId] } })));
+  }, [cards, setNodes]);
   // fitView ban đầu có thể chạy trước khi node đo xong kích thước (hay gặp trên điện thoại) → fit lại, và fit khi xoay/đổi cỡ màn hình.
   useEffect(() => {
     if (!measured) return;
-    const fit = () => void fitView({ padding: 0.15 });
+    const fit = () => void fitView({ padding: 0.08 });
     fit();
     addEventListener("resize", fit);
     return () => removeEventListener("resize", fit);
@@ -170,11 +154,14 @@ function Studio({ data: initial, layout }: Props) {
   // Chỉ tính trên client (cần giờ hiện tại) để HTML server và lần hydrate đầu giống nhau.
   const onClient = useSyncExternalStore(noopSubscribe, () => true, () => false);
   const stale = onClient && isStale(v);
+  const issues: Issue[] = stale
+    ? [{ tone: "warn", text: "Video kẹt ở \"đang render\" — job có thể đã bị huỷ, bấm Render lại", card: "video" }, ...baseIssues]
+    : baseIssues;
 
-  const select = (id: NodeId) => {
+  const select = (id: CardId) => {
     setSelected(id);
     setSheetOpen(true);
-    setNodes((ns) => ns.map((n) => (MAIN_ORDER.includes(n.id as NodeId) ? { ...n, data: { ...n.data, selected: n.id === id } } : n)));
+    setNodes((ns) => ns.map((n) => ({ ...n, data: { ...n.data, selected: n.id === id } })));
   };
 
   const savePositions = () => {
@@ -184,7 +171,7 @@ function Studio({ data: initial, layout }: Props) {
 
   const resetLayout = () => {
     setNodes((ns) => ns.map((n) => ({ ...n, position: DEFAULT_POSITIONS[n.id as CanvasNodeId] })));
-    requestAnimationFrame(() => fitView({ padding: 0.15, duration: 300 }));
+    requestAnimationFrame(() => fitView({ padding: 0.08, duration: 300 }));
     startTransition(async () => void (await resetFlowLayoutAction()));
   };
 
@@ -242,11 +229,7 @@ function Studio({ data: initial, layout }: Props) {
         )}
       </header>
 
-      {notice && (
-        <p className={`px-4 py-2 text-xs ${notice.tone === "error" ? "bg-red-950/70 text-red-300" : "bg-sky-950/60 text-sky-200"}`}>
-          {notice.text.slice(0, 300)}
-        </p>
-      )}
+      <IssueStrip issues={issues} onPick={select} />
 
       {/* minmax(0,1fr): không để canvas đẩy rộng cột làm bảng chi tiết tràn khỏi màn hình. */}
       <div className="grid min-h-0 flex-1 md:grid-cols-[minmax(0,1fr)_400px]">
@@ -257,10 +240,10 @@ function Studio({ data: initial, layout }: Props) {
             nodeTypes={nodeTypes}
             onNodesChange={onNodesChange}
             onNodeDragStop={savePositions}
-            onNodeClick={(_, n) => select((SUB_NODES.find((s) => s.id === n.id)?.parent ?? n.id) as NodeId)}
+            onNodeClick={(_, n) => select(n.id as CardId)}
             nodesConnectable={false}
             fitView
-            fitViewOptions={{ padding: 0.15 }}
+            fitViewOptions={{ padding: 0.08 }}
             minZoom={0.15}
             maxZoom={2}
             colorMode="dark"
@@ -271,7 +254,7 @@ function Studio({ data: initial, layout }: Props) {
             <Controls showInteractive={false} />
           </ReactFlow>
         </div>
-        <Inspector data={data} steps={steps} selected={selected} open={sheetOpen} onToggle={setSheetOpen} />
+        <Inspector data={data} cards={cards} selected={selected} open={sheetOpen} onToggle={setSheetOpen} />
       </div>
 
       <footer className="hidden gap-6 overflow-x-auto whitespace-nowrap [scrollbar-width:none] border-t border-border bg-[#111115] px-5 py-2.5 text-xs text-muted md:flex">

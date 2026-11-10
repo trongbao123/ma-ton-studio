@@ -1,12 +1,59 @@
 import type { Video, VideoMeta } from "@/db/schema";
+import { brandOfModel, type BrandId } from "@/components/brand-icons";
 import type { ProviderId, Route } from "@/lib/ai/routing";
+import {
+  describeRoute,
+  firstUsableRoute,
+  imageBrand,
+  imageCounts,
+  musicTitle,
+  thousands,
+  type AiTag,
+  type CompilationRef,
+  type ImagePick,
+} from "./derive";
+import { scoreMeta, SEO_TARGET, totalScore } from "./seo";
 import type { StepProgress, VideoProgress } from "./progress";
 
 export type FileName = "long.mp4" | "short.mp4" | "thumbnail.jpg" | "youtube.txt";
+/** Id bước PIPELINE ghi tiến độ (videos.progress) — khác với thẻ trên màn flow (CardId). */
 export type NodeId = "trigger" | "agent" | "tts" | "images" | "video" | "youtube";
 export type StepState = "wait" | "run" | "done" | "error" | "skip";
-export type StepView = { id: NodeId; title: string; subtitle: string; state: StepState; warning?: string; /** 0–1 khi đang chạy có đếm */ progress?: number };
-export type FlowNotice = { tone: "info" | "error"; text: string } | null;
+
+/** Bảy thẻ trên một hàng ngang: Xu hướng → Viết chương → SEO & Thumbnail → Giọng đọc → Ảnh cảnh → Dựng video → YouTube. */
+export type CardId = "trends" | "chapter" | "seo" | "tts" | "images" | "video" | "youtube";
+/** `quota`: chờ hết quota AI; `idle`: chưa có dữ liệu (Xu hướng chưa quét). */
+export type CardState = StepState | "quota" | "idle";
+export type CardLink = { label: string; href: string };
+export type CardView = {
+  id: CardId;
+  title: string;
+  state: CardState;
+  /** Một cụm ngắn mô tả trạng thái, hiện ở đầu inspector. */
+  subtitle: string;
+  /** AI/model thật đã làm bước này. */
+  ai: AiTag | null;
+  /** 1–2 chỉ số chính. */
+  metrics: string[];
+  chips: string[];
+  links: CardLink[];
+  thumb?: string;
+  warning?: string;
+  /** 0–1 khi đang chạy có đếm */
+  progress?: number;
+};
+/** Một việc đang kẹt / cần làm — hiện ở dải phía trên canvas, bấm để mở thẻ liên quan. */
+export type Issue = { tone: "error" | "warn" | "info"; text: string; card: CardId };
+
+export type TrendsView = {
+  scannedAt: string;
+  /** Quét trong 7 ngày — còn được đưa vào dàn ý / SEO. */
+  fresh: boolean;
+  summary: string;
+  hotTopics: { topic: string; why: string }[];
+  titlePatterns: string[];
+  risingKeywords: { keyword: string; note: string }[];
+};
 
 /** Dữ liệu màn flow — ngày giờ là chuỗi ISO để truyền được từ server sang client. */
 export type FlowData = {
@@ -34,23 +81,53 @@ export type FlowData = {
   series: { id: number; title: string; bibleExcerpt: string; voiceStyle: string; ttsVoice: string; makeShort: boolean; autoPublish: boolean };
   prevSummary: string | null;
   youtube: { connected: boolean; channel: string | null };
-  /** AI vẽ ảnh đứng đầu danh sách trong Cài đặt AI (để node con hiện đúng logo/model). */
+  /** Kết quả quét xu hướng gần nhất (app_settings "trends"); null = chưa quét. */
+  trends: TrendsView | null;
+  /** Bản gộp có chứa video chương này (nếu có). */
+  compiledInto: CompilationRef | null;
   ai: {
-    imageModel: string;
-    /** Chuỗi AI (theo thứ tự ưu tiên) cho 2 việc của node AI Agent — đổi nhanh ngay trong bảng. */
-    text?: { meta: Route[]; scenes: Route[] };
+    /** Model vẽ ảnh thật (hoặc dự kiến) của video này. */
+    image: ImagePick;
+    /** Chuỗi AI (theo thứ tự ưu tiên) cho từng việc chữ — đổi nhanh ngay trong bảng. */
+    text?: { story: Route[]; meta: Route[]; scenes: Route[] };
     /** Hãng đã có API key. */
     available?: ProviderId[];
   };
 };
 
-export const TITLES: Record<NodeId, string> = {
-  trigger: "Chương đã duyệt",
-  agent: "AI Agent",
+export const CARD_ORDER: CardId[] = ["trends", "chapter", "seo", "tts", "images", "video", "youtube"];
+
+export const CARD_TITLES: Record<CardId, string> = {
+  trends: "Xu hướng",
+  chapter: "Viết chương",
+  seo: "SEO & Thumbnail",
   tts: "Giọng đọc",
-  images: "Vẽ ảnh cảnh",
+  images: "Ảnh cảnh",
   video: "Dựng video",
-  youtube: "Đăng YouTube",
+  youtube: "YouTube",
+};
+
+/** Bước pipeline ghi tiến độ cho từng thẻ (Xu hướng, Viết chương không chạy trong job render). */
+export const PROGRESS_OF: Partial<Record<CardId, NodeId>> = { seo: "agent", tts: "tts", images: "images", video: "video", youtube: "youtube" };
+
+export const CARD_STATE_TEXT: Record<CardState, string> = {
+  wait: "Chờ",
+  run: "Đang chạy",
+  done: "Xong",
+  error: "Lỗi",
+  skip: "Bỏ qua",
+  quota: "Chờ quota",
+  idle: "Chưa quét",
+};
+
+/** Tên bước theo id pipeline — dùng cho nhật ký và thẻ video ở danh sách. */
+export const TITLES: Record<NodeId, string> = {
+  trigger: "Viết chương",
+  agent: "SEO & Thumbnail",
+  tts: "Giọng đọc",
+  images: "Ảnh cảnh",
+  video: "Dựng video",
+  youtube: "YouTube",
 };
 
 export const STATUS_LABEL: Record<Video["status"], [string, string]> = {
@@ -123,26 +200,22 @@ function progressSubtitle(p: StepProgress) {
   return parts.length ? parts.join(" · ") : undefined;
 }
 
-/**
- * Suy trạng thái từng node từ trạng thái chung của video. Chưa có tiến độ từng bước
- * nên cả nhóm render cùng một trạng thái — bản cập nhật pipeline sẽ thay bằng dữ liệu thật.
- */
-export function buildFlow(d: FlowData): { steps: Record<NodeId, StepView>; notice: FlowNotice } {
+type Base = { state: StepState; subtitle: string; warning?: string; progress?: number };
+type RenderId = (typeof RENDER_STEPS)[number] | "youtube";
+
+/** Trạng thái các bước pipeline (agent/tts/images/video/youtube) suy từ trạng thái video + tiến độ thật. */
+function renderSteps(d: FlowData): Record<RenderId, Base> {
   const v = d.video;
-  const step = (id: NodeId, state: StepState, subtitle: string, warning?: string): StepView => ({
-    id, title: TITLES[id], state, subtitle, ...(warning ? { warning } : {}),
-  });
-  const steps = { trigger: step("trigger", "done", `Chương ${d.chapter.number}`) } as Record<NodeId, StepView>;
-  let notice: FlowNotice = null;
   const finished = v.status === "ready" || v.status === "published";
+  const steps = {} as Record<RenderId, Base>;
 
   for (const id of RENDER_STEPS) {
     if (finished) {
-      const warn = id === "video" && !v.files["short.mp4"] ? "Không có Short" : undefined;
-      steps[id] = step(id, "done", doneSubtitle(id, v), warn);
-    } else if (v.status === "rendering") steps[id] = step(id, "run", "đang render");
-    else if (v.status === "failed") steps[id] = step(id, "error", "lỗi render");
-    else steps[id] = step(id, "wait", "chờ");
+      const warning = id === "video" && !v.files["short.mp4"] ? "Không có Short" : undefined;
+      steps[id] = { state: "done", subtitle: doneSubtitle(id, v), ...(warning ? { warning } : {}) };
+    } else if (v.status === "rendering") steps[id] = { state: "run", subtitle: "đang render" };
+    else if (v.status === "failed") steps[id] = { state: "error", subtitle: "lỗi render" };
+    else steps[id] = { state: "wait", subtitle: "chờ" };
   }
 
   // Có tiến độ thật từ pipeline thì dùng thay cho trạng thái suy ra.
@@ -151,25 +224,172 @@ export function buildFlow(d: FlowData): { steps: Record<NodeId, StepView>; notic
   for (const id of RENDER_STEPS) {
     const p = tracked[id];
     if (p) {
-      steps[id] = step(id, p.state, progressSubtitle(p) ?? steps[id].subtitle, p.warning ?? steps[id].warning);
+      const warning = p.warning ?? steps[id].warning;
+      steps[id] = { state: p.state, subtitle: progressSubtitle(p) ?? steps[id].subtitle, ...(warning ? { warning } : {}) };
       const parts = [p.long, p.short].filter((x) => x && x.total > 0) as { done: number; total: number }[];
       if (p.state === "run" && parts.length) steps[id].progress = parts.reduce((a, x) => a + x.done, 0) / parts.reduce((a, x) => a + x.total, 0);
     }
     // Bước chưa tới lượt: chờ, hoặc bỏ qua nếu render đã lỗi ở bước trước.
-    else if (hasProgress && !finished) steps[id] = step(id, v.status === "failed" ? "skip" : "wait", "chưa chạy");
+    else if (hasProgress && !finished) steps[id] = { state: v.status === "failed" ? "skip" : "wait", subtitle: "chưa chạy" };
   }
 
-  if (v.uploadStatus === "uploading") steps.youtube = step("youtube", "run", "đang upload");
-  else if (v.uploadStatus === "scheduled")
-    steps.youtube = step("youtube", "done", v.publishAt ? `đã lên lịch · ${formatSlot(v.publishAt)}` : "đã lên lịch");
-  else if (v.uploadStatus === "failed") steps.youtube = step("youtube", "error", "upload lỗi", v.uploadError ?? undefined);
-  else if (v.status === "published") steps.youtube = step("youtube", "done", "đã đăng");
-  else if (v.status === "failed") steps.youtube = step("youtube", "skip", "không đăng vì render lỗi");
-  else if (v.status === "ready") steps.youtube = step("youtube", "wait", v.publishAt ? `chờ đăng · ${formatSlot(v.publishAt)}` : "chờ đăng tay");
-  else steps.youtube = step("youtube", "wait", "chờ render xong");
+  if (v.uploadStatus === "uploading") steps.youtube = { state: "run", subtitle: "đang upload" };
+  else if (v.uploadStatus === "scheduled") steps.youtube = { state: "done", subtitle: v.publishAt ? `đã lên lịch · ${formatSlot(v.publishAt)}` : "đã lên lịch" };
+  else if (v.uploadStatus === "failed") steps.youtube = { state: "error", subtitle: "upload lỗi", ...(v.uploadError ? { warning: v.uploadError } : {}) };
+  else if (v.status === "published") steps.youtube = { state: "done", subtitle: "đã đăng" };
+  else if (v.status === "failed") steps.youtube = { state: "skip", subtitle: "không đăng vì render lỗi" };
+  else if (v.status === "ready") steps.youtube = { state: "wait", subtitle: v.publishAt ? `chờ đăng · ${formatSlot(v.publishAt)}` : "chờ đăng tay" };
+  else steps.youtube = { state: "wait", subtitle: "chờ render xong" };
+  return steps;
+}
 
-  if (v.status === "failed") notice = { tone: "error", text: v.error ?? "Render lỗi" };
-  else if (v.status === "queued" && v.error) notice = { tone: "info", text: `Đang chờ: ${v.error}` };
+/** Video đang xếp hàng vì hết quota AI → thẻ nào đang chờ (lỗi nhắc tới ảnh thì là Ảnh cảnh, còn lại là AI chữ). */
+export function quotaCard(v: Pick<FlowData["video"], "status" | "error">): CardId | null {
+  if (v.status !== "queued" || !v.error || !/quota|hết lượt/i.test(v.error)) return null;
+  return /ảnh|image|cloudflare|deepinfra|flux/i.test(v.error) ? "images" : "seo";
+}
 
-  return { steps, notice };
+const thumbOf = (d: FlowData) => d.video.files["thumbnail.jpg"];
+const reuseText = (c: NonNullable<VideoMeta["compilation"]>) => `dùng lại từ chương ${c.from}–${c.to}`;
+
+function trendsCard(d: FlowData): CardView {
+  const t = d.trends;
+  const base = { id: "trends" as const, title: CARD_TITLES.trends, ai: { label: "vidIQ + GPT", brand: "openai" as BrandId }, chips: [], links: [] };
+  if (!t) return { ...base, state: "idle", subtitle: "chưa quét", metrics: ["Chưa quét xu hướng"] };
+  const top = t.hotTopics[0]?.topic;
+  return {
+    ...base,
+    state: "done",
+    subtitle: `quét ${formatTime(t.scannedAt)}`,
+    metrics: [`Quét ${formatTime(t.scannedAt)}`, top ? `Hot #1: ${top}` : "Chưa có chủ đề nóng"],
+    ...(t.fresh ? {} : { warning: "Dữ liệu quá 7 ngày — không còn đưa vào dàn ý / SEO" }),
+  };
+}
+
+function chapterCard(d: FlowData): CardView {
+  const reuse = d.video.meta?.compilation;
+  const route = firstUsableRoute(d.ai.text?.story ?? [], d.ai.available ?? []);
+  const chips = [d.series.bibleExcerpt && "Story bible", d.prevSummary && "Tóm tắt chương trước"].filter(Boolean) as string[];
+  const base = { id: "chapter" as const, title: CARD_TITLES.chapter, state: "done" as const, links: [] };
+  if (reuse) return { ...base, subtitle: reuseText(reuse), ai: null, metrics: [reuseText(reuse)], chips: [] };
+  return {
+    ...base,
+    subtitle: `Chương ${d.chapter.number}`,
+    ai: route ? describeRoute(route) : null,
+    metrics: [`${thousands(d.chapter.words)} từ`, `Chương ${d.chapter.number}`],
+    chips,
+  };
+}
+
+function seoCard(d: FlowData, base: Base): CardView {
+  const m = d.video.meta;
+  const model = d.video.progress?.steps.agent?.model;
+  const total = m ? totalScore(scoreMeta(m, d.series.title)) : null;
+  const title = m?.seo?.titleScore;
+  return {
+    id: "seo",
+    title: CARD_TITLES.seo,
+    ...base,
+    ai: model ? { label: model, brand: brandOfModel(model) } : null,
+    metrics: m ? [`SEO ${total}/100`, `Tiêu đề vidIQ ${title ?? "—"}`] : [],
+    chips: (m?.seo?.keywords ?? []).slice(0, 3),
+    links: [],
+    ...(thumbOf(d) ? { thumb: thumbOf(d) } : {}),
+  };
+}
+
+function ttsCard(d: FlowData, base: Base): CardView {
+  const reuse = d.video.meta?.compilation;
+  const sec = d.video.durationSec;
+  const common = { id: "tts" as const, title: CARD_TITLES.tts, ...base, chips: [], links: [] };
+  if (reuse) return { ...common, ai: null, metrics: [reuseText(reuse)] };
+  return { ...common, ai: { label: "Gemini TTS", brand: "gemini" }, metrics: [`Giọng ${d.series.ttsVoice}`, sec ? `Thời lượng ${clock(sec)}` : "Chưa có thời lượng"] };
+}
+
+function imagesCard(d: FlowData, base: Base): CardView {
+  const reuse = d.video.meta?.compilation;
+  const common = { id: "images" as const, title: CARD_TITLES.images, ...base, chips: [], links: [] };
+  if (reuse) return { ...common, ai: null, metrics: [reuseText(reuse)] };
+  const { model, source } = d.ai.image;
+  const note = source === "tracked" ? undefined : source === "usage" ? "suy từ lượt dùng" : "dự kiến";
+  const n = imageCounts(d.video.progress);
+  return {
+    ...common,
+    ai: { label: model, brand: imageBrand(model), ...(note ? { note } : {}) },
+    metrics: n ? [`${n.done}/${n.total} ảnh`] : [],
+  };
+}
+
+function videoCard(d: FlowData, base: Base): CardView {
+  const m = d.video.meta;
+  const music = m ? musicTitle(m.description) : null;
+  const metrics = [base.subtitle, m ? (music ? `♪ ${music}` : "Chưa có nhạc nền") : null].filter(Boolean) as string[];
+  return { id: "video", title: CARD_TITLES.video, ...base, ai: null, metrics, chips: [], links: [] };
+}
+
+const ytLink = (id: string) => `https://youtu.be/${id}`;
+
+function youtubeCard(d: FlowData, base: Base): CardView {
+  const v = d.video;
+  const c = d.compiledInto;
+  const links: CardLink[] = [
+    ...(v.youtubeVideoId ? [{ label: "Video", href: ytLink(v.youtubeVideoId) }] : v.youtubeUrl ? [{ label: "Video", href: v.youtubeUrl }] : []),
+    ...(v.youtubeShortId ? [{ label: "Short", href: ytLink(v.youtubeShortId) }] : []),
+    ...(c ? [{ label: "Bản gộp", href: c.youtubeVideoId ? ytLink(c.youtubeVideoId) : `/videos/${c.id}` }] : []),
+  ];
+  return {
+    id: "youtube",
+    title: CARD_TITLES.youtube,
+    ...base,
+    ai: null,
+    metrics: [v.publishAt ? `Lịch ${formatSlot(v.publishAt)}` : "Chưa có lịch đăng"],
+    chips: c ? [`Trong bản gộp chương ${c.from}–${c.to}`] : [],
+    links,
+  };
+}
+
+/** Các việc đang kẹt / cần làm, lỗi đứng trước. Rỗng = không có gì phải làm. */
+function buildIssues(d: FlowData): Issue[] {
+  const v = d.video;
+  const m = v.meta;
+  const out: Issue[] = [];
+  const quota = quotaCard(v);
+  const finished = v.status === "ready" || v.status === "published";
+  if (v.status === "failed") out.push({ tone: "error", text: `Render lỗi: ${v.error ?? "không rõ nguyên nhân"}`, card: "video" });
+  if (v.uploadStatus === "failed") out.push({ tone: "error", text: `Upload YouTube lỗi: ${v.uploadError ?? "không rõ nguyên nhân"}`, card: "youtube" });
+  if (quota) out.push({ tone: "warn", text: `Chờ quota ${quota === "images" ? "ảnh" : "AI"}: ${v.error}`, card: quota });
+  else if (v.status === "queued" && v.error) out.push({ tone: "info", text: `Đang chờ: ${v.error}`, card: "video" });
+  if (finished && m && !musicTitle(m.description)) out.push({ tone: "warn", text: "Chưa có nhạc nền", card: "video" });
+  if (finished && d.series.makeShort && !v.files["short.mp4"]) out.push({ tone: "warn", text: "Không có Short", card: "video" });
+  if (m) {
+    const total = totalScore(scoreMeta(m, d.series.title));
+    if (total < SEO_TARGET) out.push({ tone: "warn", text: `Điểm SEO ${total} chưa đạt ${SEO_TARGET} — dùng Magic fill`, card: "seo" });
+  }
+  if (v.status === "ready" && v.uploadStatus === "none" && !v.youtubeVideoId && !d.youtube.connected)
+    out.push({ tone: "info", text: "Chưa kết nối YouTube — video chờ đăng tay", card: "youtube" });
+  return out;
+}
+
+/**
+ * Suy 7 thẻ + danh sách việc kẹt từ dữ liệu thật của video.
+ * Thẻ SEO & Thumbnail đọc tiến độ bước "agent" của pipeline; Xu hướng và Viết chương không chạy trong job render.
+ */
+export function buildFlow(d: FlowData): { cards: Record<CardId, CardView>; issues: Issue[] } {
+  const steps = renderSteps(d);
+  const cards: Record<CardId, CardView> = {
+    trends: trendsCard(d),
+    chapter: chapterCard(d),
+    seo: seoCard(d, steps.agent),
+    tts: ttsCard(d, steps.tts),
+    images: imagesCard(d, steps.images),
+    video: videoCard(d, steps.video),
+    youtube: youtubeCard(d, steps.youtube),
+  };
+  // Bản gộp dùng lại nội dung các chương: ba thẻ này không chạy riêng nên luôn "xong".
+  const reuse = d.video.meta?.compilation;
+  if (reuse)
+    for (const id of ["tts", "images"] as const) cards[id] = { ...cards[id], state: "done", subtitle: reuseText(reuse), progress: undefined };
+  const quota = quotaCard(d.video);
+  if (quota) cards[quota] = { ...cards[quota], state: "quota", subtitle: "chờ quota" };
+  return { cards, issues: buildIssues(d) };
 }

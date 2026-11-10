@@ -10,8 +10,9 @@ import { BrandIcon } from "@/components/brand-icons";
 import { DEFAULT_MODEL, PROVIDERS, type ProviderId, type Route } from "@/lib/ai/routing";
 import { ActionForm } from "@/components/action-form";
 import { CopyButton } from "@/components/copy-button";
-import { formatSlot, formatTime, type FlowData, type NodeId } from "@/lib/flow/model";
+import { formatSlot, formatTime, type CardId, type FlowData, type NodeId } from "@/lib/flow/model";
 import type { Scene } from "@/lib/flow/progress";
+import { musicTitle, thousands } from "@/lib/flow/derive";
 import { scoreMeta, SEO_TARGET, totalScore, type SeoScore } from "@/lib/flow/seo";
 import { VOICES } from "@/lib/flow/voices";
 
@@ -22,6 +23,27 @@ const PENDING = "Chưa có dữ liệu — video này render trước khi có gh
 
 export function Empty({ text = PENDING }: { text?: string }) {
   return <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-xs text-muted">{text}</p>;
+}
+
+/** Bản gộp dùng lại chương/giọng/ảnh của các video chương — chỉ rõ dùng lại từ đâu thay vì để trống. */
+function ReuseNote({ data }: { data: FlowData }) {
+  const c = data.video.meta?.compilation;
+  if (!c) return null;
+  return (
+    <div className="mb-5 rounded-xl border border-sky-500/30 bg-sky-950/30 px-4 py-3 text-xs text-sky-100">
+      <p className="font-medium">
+        Dùng lại từ chương {c.from}–{c.to}
+      </p>
+      <p className="mt-1 text-sky-200/80">Bản gộp không viết/đọc/vẽ lại — lấy nội dung từ các video chương đã render:</p>
+      <p className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
+        {c.videoIds.map((id) => (
+          <a key={id} href={`/videos/${id}`} className="text-sky-300 underline">
+            Video #{id}
+          </a>
+        ))}
+      </p>
+    </div>
+  );
 }
 
 function Sec({ title, children, right }: { title: string; children: ReactNode; right?: ReactNode }) {
@@ -170,15 +192,105 @@ function StepLog({ data, id, extra }: { data: FlowData; id: NodeId; extra?: Reac
   );
 }
 
-function Trigger({ data, tab }: PanelProps) {
+function Trends({ data, tab }: PanelProps) {
+  const t = data.trends;
+  if (tab === "log") return <Empty text="Quét xu hướng chạy riêng (GitHub Actions) — xem ở trang Xu hướng." />;
+  if (tab === "in")
+    return (
+      <Sec title="Nguồn">
+        <p className="text-xs leading-relaxed text-zinc-300">
+          vidIQ lấy video trending và outlier của ngách (VN, 30 ngày); GPT tóm tắt thành chủ đề nóng, mẫu tiêu đề, móc câu. Kết quả còn hạn 7 ngày được đưa vào dàn ý chương và SEO.
+        </p>
+        <Link href="/trends" className="mt-3 inline-block text-xs text-sky-400 hover:underline">
+          Mở trang Xu hướng →
+        </Link>
+      </Sec>
+    );
+  if (!t) return <Empty text="Chưa quét xu hướng — vào trang Xu hướng bấm quét." />;
+  return (
+    <>
+      <Sec title="Lần quét">
+        <Row k="Thời điểm" v={formatTime(t.scannedAt)} />
+        <Row k="Trạng thái" v={t.fresh ? <span className="text-emerald-400">còn hạn</span> : <span className="text-amber-400">quá 7 ngày</span>} />
+      </Sec>
+      {t.summary && (
+        <Sec title="Tóm tắt">
+          <More text={t.summary} />
+        </Sec>
+      )}
+      <Sec title="Chủ đề nóng">
+        {t.hotTopics.length ? (
+          <ol className="space-y-2 text-xs">
+            {t.hotTopics.map((h, i) => (
+              <li key={h.topic}>
+                <b className="text-zinc-100">
+                  #{i + 1} {h.topic}
+                </b>
+                <span className="block text-muted">{h.why}</span>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <Empty text="Chưa có chủ đề nóng." />
+        )}
+      </Sec>
+      {t.titlePatterns.length > 0 && (
+        <Sec title="Mẫu tiêu đề đang ăn view">
+          <ul className="list-disc space-y-1 pl-4 text-xs text-zinc-300">
+            {t.titlePatterns.map((p) => (
+              <li key={p}>{p}</li>
+            ))}
+          </ul>
+        </Sec>
+      )}
+      {t.risingKeywords.length > 0 && (
+        <Sec title="Từ khóa đang lên">
+          <div className="flex flex-wrap gap-1.5">
+            {t.risingKeywords.map((k) => (
+              <span key={k.keyword} title={k.note} className="rounded-full border border-border bg-card px-2.5 py-0.5 text-[11px]">
+                {k.keyword}
+              </span>
+            ))}
+          </div>
+        </Sec>
+      )}
+    </>
+  );
+}
+
+function Chapter({ data, tab }: PanelProps) {
   const c = data.chapter;
-  if (tab === "in") return <Sec title="Dàn ý chương">{c.outline ? <More text={c.outline} limit={1200} /> : <Empty text="Chương không có dàn ý." />}</Sec>;
+  if (tab === "in")
+    return (
+      <>
+        <ReuseNote data={data} />
+        <Sec title="Dàn ý chương">{c.outline ? <More text={c.outline} limit={1200} /> : <Empty text="Chương không có dàn ý." />}</Sec>
+        <Sec title="Memory · Story bible">
+          <More text={data.series.bibleExcerpt || "—"} />
+        </Sec>
+        <Sec title="Tóm tắt chương trước">
+          <More text={data.prevSummary ?? "Chương đầu — chưa có tóm tắt."} />
+        </Sec>
+      </>
+    );
   if (tab === "log") return <Empty text="Bước này không có nhật ký riêng." />;
   return (
     <>
+      <ReuseNote data={data} />
+      <Sec
+        title="Chat model"
+        right={
+          <Link href="/settings/ai" className="text-[11px] text-muted hover:text-sky-400">
+            Cài đặt đầy đủ
+          </Link>
+        }
+      >
+        <AiPicker data={data} task="story" label="Viết chương" />
+        <p className="mt-2 text-[11px] text-muted">Theo cấu hình hiện tại; chương này có thể do AI kế tiếp viết nếu AI đầu hết lượt. Đổi áp dụng từ lần viết sau.</p>
+      </Sec>
       <Sec title={`Chương ${c.number}`}>
         <Row k="Tiêu đề" v={c.title} />
-        <Row k="Độ dài" v={`${c.words.toLocaleString("vi-VN")} chữ`} />
+        <Row k="Độ dài" v={`${thousands(c.words)} từ`} />
         <Row k="Duyệt lúc" v={formatTime(c.approvedAt)} />
       </Sec>
       <Sec
@@ -201,17 +313,24 @@ function Trigger({ data, tab }: PanelProps) {
   );
 }
 
-function Agent({ data, tab }: PanelProps) {
+function Seo({ data, tab }: PanelProps) {
   const m = data.video.meta;
   const prompts = data.video.progress?.prompts;
   if (tab === "in")
     return (
       <>
-        <Sec title="Memory · Story bible">
-          <More text={data.series.bibleExcerpt || "—"} />
-        </Sec>
-        <Sec title="Tóm tắt chương trước">
-          <More text={data.prevSummary ?? "Chương đầu — chưa có tóm tắt."} />
+        <Sec title="vidIQ · từ khóa người xem tìm thật">
+          {m?.seo?.keywords?.length ? (
+            <div className="flex flex-wrap gap-1.5">
+              {m.seo.keywords.map((k) => (
+                <span key={k} className="rounded-full border border-border bg-card px-2.5 py-0.5 text-[11px]">
+                  {k}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <Empty text="Chưa có từ khóa vidIQ cho video này." />
+          )}
         </Sec>
         <Sec title="Prompt tiêu đề / mô tả">{prompts?.meta ? <More text={prompts.meta} /> : <Empty />}</Sec>
         <Sec title="Prompt chia cảnh">{prompts?.scenes ? <More text={prompts.scenes} /> : <Empty />}</Sec>
@@ -240,9 +359,15 @@ function Agent({ data, tab }: PanelProps) {
         </div>
       </Sec>
       {!m || !score ? (
-        <Empty text="AI Agent chưa trả kết quả cho video này." />
+        <Empty text="Chưa có SEO & thumbnail cho video này." />
       ) : (
         <>
+          {data.video.files["thumbnail.jpg"] && (
+            <Sec title="Thumbnail">
+              {/* eslint-disable-next-line @next/next/no-img-element -- file từ GitHub Release qua redirect */}
+              <img src={data.video.files["thumbnail.jpg"]} alt="Thumbnail" className="aspect-video w-full rounded-xl border border-border object-cover" />
+            </Sec>
+          )}
           <SeoSummary score={score} videoId={data.video.id} />
           <ScoredSec title="Tiêu đề YouTube" seo={score.title}>
             <Code>{m.title}</Code>
@@ -287,7 +412,7 @@ const routeId = (r: Route) => `${r.provider}|${r.model}`;
 const routeLabel = (r: Route) => (r.model ? r.model : DEFAULT_MODEL[r.provider] ? DEFAULT_MODEL[r.provider] : "model mặc định");
 
 /** Chọn AI chạy một việc ngay trong bảng — lưu luôn, không chuyển trang. */
-function AiPicker({ data, task, label }: { data: FlowData; task: "meta" | "scenes"; label: string }) {
+function AiPicker({ data, task, label }: { data: FlowData; task: "story" | "meta" | "scenes"; label: string }) {
   const chain = data.ai.text?.[task] ?? [];
   const have = data.ai.available ?? [];
   const current = chain.find((r) => have.includes(r.provider)) ?? chain[0];
@@ -379,12 +504,13 @@ function SeoSummary({ score, videoId }: { score: ReturnType<typeof scoreMeta>; v
 
 function Tts({ data, tab }: PanelProps) {
   const voice = useSetting(data.series.id, "ttsVoice", data.series.ttsVoice);
-  if (tab === "in") return <Empty text="Đầu vào là nội dung chương và kịch bản Short (node AI Agent)." />;
+  if (tab === "in") return <Empty text="Đầu vào là nội dung chương (Viết chương) và kịch bản Short (SEO & Thumbnail)." />;
   if (tab === "log") return <StepLog data={data} id="tts" />;
   const d = data.video.durationSec;
   const { files } = data.video;
   return (
     <>
+      <ReuseNote data={data} />
       <Sec title="Nghe thử">
         {files["narration.m4a"] ? (
           <div className="space-y-2">
@@ -398,7 +524,7 @@ function Tts({ data, tab }: PanelProps) {
             )}
           </div>
         ) : (
-          <Empty text="Chưa có file nghe thử — nghe trong video ở node Dựng video." />
+          <Empty text="Chưa có file nghe thử — nghe trong video ở thẻ Dựng video." />
         )}
       </Sec>
       <Sec title="Giọng đọc" right={voice.note && <span className="text-[11px] text-emerald-400">{voice.note}</span>}>
@@ -511,8 +637,29 @@ function Images({ data, tab }: PanelProps) {
     );
   const thumb = data.video.files["thumbnail.jpg"];
   const ratio = which === "long" ? "aspect-video" : "aspect-[9/16]";
+  const pick = data.ai.image;
   return (
     <>
+      <ReuseNote data={data} />
+      {!data.video.meta?.compilation && (
+        <Sec
+          title="AI vẽ ảnh"
+          right={
+            <Link href="/settings/ai" className="text-[11px] text-muted hover:text-sky-400">
+              Cài đặt đầy đủ
+            </Link>
+          }
+        >
+          <Row k="Model" v={pick.model} />
+          <p className="mt-2 text-[11px] text-muted">
+            {pick.source === "tracked"
+              ? "Model pipeline ghi lúc vẽ ảnh cho video này."
+              : pick.source === "usage"
+                ? "Pipeline chưa ghi model — suy từ AI vẽ được dùng nhiều nhất trong ngày render (bảng lượt dùng AI)."
+                : "Chưa có dữ liệu thật — đây là AI đầu danh sách vẽ ảnh trong Cài đặt AI (Codex gói Plus được ưu tiên khi đã kết nối)."}
+          </p>
+        </Sec>
+      )}
       <Sec title="Ảnh từng cảnh" right={switcher}>
         {list.length ? (
           <div className={`grid gap-1.5 ${which === "long" ? "grid-cols-3" : "grid-cols-5"}`}>
@@ -589,7 +736,7 @@ function VideoOut({ data, tab }: PanelProps) {
   }, []);
   const short = useSetting(data.series.id, "makeShort", data.series.makeShort);
   const { files, error, runUrl } = data.video;
-  if (tab === "in") return <Empty text="Đầu vào là giọng đọc + ảnh cảnh ở các node trước." />;
+  if (tab === "in") return <Empty text="Đầu vào là giọng đọc + ảnh cảnh ở các thẻ trước." />;
   if (tab === "log")
     return (
       <StepLog
@@ -625,6 +772,9 @@ function VideoOut({ data, tab }: PanelProps) {
           <Empty text="Video này không có Short." />
         )}
       </Sec>
+      <Sec title="Nhạc nền">
+        <Row k="Bài" v={(data.video.meta && musicTitle(data.video.meta.description)) || "Chưa có nhạc nền"} />
+      </Sec>
       <Sec title="Cài đặt" right={short.note && <span className="text-[11px] text-emerald-400">{short.note}</span>}>
         <Toggle on={short.value} onChange={short.save} label="Làm Short (cả bộ truyện, từ lần render sau)" />
       </Sec>
@@ -651,7 +801,7 @@ const UPLOAD_TEXT = { none: "chưa đăng", uploading: "đang upload…", schedu
 
 function Youtube({ data, tab }: PanelProps) {
   const auto = useSetting(data.series.id, "autoPublish", data.series.autoPublish);
-  if (tab === "in") return <Empty text="Đầu vào: video dài, Short, thumbnail và tiêu đề/mô tả/tag từ AI Agent." />;
+  if (tab === "in") return <Empty text="Đầu vào: video dài, Short, thumbnail và tiêu đề/mô tả/tag từ thẻ SEO & Thumbnail." />;
   if (tab === "log") return <StepLog data={data} id="youtube" />;
   const v = data.video;
   const m = v.meta;
@@ -702,6 +852,17 @@ function Youtube({ data, tab }: PanelProps) {
       <Sec title="Đăng tự động" right={auto.note && <span className="text-[11px] text-emerald-400">{auto.note}</span>}>
         <Toggle on={auto.value} onChange={auto.save} label="Render xong tự upload + lên lịch" />
         <Row k="Trạng thái" v={<span className={v.uploadStatus === "failed" ? "text-red-400" : ""}>{UPLOAD_TEXT[v.uploadStatus]}</span>} />
+        <Row k="Nhãn AI" v="Có — khai báo nội dung do AI tạo khi đăng" />
+        {data.compiledInto && (
+          <Row
+            k="Bản gộp"
+            v={
+              <a href={data.compiledInto.youtubeVideoId ? `https://youtu.be/${data.compiledInto.youtubeVideoId}` : `/videos/${data.compiledInto.id}`} className="text-sky-400 underline">
+                Trong bản gộp chương {data.compiledInto.from}–{data.compiledInto.to}
+              </a>
+            }
+          />
+        )}
         <Row k="Video dài" v={v.publishAt ? formatSlot(v.publishAt) : "—"} />
         <Row k="Short" v={hasShort && v.publishAt ? formatSlot(new Date(Date.parse(v.publishAt) + 2 * 3600_000).toISOString()) : "không có Short"} />
         {v.youtubeVideoId && <Row k="Link video" v={link(v.youtubeVideoId)} />}
@@ -751,9 +912,10 @@ function Youtube({ data, tab }: PanelProps) {
   );
 }
 
-export const PANELS: Record<NodeId, (p: PanelProps) => ReactNode> = {
-  trigger: Trigger,
-  agent: Agent,
+export const PANELS: Record<CardId, (p: PanelProps) => ReactNode> = {
+  trends: Trends,
+  chapter: Chapter,
+  seo: Seo,
   tts: Tts,
   images: Images,
   video: VideoOut,
