@@ -1,0 +1,58 @@
+// Làm lại SEO (tiêu đề / mô tả / tag) cho video ĐÃ lên YouTube theo cách mới: từ khóa thật vidIQ (VN) + vidIQ chấm tiêu đề,
+// rồi cập nhật thẳng lên YouTube. Không render lại video. Chạy: render.yml với video_id = "seo:<id>".
+import { eq } from "drizzle-orm";
+import { db } from "@/db";
+import { chapters, series, videos, type VideoMeta } from "@/db/schema";
+import { textProvider } from "@/lib/ai";
+import { scoreMeta, totalScore } from "@/lib/flow/seo";
+import { AI_NOTE, optimizeMeta } from "@/lib/seo-optimize";
+import { loadSecrets } from "@/lib/secrets";
+import { updateYoutubeSnippet } from "@/lib/youtube";
+import { videoMeta } from "./prompts";
+import { closeVidiq, generateTitles, genreSeeds, keywordResearch, scoreTitles } from "./vidiq";
+
+export async function redoSeo(videoId: number) {
+  await loadSecrets(true);
+  const [v] = await db().select().from(videos).where(eq(videos.id, videoId));
+  if (!v?.meta) throw new Error(`Video #${videoId} chưa có meta.`);
+  const [c] = await db().select().from(chapters).where(eq(chapters.id, v.chapterId));
+  const [s] = await db().select().from(series).where(eq(series.id, c.seriesId));
+  const before = totalScore(scoreMeta(v.meta, s.title));
+  console.log(`▶ SEO video #${videoId} — chương ${c.number}. Tiêu đề cũ: ${v.meta.title}`);
+
+  const seo = await keywordResearch(genreSeeds(s.genre));
+  const keywords = seo?.keywords.map((k) => k.keyword) ?? [];
+  console.log(`  Từ khóa: ${seo?.keywords.slice(0, 6).map((k) => `${k.keyword} (${k.overall})`).join(", ") ?? "không có"}`);
+  const m = await videoMeta(s, c, seo?.text);
+  console.log(`  Meta mới bởi ${textProvider().lastModel}`);
+
+  const options = [m.title, ...(m.titleAlternatives ?? [])].filter(Boolean);
+  const scores = await scoreTitles(options);
+  const ideas = await generateTitles(m.title, m.description);
+  const all = [...options.map((t, i) => ({ title: t, score: scores?.[i] ?? null })), ...ideas.filter((x) => !options.includes(x.title))];
+  for (const x of all) console.log(`  ${x.score ?? "?"} — ${x.title}`);
+  const best = all.reduce((b, x) => ((x.score ?? -1) > (b.score ?? -1) ? x : b));
+
+  // Giữ phần ghi công nhạc (nếu có) ở cuối mô tả cũ.
+  const credit = v.meta.description.match(/\n\nNhạc nền:[\s\S]*$/)?.[0] ?? "";
+  const draft: VideoMeta = {
+    ...v.meta,
+    title: best.title.length > 100 ? `${best.title.slice(0, 97)}…` : best.title,
+    description: `${m.description}\n\n${AI_NOTE}`,
+    tags: m.tags,
+    shortTitle: m.shortTitle,
+    shortDescription: m.shortDescription,
+    seo: { titleScore: best.score, titleOptions: all, keywords },
+  };
+  const fixed = await optimizeMeta(draft, { seriesTitle: s.title, chapterNumber: c.number, chapterTitle: c.title, summary: c.summary }, { log: console.log });
+  const meta: VideoMeta = { ...fixed.meta, description: `${fixed.meta.description}${credit}` };
+  console.log(`  Điểm SEO app: ${before} → ${fixed.score}; vidIQ tiêu đề: ${best.score ?? "?"}`);
+
+  if (v.youtubeVideoId) {
+    await updateYoutubeSnippet(v.youtubeVideoId, { title: meta.title, description: meta.description, tags: meta.tags });
+    console.log(`  ✔ Đã cập nhật YouTube ${v.youtubeVideoId}`);
+  }
+  await db().update(videos).set({ meta, updatedAt: new Date() }).where(eq(videos.id, videoId));
+  console.log(`✔ Tiêu đề mới: ${meta.title}\nTag: ${meta.tags.join(", ")}`);
+  await closeVidiq();
+}

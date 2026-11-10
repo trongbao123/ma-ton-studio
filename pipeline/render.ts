@@ -599,9 +599,10 @@ export async function renderVideo(videoId: number) {
   }
 }
 
-// CLI: tsx pipeline/render.ts <videoId>
+// CLI: tsx pipeline/render.ts <videoId>  |  "seo:<videoId>" = chỉ làm lại SEO + cập nhật YouTube (không render).
 if (process.argv[1]?.endsWith("render.ts")) {
-  renderVideo(Number(process.argv[2])).then(
+  const arg = process.argv[2] ?? "";
+  (arg.startsWith("seo:") ? import("./seo-redo").then((x) => x.redoSeo(Number(arg.slice(4)))) : renderVideo(Number(arg))).then(
     () => process.exit(0),
     (e) => {
       console.error(e);
