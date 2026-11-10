@@ -29,7 +29,7 @@ export default function UsagePage() {
 
 const vnTime = (d: Date) => d.toLocaleTimeString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit" });
 const dayLabel = (day: string) => `${day.slice(8, 10)}/${day.slice(5, 7)}`;
-const unit = (s: Source) => (["cloudflare", "deepinfra", "image-paid"].includes(s.id) ? "ảnh" : s.id === "voice" ? "đoạn" : "lượt");
+const unit = (s: Source) => (["cloudflare", "deepinfra", "image-paid", "chatgpt-image"].includes(s.id) ? "ảnh" : s.id === "voice" ? "đoạn" : "lượt");
 const usd = (n: number) => `$${n < 0.1 ? n.toFixed(3) : n.toFixed(2)}`;
 
 function SourceMark({ s }: { s: Source }) {

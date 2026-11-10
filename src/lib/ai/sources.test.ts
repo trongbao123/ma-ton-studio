@@ -6,6 +6,7 @@ describe("classifyModel", () => {
     ["claude-haiku-5-5 (gói)", "claude-plan"],
     ["gpt-6-luna (gói)", "chatgpt-plan"],
     ["codex (gói)", "chatgpt-plan"],
+    ["gpt-image (gói)", "chatgpt-image"],
     ["gemini-3.8-flash", "gemini-free"],
     ["gemma-4-31b-it", "gemini-free"],
     ["gemini-3.8-flash-tts", "voice"],

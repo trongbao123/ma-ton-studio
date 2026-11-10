@@ -5,7 +5,7 @@ import { connection } from "next/server";
 import { BrandIcon } from "@/components/brand-icons";
 import { Lamp } from "@/components/usage-lamp";
 import { isAuthorized } from "@/lib/auth";
-import { LAMP_TEXT, lampOf, type Lamp as LampState, type SourceDay } from "@/lib/ai/sources";
+import { DAILY_LIMIT, LAMP_TEXT, lampOf, type Lamp as LampState, type SourceDay } from "@/lib/ai/sources";
 import { SESSION_COOKIE, verifySession } from "@/lib/session";
 import { topStatus } from "@/lib/usage-data";
 
@@ -36,20 +36,25 @@ export async function TopStatus() {
           models: [],
         }
       : undefined;
-  const lamps: { key: string; label: string; brand: "claude" | "openai" | "gemini" | "cloudflare"; lamp: LampState; calls: number }[] = [
-    { key: "claude", label: "Claude", brand: "claude", lamp: lampOf(s.today["claude-plan"], Boolean(s.cli["claude-cli"]?.ok)), calls: s.today["claude-plan"]?.calls ?? 0 },
-    { key: "chatgpt", label: "ChatGPT", brand: "openai", lamp: lampOf(s.today["chatgpt-plan"], Boolean(s.cli["codex-cli"]?.ok)), calls: s.today["chatgpt-plan"]?.calls ?? 0 },
+  const lamps: { key: string; label: string; brand: "claude" | "openai" | "gemini" | "cloudflare"; lamp: LampState; calls: number; limit?: number; note?: string }[] = [
+    { key: "claude", label: "Claude", brand: "claude", lamp: lampOf(s.today["claude-plan"], Boolean(s.cli["claude-cli"]?.ok)), calls: s.today["claude-plan"]?.calls ?? 0, note: "gói không công bố số lượt" },
+    { key: "chatgpt", label: "ChatGPT", brand: "openai", lamp: lampOf(s.today["chatgpt-plan"], Boolean(s.cli["codex-cli"]?.ok)), calls: s.today["chatgpt-plan"]?.calls ?? 0, note: "gói không công bố số lượt" },
+    {
+      key: "gemini", label: "Gemini", brand: "gemini", lamp: lampOf(s.today["gemini-free"], true),
+      calls: s.today["gemini-free"]?.calls ?? 0, limit: DAILY_LIMIT["gemini-free"], note: "họ flash ~20/ngày; model lite/gemma có lượt riêng",
+    },
+    {
+      key: "voice", label: "Giọng", brand: "gemini", lamp: lampOf(s.today.voice, true),
+      calls: s.today.voice?.calls ?? 0, limit: DAILY_LIMIT.voice, note: "model giọng chính 10/ngày; hết thì sang model dự phòng",
+    },
     (() => {
-      const d = merge(s.today["gemini-free"], s.today.voice);
-      return { key: "gemini", label: "Gemini", brand: "gemini" as const, lamp: lampOf(d, true), calls: d?.calls ?? 0 };
-    })(),
-    (() => {
-      // Ảnh: chỉ đỏ khi mọi nguồn vẽ đều chạm giới hạn (Cloudflare hết mà DeepInfra còn thì vẫn vẽ được).
+      // Ảnh: GPT (gói Plus) vẽ chính, Cloudflare/DeepInfra dự phòng — chỉ đỏ khi mọi nguồn đều chạm giới hạn.
+      const gpt = s.today["chatgpt-image"];
       const cf = s.today.cloudflare;
       const di = s.today.deepinfra;
-      const d = merge(cf, di);
-      const lamp: LampState = cf?.limited && !di?.calls ? "limited" : cf?.limited ? "partial" : d?.calls ? "active" : "idle";
-      return { key: "images", label: "Ảnh", brand: "cloudflare" as const, lamp, calls: d?.calls ?? 0 };
+      const d = merge(gpt, cf, di);
+      const lamp: LampState = d?.limited ? "limited" : d?.partial ? "partial" : d?.calls ? "active" : "idle";
+      return { key: "images", label: "Ảnh", brand: "openai" as const, lamp, calls: d?.calls ?? 0, note: `GPT ${gpt?.calls ?? 0} · Cloudflare ${cf?.calls ?? 0}${cf?.limited ? " (hết)" : ""}` };
     })(),
   ];
 
@@ -74,9 +79,18 @@ export async function TopStatus() {
       </div>
       <Link href="/usage" aria-label="Xem hạn mức AI" className="flex shrink-0 items-center gap-1 rounded-full border border-border bg-card/70 px-1.5 py-1 hover:border-zinc-600">
         {lamps.map((l) => (
-          <span key={l.key} title={`${l.label}: ${LAMP_TEXT[l.lamp]} · ${l.calls} lượt hôm nay`} className="flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs">
+          <span
+            key={l.key}
+            title={`${l.label}: ${LAMP_TEXT[l.lamp]} · ${l.calls}${l.limit ? `/${l.limit}` : ""} lượt hôm nay${l.note ? ` · ${l.note}` : ""}`}
+            className="flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs"
+          >
             <BrandIcon id={l.brand} size={13} />
             <span className="hidden xl:inline">{l.label}</span>
+            {/* Đã dùng / hạn mức hôm nay (chỉ hiện "/N" khi hạn mức đo được). */}
+            <span className="tabular-nums text-muted">
+              {l.calls}
+              {l.limit ? `/${l.limit}` : ""}
+            </span>
             <Lamp lamp={l.lamp} />
           </span>
         ))}

@@ -2,7 +2,7 @@
  * Gom lượt dùng (bảng ai_usage, theo tên model) về các "nguồn" người dùng hiểu: gói Claude, gói ChatGPT,
  * Gemini miễn phí, giọng đọc, ảnh Cloudflare, ảnh DeepInfra… kèm việc nó làm, cách reset và chi phí. Thuần — dùng cả server lẫn client.
  */
-export type SourceId = "claude-plan" | "chatgpt-plan" | "gemini-free" | "voice" | "cloudflare" | "deepinfra" | "claude-api" | "openai-api" | "image-paid";
+export type SourceId = "claude-plan" | "chatgpt-plan" | "chatgpt-image" | "gemini-free" | "voice" | "cloudflare" | "deepinfra" | "claude-api" | "openai-api" | "image-paid";
 export type Source = {
   id: SourceId;
   name: string;
@@ -19,6 +19,7 @@ export type Source = {
 export const SOURCES: Source[] = [
   { id: "claude-plan", name: "Claude · gói Pro", brand: "claude", job: "Viết truyện (chính)", billing: "plan", reset: "Theo khung 5 giờ, có giới hạn tuần" },
   { id: "chatgpt-plan", name: "ChatGPT · gói Plus", brand: "openai", job: "Tiêu đề, mô tả, Magic fill", billing: "plan", reset: "Theo khung 5 giờ, có giới hạn tuần" },
+  { id: "chatgpt-image", name: "Vẽ ảnh · gói ChatGPT Plus", brand: "openai", job: "Vẽ ảnh cảnh + thumbnail (chính)", billing: "plan", reset: "Theo khung giờ của gói, OpenAI không công bố số lượt" },
   { id: "gemini-free", name: "Gemini API miễn phí", brand: "gemini", job: "Tóm tắt, prompt ảnh, việc bấm từ web", billing: "free", reset: "Mỗi ngày lúc 15:00 (nửa đêm giờ Mỹ)" },
   { id: "voice", name: "Giọng đọc Gemini", brand: "gemini", job: "Đọc chương và Short", billing: "free", reset: "Mỗi ngày lúc 15:00 (nửa đêm giờ Mỹ)" },
   { id: "cloudflare", name: "Cloudflare FLUX", brand: "cloudflare", job: "Vẽ ảnh cảnh (chính)", billing: "free", reset: "Mỗi ngày lúc 7:00" },
@@ -28,6 +29,12 @@ export const SOURCES: Source[] = [
   { id: "image-paid", name: "Ảnh trả phí khác", brand: null, job: "Vẽ ảnh (Nano Banana / GPT Image)", billing: "paid", reset: "Trả theo ảnh" },
 ];
 
+/**
+ * Hạn mức free mỗi ngày đã ĐO được (null = nhà cung cấp không công bố / đổi theo tải, chỉ biết khi chạm giới hạn).
+ * Gemini chữ: họ flash ~20 lượt/ngày (đo 2026-11-05); giọng đọc: model TTS chính 10 lượt/ngày.
+ */
+export const DAILY_LIMIT: Partial<Record<SourceId, number>> = { "gemini-free": 20, voice: 10 };
+
 export const sourceOf = (id: SourceId) => SOURCES.find((s) => s.id === id)!;
 
 /** Tên model trong ai_usage → nguồn. Model nội bộ (bắt đầu bằng "_") trả null. */
@@ -35,6 +42,7 @@ export function classifyModel(model: string): SourceId | null {
   const m = model.toLowerCase();
   if (m.startsWith("_")) return null;
   const plan = m.endsWith("(gói)");
+  if (plan && m.includes("image")) return "chatgpt-image";
   if (plan) return /claude|haiku|sonnet|opus/.test(m) ? "claude-plan" : "chatgpt-plan";
   if (m.startsWith("@cf/")) return "cloudflare";
   if (m.includes("black-forest-labs/")) return "deepinfra";
