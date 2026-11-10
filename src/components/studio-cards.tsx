@@ -98,7 +98,7 @@ export function VideoTile({ v }: { v: VideoCard }) {
           // eslint-disable-next-line @next/next/no-img-element -- ảnh từ GitHub Release qua redirect
           <img src={`/api/videos/${v.id}/thumbnail.jpg`} alt="" loading="lazy" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" />
         ) : (
-          <span className="absolute inset-0 grid place-items-center font-serif text-4xl font-extrabold text-white/15">Chương {v.chapterNo}</span>
+          <span className="absolute inset-0 grid place-items-center font-serif text-4xl font-extrabold text-white/15">{v.compilation ? `Chương ${v.compilation.from}–${v.compilation.to}` : `Chương ${v.chapterNo}`}</span>
         )}
         {v.durationSec ? <span className="absolute bottom-2 right-2 rounded-md bg-black/80 px-1.5 py-0.5 text-[11px] font-semibold">{clock(v.durationSec)}</span> : null}
         {v.pct != null && (
@@ -110,7 +110,7 @@ export function VideoTile({ v }: { v: VideoCard }) {
       <div className="mt-3 space-y-1">
         <p className="truncate text-xs text-muted">{v.seriesTitle}</p>
         <p className="line-clamp-2 text-[15px] font-semibold leading-snug group-hover:text-white">
-          Chương {v.chapterNo}: {v.chapterTitle}
+          {v.compilation ? `Bản gộp chương ${v.compilation.from}–${v.compilation.to}` : `Chương ${v.chapterNo}: ${v.chapterTitle}`}
         </p>
         <div className="text-xs">
           <VideoState v={v} />

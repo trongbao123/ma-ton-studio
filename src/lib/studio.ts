@@ -52,6 +52,8 @@ export type VideoCard = {
   chapterNo: number;
   chapterTitle: string;
   seriesTitle: string;
+  /** Có = bản gộp chương from–to (chapterNo = chương cuối). */
+  compilation: { from: number; to: number } | null;
   /** Bước đang chạy, vd "Vẽ ảnh cảnh 18/30" — chỉ có với pipeline ghi tiến độ. */
   live: string | null;
   /** 0–1, tiến độ cả video khi đang render. */
@@ -94,6 +96,7 @@ export async function videoCards(opts: { limit?: number; statuses?: Video["statu
     durationSec: v.durationSec,
     publishAt: v.publishAt?.toISOString() ?? null,
     hasThumb: Boolean(v.assets["thumbnail.jpg"]),
+    compilation: v.meta?.compilation ? { from: v.meta.compilation.from, to: v.meta.compilation.to } : null,
     ...r,
     ...(v.status === "rendering" ? liveSummary(v.progress) : { live: null, pct: null }),
   }));

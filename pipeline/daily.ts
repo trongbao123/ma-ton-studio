@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, lt, ne } from "drizzle-orm";
+import { and, asc, eq, gte, lt, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { chapters, series, videos } from "@/db/schema";
 import { QuotaExhaustedError } from "@/lib/ai";
@@ -7,6 +7,7 @@ import { planChapters, writeChapterStep } from "@/lib/story/service";
 import { quotaDay } from "@/lib/ai/usage";
 import { aiUsage } from "@/db/schema";
 import { loadSecrets } from "@/lib/secrets";
+import { compileState } from "./compile";
 import { renderVideo } from "./render";
 
 /** Số chương chờ duyệt tối đa khi không tự duyệt — tránh viết dồn khi người dùng chưa kịp đọc. */
@@ -52,7 +53,7 @@ async function requeueStuck() {
   const stuck = await db()
     .update(videos)
     .set({ status: "queued", updatedAt: new Date() })
-    .where(and(eq(videos.status, "rendering"), lt(videos.updatedAt, new Date(Date.now() - 30 * 60_000))))
+    .where(and(eq(videos.status, "rendering"), lt(videos.updatedAt, new Date(Date.now() - 30 * 60_000)), sql`${videos.meta}->'compilation' is null`))
     .returning({ id: videos.id });
   for (const v of stuck) console.log(`↻ Video #${v.id} kẹt "đang render" — xếp hàng render lại`);
 }
@@ -69,6 +70,41 @@ async function renderQueue(failures: string[]) {
         return;
       }
       failures.push(`video #${v.id}: ${e instanceof Error ? e.message : e}`);
+    }
+  }
+}
+
+/** Bản gộp (render.yml với video_id = "compile:<seriesId>"). Cần quyền `actions: write` cho GH_TOKEN. */
+async function dispatchCompile(seriesId: number) {
+  const token = process.env.GH_TOKEN;
+  const repo = process.env.GITHUB_REPOSITORY ?? process.env.GH_REPO;
+  if (!token || !repo) throw new Error("Thiếu GH_TOKEN / GITHUB_REPOSITORY");
+  const res = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/render.yml/dispatches`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" },
+    body: JSON.stringify({ ref: "main", inputs: { video_id: `compile:${seriesId}` } }),
+  });
+  if (!res.ok) throw new Error(`${res.status} ${(await res.text()).slice(0, 200)}`);
+}
+
+/** Đủ chương đã render chưa nằm trong bản gộp nào thì kích hoạt gộp. Lỗi dispatch chỉ báo (1 lần/ngày), không làm hỏng job. */
+async function dispatchCompilations() {
+  for (const s of await db().select().from(series).where(eq(series.autopilot, true))) {
+    const { active, recentFailed, batch } = await compileState(s.id);
+    if (!batch) continue;
+    if (active || recentFailed) {
+      console.log(`  ${s.title}: đủ chương để gộp nhưng ${active ? "đang có bản gộp chạy" : "bản gộp trước vừa lỗi (chờ 24h)"} — bỏ qua`);
+      continue;
+    }
+    const range = `${batch[0].number}–${batch[batch.length - 1].number}`;
+    try {
+      await dispatchCompile(s.id);
+      console.log(`🎞 ${s.title}: kích hoạt bản gộp chương ${range}`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(`Không kích hoạt được bản gộp ${s.title}: ${msg}`);
+      const [mark] = await db().insert(aiUsage).values({ day: quotaDay(), model: `_notified_compile_${s.id}`, calls: 1 }).onConflictDoNothing().returning();
+      if (mark) await notify(`⚠️ Đủ chương để gộp <b>${escapeHtml(s.title)}</b> (${range}) nhưng không tự kích hoạt được: ${escapeHtml(msg)}\nChạy tay: render.yml với video_id = compile:${s.id}`);
     }
   }
 }
@@ -124,6 +160,7 @@ async function main() {
   }
 
   await renderQueue(failures);
+  await dispatchCompilations().catch((e) => failures.push(`bản gộp: ${e instanceof Error ? e.message : e}`));
   if (failures.length) {
     await notify(`❌ <b>Job tự động có lỗi</b>\n${escapeHtml(failures.join("\n").slice(0, 800))}`);
     console.error("Lỗi:\n" + failures.join("\n"));

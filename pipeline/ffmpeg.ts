@@ -20,6 +20,15 @@ export async function duration(file: string): Promise<number> {
   return Number(stdout.trim());
 }
 
+/** Chữ ký codec/kích thước/fps của các luồng — 2 file cùng chữ ký thì ghép concat `-c copy` an toàn. */
+export async function streamSignature(file: string): Promise<string> {
+  const { stdout } = await run(FFPROBE, [
+    "-v", "error", "-show_entries", "stream=codec_type,codec_name,width,height,pix_fmt,r_frame_rate,sample_rate,channels", "-of", "json", file,
+  ]);
+  const streams = (JSON.parse(stdout).streams ?? []) as Record<string, unknown>[];
+  return JSON.stringify(streams.map((s) => [s.codec_type, s.codec_name, s.width, s.height, s.pix_fmt, s.r_frame_rate, s.sample_rate, s.channels]));
+}
+
 /** Escape đường dẫn cho filter ffmpeg (dấu `:` và `\`). */
 export function filterPath(p: string) {
   return p.replace(/\\/g, "/").replace(/:/g, "\\:").replace(/'/g, "\\'");

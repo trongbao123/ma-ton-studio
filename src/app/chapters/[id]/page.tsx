@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
@@ -32,7 +32,7 @@ async function ChapterDetail({ params }: { params: Promise<{ id: string }> }) {
     db().select({ id: series.id, title: series.title }).from(series).where(eq(series.id, c.seriesId)),
     neighbour(c.seriesId, c.number - 1),
     neighbour(c.seriesId, c.number + 1),
-    db().select({ id: videos.id }).from(videos).where(eq(videos.chapterId, c.id)).orderBy(desc(videos.id)).limit(1),
+    db().select({ id: videos.id }).from(videos).where(and(eq(videos.chapterId, c.id), sql`${videos.meta}->'compilation' is null`)).orderBy(desc(videos.id)).limit(1),
   ]);
   const words = c.content.trim() ? c.content.trim().split(/\s+/).length : 0;
   const approved = c.status === "approved";

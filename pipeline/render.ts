@@ -308,7 +308,8 @@ async function ambientBed(dir: string) {
   return out;
 }
 
-async function thumbnail(dir: string, prompt: string, text: string, chapterNo: number) {
+/** `badge`: nhãn đỏ góc trên, vd "CHƯƠNG 12" hoặc "TRỌN BỘ CHƯƠNG 1–5" (bản gộp). */
+export async function thumbnail(dir: string, prompt: string, text: string, badge: string) {
   const img = path.join(dir, "thumb-src.jpg");
   await drawImage(`${prompt}, YouTube thumbnail, 16:9`, img, { width: 1280, height: 720, seed: 42 });
   const out = path.join(dir, "thumbnail.jpg");
@@ -319,7 +320,7 @@ async function thumbnail(dir: string, prompt: string, text: string, chapterNo: n
       lines
         .map((l, i) => `drawtext=fontfile=${filterPath(FONT)}:text='${escText(l)}':fontsize=${lines.length > 1 ? 118 : 136}:fontcolor=${i ? "white" : "#FFD23F"}:borderw=10:bordercolor=black:x=50:y=(h/2)-${lines.length > 1 ? 130 : 70}+${i * 140}`)
         .join(",") +
-      `,drawtext=fontfile=${filterPath(FONT)}:text='CHƯƠNG ${chapterNo}':fontsize=54:fontcolor=white:box=1:boxcolor=#B91C1C:boxborderw=18:x=50:y=50`
+      `,drawtext=fontfile=${filterPath(FONT)}:text='${escText(badge)}':fontsize=54:fontcolor=white:box=1:boxcolor=#B91C1C:boxborderw=18:x=50:y=50`
     : "";
   await ffmpeg(["-i", img, "-vf", `${LOGO_CROP}scale=1280:720:force_original_aspect_ratio=increase:flags=lanczos,crop=1280:720:(iw-ow)/2:(ih-oh)*0.3,eq=contrast=1.12:saturation=1.25,unsharp=5:5:0.8${draw}`, "-q:v", "2", out]);
   return out;
@@ -547,11 +548,11 @@ export async function renderVideo(videoId: number) {
 
     console.log("● Thumbnail");
     track.log("images", "Vẽ thumbnail");
-    const thumb = await thumbnail(dir, `${m.thumbnailPrompt}, ${m.characterLook}`, m.thumbnailText, c.number).catch(async (e) => {
+    const thumb = await thumbnail(dir, `${m.thumbnailPrompt}, ${m.characterLook}`, m.thumbnailText, `CHƯƠNG ${c.number}`).catch(async (e) => {
       console.warn("⚠ Thumbnail AI lỗi, dùng ảnh đầu video:", e instanceof Error ? e.message : e);
       track.warn("images", "Thumbnail AI lỗi — dùng ảnh đầu video");
       await writeFile(path.join(dir, "thumb-src.jpg"), await readFile(path.join(dir, "long-img-0.jpg")));
-      return thumbnail(dir, "", m.thumbnailText, c.number);
+      return thumbnail(dir, "", m.thumbnailText, `CHƯƠNG ${c.number}`);
     });
     track.finish("images");
     const metaFile = path.join(dir, "youtube.txt");
@@ -599,10 +600,16 @@ export async function renderVideo(videoId: number) {
   }
 }
 
-// CLI: tsx pipeline/render.ts <videoId>  |  "seo:<videoId>" = chỉ làm lại SEO + cập nhật YouTube (không render).
+// CLI: tsx pipeline/render.ts <videoId>  |  "seo:<videoId>" = chỉ làm lại SEO + cập nhật YouTube (không render)
+// |  "compile:<seriesId>" = gộp các chương đã render thành video dài 1–2 giờ.
 if (process.argv[1]?.endsWith("render.ts")) {
   const arg = process.argv[2] ?? "";
-  (arg.startsWith("seo:") ? import("./seo-redo").then((x) => x.redoSeo(Number(arg.slice(4)))) : renderVideo(Number(arg))).then(
+  const runJob = () => {
+    if (arg.startsWith("seo:")) return import("./seo-redo").then((x) => x.redoSeo(Number(arg.slice(4))));
+    if (arg.startsWith("compile:")) return import("./compile").then((x) => x.compileSeries(Number(arg.slice(8))));
+    return renderVideo(Number(arg));
+  };
+  runJob().then(
     () => process.exit(0),
     (e) => {
       console.error(e);

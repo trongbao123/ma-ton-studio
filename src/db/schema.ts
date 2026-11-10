@@ -59,6 +59,8 @@ export type VideoMeta = {
   /** vidIQ chấm tiêu đề lúc render (nếu có key): điểm tiêu đề đã chọn + các phương án. */
   /** keywords: từ khóa người xem tìm thật (vidIQ, VN), xếp theo điểm — dùng làm từ khóa chính khi chấm/sửa SEO. */
   seo?: { titleScore?: number | null; titleOptions?: { title: string; score: number | null }[]; keywords?: string[] };
+  /** Có = đây là bản gộp nhiều chương (chapterId của row = chương cuối). videoIds: các video chương đã gộp. */
+  compilation?: { seriesId: number; from: number; to: number; videoIds: number[] };
 };
 
 /** Một lần render cho một chương: video dài + 1 Short + thumbnail, lưu ở GitHub Release `video-<id>`. */
