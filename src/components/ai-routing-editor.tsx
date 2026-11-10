@@ -2,6 +2,7 @@
 
 import {
   ArrowDown,
+  Image as ImageIcon,
   ArrowUp,
   KeyRound,
   Lock,
@@ -102,7 +103,7 @@ function RouteList({
               className={`flex flex-wrap items-center gap-2.5 rounded-xl border border-border bg-[#12131a] p-2.5 md:flex-nowrap ${missing?.(r.provider) ? "opacity-60" : ""}`}
             >
               <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/[.04]">
-                <BrandIcon id={BRAND[r.provider]} size={18} />
+                {BRAND[r.provider] ? <BrandIcon id={BRAND[r.provider]} size={18} /> : <ImageIcon size={17} className="text-sky-300" />}
               </span>
               <select
                 value={r.provider}

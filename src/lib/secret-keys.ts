@@ -11,6 +11,7 @@ export const SECRET_KEYS: SecretKey[] = [
   { env: "OPENAI_API_KEY", label: "ChatGPT API (trả theo lượng dùng)", group: "ai", brand: "openai", help: "platform.openai.com → API keys" },
   { env: "GEMINI_API_KEY", label: "Gemini API (free có giới hạn)", group: "ai", brand: "gemini", help: "aistudio.google.com → Get API key" },
   { env: "VIDIQ_API_KEY", label: "vidIQ", group: "service", help: "app.vidiq.com → Account Settings → MCP" },
+  { env: "DEEPINFRA_API_KEY", label: "DeepInfra (vẽ ảnh dự phòng)", group: "service", help: "deepinfra.com → Dashboard → API Keys · ~0,002 USD/ảnh FLUX" },
   { env: "CLOUDFLARE_API_TOKEN", label: "Cloudflare token", group: "service", brand: "cloudflare", help: "dash.cloudflare.com → API Tokens (quyền Workers AI)" },
   { env: "CLOUDFLARE_ACCOUNT_ID", label: "Cloudflare account ID", group: "service", brand: "cloudflare", help: "dash.cloudflare.com → trang tổng quan, cột phải" },
   { env: "YOUTUBE_CLIENT_ID", label: "YouTube OAuth client ID", group: "service", brand: "youtube", help: "Google Cloud → Credentials (xem README)" },

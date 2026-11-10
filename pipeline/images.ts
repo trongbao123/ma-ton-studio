@@ -64,6 +64,8 @@ export async function imageRouting(): Promise<ImageRoute[]> {
     raw = row?.value ?? null;
   }
   const list = normalizeImageRouting(raw).filter((r) => hasKey(r.provider));
+  // Có key DeepInfra mà chưa xếp vào danh sách → tự thêm cuối làm dự phòng (Cloudflare free hết quota thì vẽ tiếp, khỏi chờ 7h sáng).
+  if (hasKey("deepinfra") && !list.some((r) => r.provider === "deepinfra")) list.push({ provider: "deepinfra", model: "" });
   routes = list.length ? list : [{ provider: "cloudflare", model: "" }];
   return routes;
 }
@@ -92,6 +94,7 @@ export async function drawImage(prompt: string, outFile: string, opts: DrawOpts)
     try {
       if (r.provider === "gemini") return await geminiImage(prompt, outFile, r.model || DEFAULT_IMAGE_MODEL.gemini, opts);
       if (r.provider === "openai") return await openaiImage(prompt, outFile, r.model || DEFAULT_IMAGE_MODEL.openai, opts);
+      if (r.provider === "deepinfra") return await deepinfraFlux(prompt, outFile, r.model || DEFAULT_IMAGE_MODEL.deepinfra, opts);
       return await (hasCloudflare() ? cloudflareFlux(prompt, outFile, r.model || CF_MODEL) : pollinations(prompt, outFile, opts));
     } catch (e) {
       last = e;
@@ -160,6 +163,48 @@ async function openaiImage(prompt: string, outFile: string, model: string, opts:
     }
     throw e;
   }
+}
+
+/** Kích thước cho FLUX: bội số 64, tối đa ~1,3 MP (giá DeepInfra tính theo diện tích × số bước). */
+export function fluxSize(o: DrawOpts) {
+  const scale = Math.min(1, Math.sqrt((1280 * 1024) / (o.width * o.height)));
+  const r64 = (n: number) => Math.max(256, Math.round((n * scale) / 64) * 64);
+  return `${r64(o.width)}x${r64(o.height)}`;
+}
+
+/**
+ * FLUX trên DeepInfra (API kiểu OpenAI, trả JPEG base64). Trả theo lượng dùng: $0.0005 × MP × số bước → ~0,002 USD/ảnh.
+ * Hết tiền / thẻ lỗi (402) → QuotaExhaustedError để video chờ thay vì lỗi hẳn.
+ */
+async function deepinfraFlux(prompt: string, outFile: string, model: string, opts: DrawOpts) {
+  let last = "";
+  let size = fluxSize(opts);
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const res = await fetch("https://api.deepinfra.com/v1/openai/images/generations", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${process.env.DEEPINFRA_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model, prompt: prompt.slice(0, 2000), size, n: 1 }),
+      signal: AbortSignal.timeout(120_000),
+    }).catch((e: unknown) => (e instanceof Error ? e : new Error(String(e))));
+    if (res instanceof Error) {
+      last = res.message;
+    } else {
+      const body = await res.json().catch(() => ({}));
+      const data: string | undefined = body?.data?.[0]?.b64_json;
+      if (res.ok && data) return saveImage(outFile, Buffer.from(data, "base64"));
+      last = `${res.status} ${JSON.stringify(body?.error ?? body?.detail ?? body).slice(0, 200)}`;
+      if (res.status === 402 || /insufficient|balance|payment|billing/i.test(last)) throw new QuotaExhaustedError(`DeepInfra hết tiền / chưa thêm thẻ: ${last}`);
+      // Kích thước lạ bị từ chối → thử khung vuông chuẩn (ffmpeg tự cắt khung sau).
+      if (res.status === 400 || res.status === 422) {
+        if (size === "1024x1024") break;
+        size = "1024x1024";
+        continue;
+      }
+      if (res.status === 401 || res.status === 403) break;
+    }
+    await sleep(4_000 * (attempt + 1));
+  }
+  throw new Error(`DeepInfra vẽ ảnh lỗi: ${last}`);
 }
 
 /** Flux trên Cloudflare Workers AI: ảnh vuông 1024×1024, free 10k neuron/ngày (~1 video). */

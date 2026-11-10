@@ -97,17 +97,25 @@ export const ROUTING_KEY = "ai_routing";
 
 // ── Vẽ ảnh
 
-export type ImageProviderId = "cloudflare" | "gemini" | "openai";
+export type ImageProviderId = "cloudflare" | "deepinfra" | "gemini" | "openai";
 export type ImageRoute = { provider: ImageProviderId; model: string };
 
 export const IMAGE_PROVIDERS: { id: ImageProviderId; label: string; env: string; models: string[]; note: string }[] = [
   { id: "cloudflare", label: "Cloudflare FLUX", env: "CLOUDFLARE_API_TOKEN", models: ["@cf/black-forest-labs/flux-1-schnell"], note: "free ~1 video/ngày" },
+  {
+    id: "deepinfra",
+    label: "DeepInfra FLUX",
+    env: "DEEPINFRA_API_KEY",
+    models: ["black-forest-labs/FLUX-1-schnell", "black-forest-labs/FLUX-1-dev"],
+    note: "~0,002 USD/ảnh — tự dùng khi Cloudflare hết quota",
+  },
   { id: "gemini", label: "Gemini (Nano Banana)", env: "GEMINI_API_KEY", models: ["gemini-nano-banana-2.1", "gemini-3.1-flash-lite-image", "gemini-3-pro-image"], note: "trả phí theo ảnh" },
   { id: "openai", label: "ChatGPT (GPT Image)", env: "OPENAI_API_KEY", models: ["gpt-image-2"], note: "trả phí theo ảnh" },
 ];
 
 export const DEFAULT_IMAGE_MODEL: Record<ImageProviderId, string> = {
   cloudflare: "@cf/black-forest-labs/flux-1-schnell",
+  deepinfra: "black-forest-labs/FLUX-1-schnell",
   gemini: "gemini-nano-banana-2.1",
   openai: "gpt-image-2",
 };
