@@ -29,7 +29,9 @@ export async function redoSeo(videoId: number) {
   console.log(`  Meta mới bởi ${textProvider().lastModel}`);
 
   // Giữ cả tiêu đề đang dùng làm ứng viên: làm lại không bao giờ được ra tiêu đề điểm thấp hơn.
-  const options = [v.meta.title, m.title, ...(m.titleAlternatives ?? [])].filter(Boolean);
+  // Cả các tiêu đề từng chấm ở lần trước (vd bản 89 điểm bị thay nhầm) cũng là ứng viên.
+  const past = (v.meta.seo?.titleOptions ?? []).filter((x) => (x.score ?? 0) >= 80).map((x) => x.title);
+  const options = [...new Set([v.meta.title, ...past, m.title, ...(m.titleAlternatives ?? [])].filter(Boolean))];
   const picked = await pickBestTitle(options, m.description);
   const all = picked?.all ?? options.map((title) => ({ title, score: null }));
   for (const x of all) console.log(`  ${x.score ?? "?"} — ${x.title}`);
