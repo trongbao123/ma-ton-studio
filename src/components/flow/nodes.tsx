@@ -5,6 +5,7 @@ import { YtStats } from "@/components/yt-stats";
 import { BrandIcon, STEP_ICONS, type BrandId } from "@/components/brand-icons";
 import { CARD_STATE_TEXT, type CardState, type CardView } from "@/lib/flow/model";
 import { CARD_WIDTH } from "@/lib/flow/layout";
+import { SUB_WIDTH, type SubView } from "@/lib/flow/subnodes";
 
 /** Màu nét icon từng bước — dễ phân biệt khi nhìn lướt canvas. */
 const TINT: Record<string, string> = {
@@ -46,7 +47,9 @@ const PILL: Record<CardState, string> = {
 
 const DOT: Record<CardState, string> = { done: "✓", run: "●", error: "!", quota: "⏳", wait: "○", idle: "○", skip: "–" };
 
-const handle = "!h-2.5 !w-2.5 !border-2 !border-[#0f0f13] !bg-[#55555f]";
+const handle = "!h-3 !w-3 !border-2 !border-[#0f0f13] !bg-[#6b6b78]";
+/** Cố định cao độ chấm nối ở hàng tiêu đề để mọi dây nối nằm ngang dù thẻ cao thấp khác nhau. */
+const HANDLE_TOP = 38;
 const ring = (on?: boolean) => (on ? "outline outline-2 outline-offset-4 outline-amber-400" : "");
 
 export type CardNodeData = { view: CardView; selected?: boolean };
@@ -57,34 +60,34 @@ export function CardNode({ data }: NodeProps<Node<CardNodeData>>) {
   return (
     <div className="group relative cursor-pointer" style={{ width: CARD_WIDTH }}>
       <div
-        className={`relative flex flex-col gap-2 rounded-2xl border-[1.5px] bg-gradient-to-br from-[#24242b] to-[#18181e] p-3 shadow-[0_8px_22px_rgba(0,0,0,.5)] transition-transform group-hover:-translate-y-0.5 ${BORDER[view.state]} ${ring(data.selected)}`}
+        className={`relative flex flex-col min-h-[300px] gap-2.5 rounded-2xl border-2 bg-gradient-to-br from-[#24242b] to-[#18181e] p-4 shadow-[0_8px_22px_rgba(0,0,0,.5)] transition-transform group-hover:-translate-y-0.5 ${BORDER[view.state]} ${ring(data.selected)}`}
       >
         <div className="flex items-center gap-2">
-          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/[.05]">
-            <NodeIcon id={view.id} size={18} />
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/[.06]">
+            <NodeIcon id={view.id} size={24} />
           </span>
-          <b className="min-w-0 flex-1 truncate text-[13px] font-semibold text-zinc-100">{view.title}</b>
+          <b className="min-w-0 flex-1 truncate text-base font-bold text-zinc-50">{view.title}</b>
         </div>
 
-        <span className={`inline-flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-medium ${PILL[view.state]}`}>
+        <span className={`inline-flex w-fit items-center gap-1 rounded-full px-2.5 py-1 text-[13px] font-semibold ${PILL[view.state]}`}>
           <span className={view.state === "run" ? "animate-pulse" : ""}>{DOT[view.state]}</span>
           {CARD_STATE_TEXT[view.state]}
         </span>
 
-        <p className="flex min-h-[18px] items-center gap-1.5 text-[11px] text-zinc-300" title={view.ai ? `${view.ai.label}${view.ai.note ? ` (${view.ai.note})` : ""}` : "chưa ghi AI"}>
-          {view.ai?.brand && <BrandIcon id={view.ai.brand} size={13} className="shrink-0" />}
+        <p className="flex min-h-[18px] items-center gap-1.5 text-[13px] text-zinc-300" title={view.ai ? `${view.ai.label}${view.ai.note ? ` (${view.ai.note})` : ""}` : "chưa ghi AI"}>
+          {view.ai?.brand && <BrandIcon id={view.ai.brand} size={15} className="shrink-0" />}
           <span className="min-w-0 truncate">{view.ai ? view.ai.label : "—"}</span>
-          {view.ai?.note && <span className="shrink-0 text-[9.5px] text-amber-300/80">{view.ai.note}</span>}
+          {view.ai?.note && <span className="shrink-0 text-xs text-amber-300/80">{view.ai.note}</span>}
         </p>
 
         {view.thumb && (
           // eslint-disable-next-line @next/next/no-img-element -- file từ GitHub Release qua redirect, không tối ưu được bằng next/image
-          <img src={view.thumb} alt="" loading="lazy" className="aspect-video w-full rounded-md object-cover ring-1 ring-white/10" />
+          <img src={view.thumb} alt="" loading="lazy" className="aspect-video w-full rounded-lg object-cover ring-1 ring-white/10" />
         )}
 
-        <div className="space-y-0.5">
-          {view.metrics.map((m) => (
-            <p key={m} className="truncate text-[11.5px] text-zinc-400" title={m}>
+        <div className="space-y-1">
+          {view.metrics.map((m, i) => (
+            <p key={m} className={`truncate ${i === 0 ? "text-[15px] font-semibold text-zinc-100" : "text-sm text-zinc-400"}`} title={m}>
               {m}
             </p>
           ))}
@@ -92,14 +95,14 @@ export function CardNode({ data }: NodeProps<Node<CardNodeData>>) {
 
         {view.yt && (
           <div className="text-zinc-400">
-            <YtStats longId={view.yt.longId} shortId={view.yt.shortId} />
+            <YtStats longId={view.yt.longId} shortId={view.yt.shortId} large />
           </div>
         )}
 
         {view.chips.length > 0 && (
-          <div className="flex flex-wrap gap-1">
+          <div className="flex flex-wrap gap-1.5">
             {view.chips.map((c) => (
-              <span key={c} className="max-w-full truncate rounded-full border border-white/10 bg-white/[.04] px-1.5 py-px text-[10px] text-zinc-300">
+              <span key={c} className="max-w-full truncate rounded-full border border-white/10 bg-white/[.04] px-2 py-0.5 text-xs text-zinc-300">
                 {c}
               </span>
             ))}
@@ -107,7 +110,7 @@ export function CardNode({ data }: NodeProps<Node<CardNodeData>>) {
         )}
 
         {view.links.length > 0 && (
-          <div className="nodrag flex flex-wrap gap-x-2 text-[10.5px]">
+          <div className="nodrag flex flex-wrap gap-x-3 text-[13px]">
             {view.links.map((l) => (
               <a key={l.label} href={l.href} target={l.href.startsWith("http") ? "_blank" : undefined} onClick={(e) => e.stopPropagation()} className="text-sky-400 underline">
                 {l.label}
@@ -117,21 +120,40 @@ export function CardNode({ data }: NodeProps<Node<CardNodeData>>) {
         )}
 
         {view.progress != null && (
-          <div className="h-1 overflow-hidden rounded-full bg-zinc-800">
+          <div className="h-1.5 overflow-hidden rounded-full bg-zinc-800">
             <div className="h-full rounded-full bg-gradient-to-r from-sky-500 to-violet-400 transition-[width] duration-700" style={{ width: `${Math.round(view.progress * 100)}%` }} />
           </div>
         )}
 
         {view.warning && (
-          <span title={view.warning} className="absolute -left-2 -top-2 grid h-5 w-5 place-items-center rounded-full border-2 border-[#0f0f13] bg-amber-400 text-[10px] font-bold text-black">
+          <span title={view.warning} className="absolute -left-2 -top-2 grid h-6 w-6 place-items-center rounded-full border-2 border-[#0f0f13] bg-amber-400 text-xs font-bold text-black">
             !
           </span>
         )}
-        {view.id !== "trends" && <Handle type="target" position={Position.Left} className={handle} isConnectable={false} />}
-        {view.id !== "youtube" && <Handle type="source" position={Position.Right} className={handle} isConnectable={false} />}
+        {view.id !== "trends" && <Handle type="target" position={Position.Left} className={handle} style={{ top: HANDLE_TOP }} isConnectable={false} />}
+        <Handle id="tools" type="source" position={Position.Bottom} className={handle} isConnectable={false} />
+        {view.id !== "youtube" && <Handle id="out" type="source" position={Position.Right} className={handle} style={{ top: HANDLE_TOP }} isConnectable={false} />}
       </div>
     </div>
   );
 }
 
-export const nodeTypes = { card: CardNode };
+export type SubNodeData = { view: SubView };
+
+/** Node con kiểu n8n: vòng tròn logo/icon + nhãn + model hoặc giá trị thật; mờ khi chưa có dữ liệu. */
+export function SubNode({ data }: NodeProps<Node<SubNodeData>>) {
+  const { view } = data;
+  const Icon = STEP_ICONS[view.icon];
+  return (
+    <div className={`flex flex-col items-center gap-1 text-center ${view.ok ? "" : "opacity-50"}`} style={{ width: SUB_WIDTH }} title={`${view.label}: ${view.value}`}>
+      <Handle type="target" position={Position.Top} className={handle} isConnectable={false} />
+      <span className={`grid h-14 w-14 place-items-center rounded-full border-2 bg-[#1d1d24] ${view.ok ? "border-emerald-600/70" : "border-dashed border-[#3d3d48]"}`}>
+        {view.brand ? <BrandIcon id={view.brand} size={26} /> : Icon && <Icon size={24} strokeWidth={1.7} className="text-zinc-300" />}
+      </span>
+      <b className="w-full truncate text-[13px] font-semibold text-zinc-100">{view.label}</b>
+      <span className="w-full truncate text-[13px] text-zinc-400">{view.value}</span>
+    </div>
+  );
+}
+
+export const nodeTypes = { card: CardNode, sub: SubNode };

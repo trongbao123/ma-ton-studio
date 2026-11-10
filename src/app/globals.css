@@ -22,6 +22,31 @@
   --border: #2c2c35;
 }
 
+/* Bảng chi tiết màn flow: nâng cỡ chữ nhỏ của panel lên mức dễ đọc (tối thiểu 12px, nội dung 14px). */
+.panel-text .text-xs,
+.panel-text .text-\[13px\] {
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+.panel-text .text-\[11px\] {
+  font-size: 0.8125rem;
+}
+.panel-text .text-\[10px\] {
+  font-size: 0.75rem;
+}
+
+/* Lưới màn flow: canvas + nhật ký bên trái, bảng chi tiết bên phải; dưới 1024px xếp dọc canvas → chi tiết → nhật ký. */
+@media (min-width: 1024px) {
+  .flow-grid {
+    grid-template-columns: minmax(0, 1fr) 450px;
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas: "canvas insp" "log insp";
+  }
+  .flow-grid > .area-canvas { grid-area: canvas; }
+  .flow-grid > .area-insp { grid-area: insp; }
+  .flow-grid > .area-log { grid-area: log; }
+}
+
 @keyframes fadein {
   from {
     opacity: 0;

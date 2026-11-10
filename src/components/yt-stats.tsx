@@ -18,7 +18,7 @@ function Row({ label, s, large }: { label: string | null; s: YtStat; large: bool
   const icon = large ? 14 : 12;
   return (
     <span className="inline-flex items-center gap-x-2.5 whitespace-nowrap">
-      {label && <span className="text-[10px] uppercase tracking-wide text-zinc-500">{label}</span>}
+      {label && <span className={`${large ? "text-xs" : "text-[10px]"} uppercase tracking-wide text-zinc-500`}>{label}</span>}
       <span className="inline-flex items-center gap-1" title="Lượt xem">
         <Eye size={icon} className="text-zinc-500" /> <AnimatedCount value={s.views} />
       </span>

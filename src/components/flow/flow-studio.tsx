@@ -5,21 +5,23 @@ import {
   Background,
   BackgroundVariant,
   Controls,
+  PanOnScrollMode,
   ReactFlow,
   ReactFlowProvider,
-  useNodesInitialized,
   useNodesState,
   useReactFlow,
   type Edge,
   type Node,
+  type NodeChange,
 } from "@xyflow/react";
 import Link from "next/link";
-import { useEffect, useMemo, useState, useSyncExternalStore, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, useTransition } from "react";
 import { rerenderAction, resetFlowLayoutAction, saveFlowLayoutAction } from "@/app/actions";
 import { ActionForm } from "@/components/action-form";
-import { DEFAULT_POSITIONS, MAIN_ORDER, type CanvasNodeId, type Pos } from "@/lib/flow/layout";
+import { CARD_WIDTH, DEFAULT_POSITIONS, MAIN_ORDER, ROW_Y, type CanvasNodeId, type Pos } from "@/lib/flow/layout";
 import { buildFlow, formatSlot, formatTime, isStale, STATUS_LABEL, TITLES, type CardId, type CardState, type CardView, type FlowData, type Issue, type NodeId } from "@/lib/flow/model";
 import { useLive, useLiveVideo } from "@/lib/live/store";
+import { buildSubs, SUB_Y, subOffsetX, type SubView } from "@/lib/flow/subnodes";
 import { Inspector } from "./inspector";
 import { nodeTypes } from "./nodes";
 
@@ -33,28 +35,55 @@ export function FlowStudio(props: Props) {
   );
 }
 
+/** Cao độ (trên canvas) mà viewport canh giữa — thẻ ~400px + hàng node con ~110px nằm gọn trong khung 600px. */
+const VIEW_CENTER_Y = ROW_Y + 260;
+
 const EDGE_COLOR: Record<CardState, string> = { done: "#2f7d4f", run: "#38bdf8", error: "#7f1d1d", quota: "#b45309", wait: "#3b3b46", idle: "#3b3b46", skip: "#2a2a31" };
 
-function buildNodes(cards: Record<CardId, CardView>, layout: Record<CanvasNodeId, Pos>, selected: CardId): Node[] {
-  return MAIN_ORDER.map((id) => ({
+function buildNodes(cards: Record<CardId, CardView>, subs: SubView[], layout: Record<CanvasNodeId, Pos>, selected: CardId): Node[] {
+  const main: Node[] = MAIN_ORDER.map((id) => ({
     id,
     type: "card",
     position: layout[id],
     data: { view: cards[id], selected: id === selected },
   }));
+  // Node con gắn parentId nên đi theo thẻ cha khi kéo; vị trí tương đối, không lưu.
+  const children: Node[] = subs.map((view) => {
+    const siblings = subs.filter((x) => x.parent === view.parent);
+    return {
+      id: view.id,
+      type: "sub",
+      parentId: view.parent,
+      position: { x: subOffsetX(siblings.indexOf(view), siblings.length, CARD_WIDTH), y: SUB_Y },
+      draggable: false,
+      data: { view },
+    };
+  });
+  return [...main, ...children];
 }
 
-function buildEdges(cards: Record<CardId, CardView>): Edge[] {
-  return MAIN_ORDER.slice(1).map((id, i) => {
+function buildEdges(cards: Record<CardId, CardView>, subs: SubView[]): Edge[] {
+  const chain: Edge[] = MAIN_ORDER.slice(1).map((id, i) => {
     const state = cards[id].state;
     return {
       id: `e-${id}`,
       source: MAIN_ORDER[i],
+      sourceHandle: "out",
       target: id,
+      type: "smoothstep",
       animated: state === "run",
-      style: { stroke: EDGE_COLOR[state], strokeWidth: 2 },
+      style: { stroke: EDGE_COLOR[state], strokeWidth: 3 },
     };
   });
+  const dotted: Edge[] = subs.map((x) => ({
+    id: `s-${x.id}`,
+    source: x.parent,
+    sourceHandle: "tools",
+    target: x.id,
+    type: "smoothstep",
+    style: { stroke: x.ok ? "#4b8f6a" : "#4a4a55", strokeWidth: 2, strokeDasharray: "2 7", strokeLinecap: "round" },
+  }));
+  return [...chain, ...dotted];
 }
 
 /** Mặc định mở thẻ đầu tiên chưa xong — thường là chỗ người dùng cần xem (Xu hướng chỉ là bối cảnh nên bỏ qua). */
@@ -72,10 +101,10 @@ const ISSUE_TONE: Record<Issue["tone"], string> = {
 function IssueStrip({ issues, onPick }: { issues: Issue[]; onPick: (id: CardId) => void }) {
   if (!issues.length) return null;
   return (
-    <div role="status" className="flex flex-wrap items-center gap-2 border-b border-border bg-[#111115] px-4 py-2 text-xs">
+    <div role="status" className="flex flex-wrap items-center gap-2 border-b border-border bg-[#111115] px-5 py-2.5 text-sm">
       <b className="shrink-0 text-zinc-300">Đang kẹt / cần làm</b>
       {issues.map((i) => (
-        <button key={i.text} type="button" onClick={() => onPick(i.card)} title={i.text} className={`max-w-full truncate rounded-full border px-2.5 py-0.5 text-left ${ISSUE_TONE[i.tone]}`}>
+        <button key={i.text} type="button" onClick={() => onPick(i.card)} title={i.text} className={`max-w-full truncate rounded-full border px-3 py-1 text-left ${ISSUE_TONE[i.tone]}`}>
           {i.text.slice(0, 160)}
         </button>
       ))}
@@ -141,25 +170,37 @@ function useLiveFlow(initial: FlowData) {
 function Studio({ data: initial, layout }: Props) {
   const { data, live } = useLiveFlow(initial);
   const { cards, issues: baseIssues } = useMemo(() => buildFlow(data), [data]);
+  const subs = useMemo(() => buildSubs(data, cards), [data, cards]);
   const [selected, setSelected] = useState<CardId>(() => firstOpen(cards));
-  const [sheetOpen, setSheetOpen] = useState(false);
-  const [nodes, setNodes, onNodesChange] = useNodesState(buildNodes(cards, layout, selected));
-  const edges = useMemo(() => buildEdges(cards), [cards]);
-  const { fitView, getNodes } = useReactFlow();
+  const [nodes, setNodes, onNodesChange] = useNodesState(buildNodes(cards, subs, layout, selected));
+  const edges = useMemo(() => buildEdges(cards, subs), [cards, subs]);
+  const { setCenter, getNode, getNodes } = useReactFlow();
   const [, startTransition] = useTransition();
-  const measured = useNodesInitialized();
   // useNodesState chỉ lấy giá trị đầu — dữ liệu mới từ server (render lại, đã đăng, polling) phải đẩy vào node, giữ nguyên vị trí.
   useEffect(() => {
-    setNodes((ns) => ns.map((n) => ({ ...n, data: { ...n.data, view: cards[n.id as CardId] } })));
-  }, [cards, setNodes]);
-  // fitView ban đầu có thể chạy trước khi node đo xong kích thước (hay gặp trên điện thoại) → fit lại, và fit khi xoay/đổi cỡ màn hình.
+    setNodes((ns) =>
+      ns.map((n) => {
+        const sub = subs.find((x) => x.id === n.id);
+        return sub ? { ...n, data: { ...n.data, view: sub } } : { ...n, data: { ...n.data, view: cards[n.id as CardId] } };
+      }),
+    );
+  }, [cards, subs, setNodes]);
+  // Canh viewport giữa thẻ đang chọn ở zoom 100% (chữ luôn đọc được); 7 thẻ rộng hơn màn hình nên kéo / cuộn ngang để xem tiếp.
+  const centerOn = useCallback(
+    (id: CardId, duration = 0) => {
+      const n = getNode(id);
+      if (n) void setCenter(n.position.x + CARD_WIDTH / 2, VIEW_CENTER_Y, { zoom: 1, duration });
+    },
+    [getNode, setCenter],
+  );
   useEffect(() => {
-    if (!measured) return;
-    const fit = () => void fitView({ padding: 0.08 });
-    fit();
-    addEventListener("resize", fit);
-    return () => removeEventListener("resize", fit);
-  }, [measured, fitView]);
+    const onResize = () => centerOn(selected);
+    addEventListener("resize", onResize);
+    return () => removeEventListener("resize", onResize);
+  }, [centerOn, selected]);
+  // Hàng thẻ luôn thẳng: kéo thẻ chỉ trượt ngang, giữ nguyên y.
+  const onChange = (changes: NodeChange<Node>[]) =>
+    onNodesChange(changes.map((c) => (c.type === "position" && c.position ? { ...c, position: { x: c.position.x, y: ROW_Y } } : c)));
   const v = data.video;
   const [label, tone] = STATUS_LABEL[v.status];
   // Chỉ tính trên client (cần giờ hiện tại) để HTML server và lần hydrate đầu giống nhau.
@@ -171,23 +212,23 @@ function Studio({ data: initial, layout }: Props) {
 
   const select = (id: CardId) => {
     setSelected(id);
-    setSheetOpen(true);
+    centerOn(id, 300);
     setNodes((ns) => ns.map((n) => ({ ...n, data: { ...n.data, selected: n.id === id } })));
   };
 
   const savePositions = () => {
-    const positions = Object.fromEntries(getNodes().map((n) => [n.id, n.position]));
+    const positions = Object.fromEntries(getNodes().filter((n) => !n.parentId).map((n) => [n.id, n.position]));
     startTransition(async () => void (await saveFlowLayoutAction(positions)));
   };
 
   const resetLayout = () => {
-    setNodes((ns) => ns.map((n) => ({ ...n, position: DEFAULT_POSITIONS[n.id as CanvasNodeId] })));
-    requestAnimationFrame(() => fitView({ padding: 0.08, duration: 300 }));
+    setNodes((ns) => ns.map((n) => (n.parentId ? n : { ...n, position: DEFAULT_POSITIONS[n.id as CanvasNodeId] })));
+    requestAnimationFrame(() => centerOn(selected, 300));
     startTransition(async () => void (await resetFlowLayoutAction()));
   };
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col overflow-y-auto lg:overflow-hidden">
       <header className="flex flex-wrap items-center gap-x-4 gap-y-3 border-b border-border bg-[#111115] px-5 py-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
         <div className="flex min-w-0 basis-full items-center gap-3 sm:basis-0 sm:flex-1">
           <Link
@@ -198,7 +239,7 @@ function Studio({ data: initial, layout }: Props) {
             魔
           </Link>
           <div className="min-w-0">
-            <p className="truncate text-xs text-muted">
+            <p className="truncate text-sm text-muted">
               <Link href="/videos" className="hover:text-foreground">
                 Video
               </Link>
@@ -208,7 +249,7 @@ function Studio({ data: initial, layout }: Props) {
               </Link>
               <span className="mx-1.5 opacity-50">/</span>#{v.id}
             </p>
-            <h1 className="truncate text-base font-bold">
+            <h1 className="truncate text-lg font-bold">
               {/* Bấm tiêu đề → về trang truyện. */}
               <Link
                 href={`/series/${data.series.id}`}
@@ -220,19 +261,19 @@ function Studio({ data: initial, layout }: Props) {
             </h1>
           </div>
         </div>
-        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${tone}`}>
+        <span className={`rounded-full px-3.5 py-1.5 text-sm font-semibold ${tone}`}>
           <span className={live ? "animate-pulse" : ""}>●</span> {label}
           {live && <span className="ml-1 font-normal opacity-70">· trực tiếp</span>}
         </span>
         {v.publishAt && v.status !== "failed" && (
-          <span className="hidden rounded-full border border-border bg-card px-3 py-1 text-xs sm:inline">📅 {formatSlot(v.publishAt)}</span>
+          <span className="hidden rounded-full border border-border bg-card px-3.5 py-1.5 text-sm sm:inline">📅 {formatSlot(v.publishAt)}</span>
         )}
         {v.runUrl && (
-          <a href={v.runUrl} target="_blank" className="text-xs text-muted underline hover:text-foreground">
+          <a href={v.runUrl} target="_blank" className="text-sm text-muted underline hover:text-foreground">
             Log render
           </a>
         )}
-        <button type="button" onClick={resetLayout} className="btn-secondary !px-3 !py-1.5 text-xs">
+        <button type="button" onClick={resetLayout} className="btn-secondary !px-3.5 !py-1.5">
           ⤢<span className="hidden sm:inline"> Sắp xếp lại</span>
         </button>
         {(v.status === "failed" || v.status === "ready" || v.status === "queued" || stale) && (
@@ -242,46 +283,58 @@ function Studio({ data: initial, layout }: Props) {
 
       <IssueStrip issues={issues} onPick={select} />
 
-      {/* minmax(0,1fr): không để canvas đẩy rộng cột làm bảng chi tiết tràn khỏi màn hình. */}
-      <div className="grid min-h-0 flex-1 md:grid-cols-[minmax(0,1fr)_400px]">
-        <div className="relative min-h-0 pb-14 md:pb-0">
+      {/* Dưới 1024px trang cuộn dọc: canvas → chi tiết → nhật ký. Từ 1024px: canvas + nhật ký bên trái, chi tiết cố định bên phải (cuộn riêng). */}
+      <div className="flow-grid grid shrink-0 grid-cols-1 content-start lg:min-h-0 lg:flex-1 lg:shrink lg:overflow-hidden">
+        <div className="area-canvas relative h-[580px] min-w-0 border-b border-border">
           <ReactFlow
             nodes={nodes}
             edges={edges}
             nodeTypes={nodeTypes}
-            onNodesChange={onNodesChange}
+            onNodesChange={onChange}
             onNodeDragStop={savePositions}
-            onNodeClick={(_, n) => select(n.id as CardId)}
+            onNodeClick={(_, n) => select((n.parentId ?? n.id) as CardId)}
+            onInit={() => centerOn(selected)}
             nodesConnectable={false}
-            fitView
-            fitViewOptions={{ padding: 0.08 }}
-            minZoom={0.15}
-            maxZoom={2}
+            defaultViewport={{ x: 0, y: 0, zoom: 1 }}
+            minZoom={0.85}
+            maxZoom={1.5}
+            zoomOnScroll={false}
+            zoomOnDoubleClick={false}
+            panOnScroll
+            panOnScrollMode={PanOnScrollMode.Horizontal}
+            preventScrolling={false}
             colorMode="dark"
             proOptions={{ hideAttribution: true }}
             style={{ background: "#0f0f13" }}
           >
             <Background variant={BackgroundVariant.Dots} gap={22} size={1.3} color="#2a2a33" />
-            <Controls showInteractive={false} />
+            <Controls showInteractive={false} position="bottom-right" />
           </ReactFlow>
+          <p className="pointer-events-none absolute right-4 top-3 text-xs text-zinc-500">Kéo hoặc cuộn ngang để xem các bước khác</p>
         </div>
-        <Inspector data={data} cards={cards} selected={selected} open={sheetOpen} onToggle={setSheetOpen} />
+        <div className="area-insp flex min-h-0 flex-col [&>aside]:flex-1">
+          <Inspector data={data} cards={cards} selected={selected} />
+        </div>
+        <section className="area-log min-w-0 px-5 py-4 text-sm text-muted lg:overflow-y-auto">
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">Nhật ký</h2>
+          <ul className="space-y-1.5">
+            <li>
+              <b className="mr-2 tabular-nums text-foreground">{formatTime(v.createdAt)}</b>Tạo video
+            </li>
+            <li>
+              <b className="mr-2 tabular-nums text-foreground">{formatTime(v.updatedAt)}</b>
+              {label}
+            </li>
+            {v.status === "failed" && v.error && <li className="text-red-400">{v.error.slice(0, 200)}</li>}
+            {recentLog(data).map((l, i) => (
+              <li key={i}>
+                <b className="mr-2 tabular-nums text-foreground">{formatTime(l.at).slice(0, 5)}</b>
+                {l.text}
+              </li>
+            ))}
+          </ul>
+        </section>
       </div>
-
-      <footer className="hidden gap-6 overflow-x-auto whitespace-nowrap [scrollbar-width:none] border-t border-border bg-[#111115] px-5 py-2.5 text-xs text-muted md:flex">
-        <span>
-          <b className="text-foreground">{formatTime(v.createdAt)}</b> Tạo video
-        </span>
-        <span>
-          <b className="text-foreground">{formatTime(v.updatedAt)}</b> {label}
-        </span>
-        {v.status === "failed" && v.error && <span className="text-red-400">{v.error.slice(0, 120)}</span>}
-        {recentLog(data).map((l, i) => (
-          <span key={i}>
-            <b className="text-foreground">{formatTime(l.at).slice(0, 5)}</b> {l.text}
-          </span>
-        ))}
-      </footer>
     </div>
   );
 }

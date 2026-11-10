@@ -4,9 +4,11 @@ import {
   AudioLines,
   BookOpenCheck,
   BrainCircuit,
+  CalendarClock,
   Clapperboard,
   Cpu,
   ImagePlus,
+  Music,
   NotebookText,
   ScrollText,
   Search,
@@ -64,4 +66,6 @@ export const STEP_ICONS: Record<string, LucideIcon> = {
   summary: NotebookText,
   label: Tag,
   vidiq: TrendingUp,
+  music: Music,
+  calendar: CalendarClock,
 };
