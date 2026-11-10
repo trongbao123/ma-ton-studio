@@ -6,7 +6,7 @@ import { chapters, series, videos, type VideoMeta } from "@/db/schema";
 import { QuotaExhaustedError, textProvider } from "@/lib/ai";
 import { escapeHtml, notify, WEB_URL } from "@/lib/notify";
 import { drawImage, imagesReady } from "./images";
-import { duration, ffmpeg, filterPath, pool } from "./ffmpeg";
+import { duration, ffmpeg, filterPath, once, pool } from "./ffmpeg";
 import { Tracker } from "./progress";
 import { metaRequest, scenePrompts, scenesRequest, videoMeta } from "./prompts";
 import { ensureRelease, uploadAsset } from "./release";
@@ -175,14 +175,18 @@ export async function buildVideo(opts: {
     }
     return drawn.get(i)!;
   };
+  // Dọn file dựng kiểu cũ (trước khi có shot2/group2/silent2) để cache .render không phình.
+  const old = new RegExp(`^${name}-(shot-\\d+|group-\\d+|silent)\\.mp4$`);
+  for (const f of await readdir(dir).catch(() => [] as string[])) if (old.test(f)) await rm(path.join(dir, f), { force: true });
   const files = await pool(shots, 4, async (sh, j) => {
     const img = path.join(dir, `${name}-img-${sh.image}.jpg`);
     await draw(sh.image, img);
     // Cảnh nào sẽ crossfade với cảnh sau thì kéo dài thêm FADE để tổng thời lượng vẫn khớp giọng đọc.
     const fadesNext = j % GROUP !== GROUP - 1 && j !== shots.length - 1;
     const seconds = sh.seconds + (fadesNext ? shots[j + 1].fade : 0);
-    const file = path.join(dir, `${name}-shot-${String(j).padStart(3, "0")}.mp4`);
-    await shot(img, file, seconds, w, h, sh.motion);
+    // "shot2": đổi tên khi đổi cách mã hoá để không trộn file cũ; once() → job bị huỷ chạy lại thì bỏ qua cảnh đã dựng.
+    const file = path.join(dir, `${name}-shot2-${String(j).padStart(3, "0")}.mp4`);
+    await once(file, (tmp) => shot(img, tmp, seconds, w, h, sh.motion));
     if (j % 10 === 0) console.log(`  ${name} cảnh ${j + 1}/${shots.length}`);
     on?.shot?.();
     return { file, seconds, fade: sh.fade, fx: sh.fx };
@@ -191,16 +195,22 @@ export async function buildVideo(opts: {
 
   const groups: string[] = [];
   for (let g = 0; g * GROUP < files.length; g++) {
-    const out = path.join(dir, `${name}-group-${g}.mp4`);
-    await crossfadeGroup(files.slice(g * GROUP, (g + 1) * GROUP), out);
+    const out = path.join(dir, `${name}-group2-${g}.mp4`);
+    await once(out, (tmp) => crossfadeGroup(files.slice(g * GROUP, (g + 1) * GROUP), tmp));
     groups.push(out);
   }
   const list = path.join(dir, `${name}-groups.txt`);
   await writeFile(list, groups.map((c) => `file '${c}'`).join("\n"));
-  const silent = path.join(dir, `${name}-silent.mp4`);
-  await ffmpeg(["-f", "concat", "-safe", "0", "-i", list, "-c", "copy", silent]);
+  const silent = path.join(dir, `${name}-silent2.mp4`);
+  await once(silent, (tmp) => ffmpeg(["-f", "concat", "-safe", "0", "-i", list, "-c", "copy", tmp]));
 
   const out = path.join(dir, `${name}.mp4`);
+  // Bản cuối đã xuất đủ dài (job trước bị huỷ ở bước sau, vd lúc làm Short) thì dùng lại, khỏi trộn ~30 phút nữa.
+  if (await duration(out).then((d) => d >= narration.seconds - 1.5, () => false)) {
+    on?.log?.("Dùng lại video đã xuất ở lần chạy trước");
+    return { out };
+  }
+  await rm(out, { force: true });
   const ass = path.join(dir, `${name}.ass`);
   await writeFile(ass, toAss(narration.cues, { width: w, height: h, fontSize: opts.fontSize, marginV: opts.marginV, karaoke: true }));
   // Màu điện ảnh: tăng tương phản nhẹ, tối 4 góc, hạt phim.
@@ -221,13 +231,15 @@ export async function buildVideo(opts: {
     "-filter_complex", `[2:a]volume=${music.endsWith("ambient.wav") ? 0.25 : 0.1}[m];[1:a][m]amix=inputs=2:duration=first:normalize=0[a]`,
     "-map", "0:v", "-map", "[a]",
   ];
-  await ffmpeg([
-    "-i", silent, "-i", narration.audio, ...audio,
-    "-vf", `${grade}${text}${bar},format=yuv420p`,
-    // Hạt phim làm bitrate phình (12 phút ≈ 256MB) → chặn ~5Mbps, đủ nét cho YouTube 1080p.
-    "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-maxrate", "5M", "-bufsize", "10M",
-    "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart", out,
-  ]);
+  await once(out, (tmp) =>
+    ffmpeg([
+      "-i", silent, "-i", narration.audio, ...audio,
+      "-vf", `${grade}${text}${bar},format=yuv420p`,
+      // Hạt phim làm bitrate phình (12 phút ≈ 256MB) → chặn ~5Mbps, đủ nét cho YouTube 1080p.
+      "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-maxrate", "5M", "-bufsize", "10M",
+      "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart", tmp,
+    ]),
+  );
   return { out };
 }
 

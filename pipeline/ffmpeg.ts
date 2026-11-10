@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { rename, rm, stat } from "node:fs/promises";
 import { promisify } from "node:util";
 
 const run = promisify(execFile);
@@ -37,4 +38,17 @@ export async function pool<T, R>(items: T[], limit: number, fn: (item: T, i: num
     }),
   );
   return out;
+}
+
+/**
+ * Tạo file đúng một lần: đã có bản hoàn chỉnh thì bỏ qua (job trước bị huỷ/hết giờ thì chạy tiếp, không dựng lại).
+ * Ghi vào file tạm rồi mới đổi tên → file dở dang của job bị huỷ không bao giờ được dùng lại.
+ */
+export async function once(file: string, make: (tmp: string) => Promise<unknown>): Promise<boolean> {
+  if (await stat(file).then((s) => s.size > 0, () => false)) return false;
+  const tmp = file.replace(/(\.\w+)$/, ".part$1");
+  await rm(tmp, { force: true });
+  await make(tmp);
+  await rename(tmp, file);
+  return true;
 }
