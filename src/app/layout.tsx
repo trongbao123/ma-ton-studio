@@ -9,13 +9,16 @@ const font = Be_Vietnam_Pro({
   variable: "--font-be-vietnam",
   subsets: ["vietnamese", "latin"],
   weight: ["400", "500", "600", "700"],
+  display: "swap",
 });
 
-// Tên truyện dùng serif như bìa sách.
+// Tên truyện dùng serif như bìa sách. Chỉ là tiêu đề → không preload (đỡ 4 file font chặn băng thông đầu trang), chữ dự phòng hiện trước rồi đổi (swap).
 const serif = Noto_Serif({
   variable: "--font-noto-serif",
   subsets: ["vietnamese", "latin"],
   weight: ["600", "800"],
+  display: "swap",
+  preload: false,
 });
 
 export const metadata: Metadata = {

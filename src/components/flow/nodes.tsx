@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
+import { SmartLink } from "./smart-link";
 import { YtStats } from "@/components/yt-stats";
 import { BrandIcon, STEP_ICONS, type BrandId } from "@/components/brand-icons";
 import { CARD_STATE_TEXT, type CardState, type CardView } from "@/lib/flow/model";
@@ -132,9 +133,9 @@ export function CardNode({ data }: NodeProps<Node<CardNodeData>>) {
         {view.links.length > 0 && (
           <div className="nodrag flex flex-wrap gap-x-3 text-[13px]">
             {view.links.map((l) => (
-              <a key={l.label} href={l.href} target={l.href.startsWith("http") ? "_blank" : undefined} onClick={(e) => e.stopPropagation()} className="text-sky-400 underline">
+              <SmartLink key={l.label} href={l.href} onClick={(e) => e.stopPropagation()} className="text-sky-400 underline">
                 {l.label}
-              </a>
+              </SmartLink>
             ))}
           </div>
         )}

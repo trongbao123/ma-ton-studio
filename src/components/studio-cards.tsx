@@ -1,3 +1,4 @@
+import { assetUrl } from "@/lib/asset-url";
 import { CircleAlert, Clock3, Loader2, Radio, Upload } from "lucide-react";
 import Link from "next/link";
 import { BrandIcon } from "@/components/brand-icons";
@@ -20,9 +21,12 @@ export function SeriesCover({ s }: { s: SeriesCard }) {
       {s.coverVideoId ? (
         // eslint-disable-next-line @next/next/no-img-element -- ảnh từ GitHub Release qua redirect
         <img
-          src={`/api/videos/${s.coverVideoId}/thumbnail.jpg`}
+          src={assetUrl(s.coverVideoId, "thumbnail.jpg", s.coverVersion)}
           alt=""
+          width={640}
+          height={800}
           loading="lazy"
+          decoding="async"
           className="absolute inset-x-0 top-0 h-[128%] w-full object-cover object-top transition-transform duration-700 group-hover:scale-[1.04]"
         />
       ) : (
@@ -99,7 +103,7 @@ export function VideoTile({ v, snapshot }: { v: VideoCard; snapshot?: YtStatsMap
       <div className="relative aspect-video overflow-hidden rounded-xl border border-border bg-[#14151c]">
         {v.hasThumb ? (
           // eslint-disable-next-line @next/next/no-img-element -- ảnh từ GitHub Release qua redirect
-          <img src={`/api/videos/${v.id}/thumbnail.jpg`} alt="" loading="lazy" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" />
+          <img src={assetUrl(v.id, "thumbnail.jpg", v.thumbVersion)} alt="" width={640} height={360} loading="lazy" decoding="async" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" />
         ) : (
           <span className="absolute inset-0 grid place-items-center font-serif text-4xl font-extrabold text-white/15">{v.compilation ? `Chương ${v.compilation.from}–${v.compilation.to}` : `Chương ${v.chapterNo}`}</span>
         )}

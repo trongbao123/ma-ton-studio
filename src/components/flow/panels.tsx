@@ -7,6 +7,7 @@ import { AudioLines, Check, ChevronDown, Wand2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { disconnectYoutubeAction, markPublishedAction, optimizeSeoAction, retryPublishAction, setTaskAiAction, updateFlowSettingsAction } from "@/app/actions";
 import { BrandIcon } from "@/components/brand-icons";
+import { SmartLink } from "./smart-link";
 import { YtStats } from "@/components/yt-stats";
 import { DEFAULT_MODEL, PROVIDERS, type ProviderId, type Route } from "@/lib/ai/routing";
 import { ActionForm } from "@/components/action-form";
@@ -38,9 +39,9 @@ function ReuseNote({ data }: { data: FlowData }) {
       <p className="mt-1 text-sky-200/80">Bản gộp không viết/đọc/vẽ lại — lấy nội dung từ các video chương đã render:</p>
       <p className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
         {c.videoIds.map((id) => (
-          <a key={id} href={`/videos/${id}`} className="text-sky-300 underline">
+          <Link key={id} href={`/videos/${id}`} className="text-sky-300 underline">
             Video #{id}
-          </a>
+          </Link>
         ))}
       </p>
     </div>
@@ -900,9 +901,9 @@ function Youtube({ data, tab }: PanelProps) {
           <Row
             k="Bản gộp"
             v={
-              <a href={data.compiledInto.youtubeVideoId ? `https://youtu.be/${data.compiledInto.youtubeVideoId}` : `/videos/${data.compiledInto.id}`} className="text-sky-400 underline">
+              <SmartLink href={data.compiledInto.youtubeVideoId ? `https://youtu.be/${data.compiledInto.youtubeVideoId}` : `/videos/${data.compiledInto.id}`} className="text-sky-400 underline">
                 Trong bản gộp chương {data.compiledInto.from}–{data.compiledInto.to}
-              </a>
+              </SmartLink>
             }
           />
         )}
