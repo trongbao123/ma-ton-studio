@@ -18,14 +18,30 @@ export function norm(s: string) {
     .trim();
 }
 
+/**
+ * So khớp GIỮ DẤU (chỉ bỏ hoa/thường, dấu câu) — như vidIQ: tag "truyen tu tien" KHÔNG khớp "Truyện tu tiên"
+ * trong tiêu đề/mô tả, và không trùng từ khóa người ta tìm. Trước đây bỏ dấu nên app chấm cao hơn vidIQ.
+ */
+export function key(s: string) {
+  return s
+    .normalize("NFC")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}#]+/gu, " ")
+    .trim();
+}
+
 const has = (text: string, phrase: string) => {
+  const p = key(phrase);
+  return p.length > 0 && ` ${key(text)} `.includes(` ${p} `);
+};
+const hasLoose = (text: string, phrase: string) => {
   const p = norm(phrase);
   return p.length > 0 && ` ${norm(text)} `.includes(` ${p} `);
 };
 const count = (text: string, phrase: string) => {
-  const p = norm(phrase);
+  const p = key(phrase);
   if (!p) return 0;
-  return ` ${norm(text)} `.split(` ${p} `).length - 1;
+  return ` ${key(text)} `.split(` ${p} `).length - 1;
 };
 
 /** Tên truyện "Thần Ma Táng Cổ: Thôn Thiên Lục" → ["Thần Ma Táng Cổ", "Thôn Thiên Lục"]. */
@@ -58,8 +74,8 @@ const isCaps = (s: string) => {
 export function scoreTitle(title: string, keywords: string[], tags: string[], vidiq?: number | null, search: string[] = []): SeoScore {
   const len = [...title].length;
   const kw = keywords.find((k) => has(title, k));
-  const head = kw ? norm(title).indexOf(norm(kw)) <= norm(title).length * 0.4 : false;
-  const tagHit = tags.filter((t) => !keywords.some((k) => norm(k) === norm(t)) && has(title, t)).length;
+  const head = kw ? key(title).indexOf(key(kw)) <= key(title).length * 0.4 : false;
+  const tagHit = tags.filter((t) => !keywords.some((k) => key(k) === key(t)) && has(title, t)).length;
   const checks = [
     check(len >= 40 && len <= 70, `Độ dài ${len} ký tự (đẹp nhất 40–70, không bị cắt trên điện thoại)`, 25, len >= 30 && len <= 90 ? 15 : 5),
     check(!!kw, kw ? `Có từ khóa chính "${kw}"` : "Thiếu tên truyện / từ khóa chính", 25),
@@ -75,7 +91,9 @@ export function scoreTitle(title: string, keywords: string[], tags: string[], vi
     checks.push(check(!!hit, hit ? `Có từ khóa tìm kiếm thật "${hit}" (vidIQ)` : `Thiếu từ khóa tìm kiếm thật — nên có "${search[0]}"`, 30));
   }
   const app = tally(checks);
-  return vidiq != null ? { ...app, score: Math.round(vidiq), source: "vidiq" } : app;
+  // Điểm vidIQ chấm tiêu đề là điểm hấp dẫn (CTR), không xét từ khóa SEO → lấy mức thấp hơn của hai điểm,
+  // để tiêu đề "hay" nhưng không có từ khóa tìm kiếm không được 90+.
+  return vidiq != null ? { ...app, score: Math.min(Math.round(vidiq), app.score), source: "vidiq" } : app;
 }
 
 export function scoreDescription(description: string, keywords: string[], tags: string[]): SeoScore {
@@ -98,12 +116,12 @@ export function scoreDescription(description: string, keywords: string[], tags: 
   return tally(checks);
 }
 
-export function scoreTags(tags: string[], keywords: string[], title: string, description: string): SeoScore {
+export function scoreTags(tags: string[], keywords: string[], title: string, description: string, search: string[] = []): SeoScore {
   const n = tags.length;
   // Đếm như YouTube: tag có dấu cách tính thêm 2 (dấu ngoặc kép), cộng dấu phẩy ngăn cách.
   const chars = tags.reduce((n, t, i) => n + t.length + (t.includes(" ") ? 2 : 0) + (i ? 1 : 0), 0);
-  const firstKw = n > 0 && keywords.some((k) => norm(tags[0]).includes(norm(k)) || norm(k).includes(norm(tags[0])));
-  const anyKw = tags.some((t) => keywords.some((k) => norm(t).includes(norm(k))));
+  const firstKw = n > 0 && keywords.some((k) => key(tags[0]).includes(key(k)) || key(k).includes(key(tags[0])));
+  const anyKw = tags.some((t) => keywords.some((k) => key(t).includes(key(k))));
   const relevant = n ? tags.filter((t) => has(`${title}\n${description}`, t)).length / n : 0;
   const lens = tags.map((t) => words(t));
   const mixed = lens.some((l) => l <= 2) && lens.some((l) => l >= 3);
@@ -116,6 +134,14 @@ export function scoreTags(tags: string[], keywords: string[], title: string, des
     check(mixed, "Có cả tag ngắn và tag dài (long-tail)", 10),
     check(dup === 0, dup ? `${dup} tag trùng nhau` : "Không trùng tag", 10),
   ];
+  // Tag viết không dấu của cụm có dấu trong tiêu đề/mô tả/từ khóa ("truyen audio" thay vì "truyện audio"): vidIQ coi là tag lạ, không lượt tìm.
+  const ctx = [title, description, ...search].join("\n");
+  const unaccented = tags.filter((t) => !has(ctx, t) && hasLoose(ctx, t));
+  checks.push(check(unaccented.length === 0, unaccented.length ? `${unaccented.length} tag viết không dấu (vd "${unaccented[0]}") — viết có dấu đúng như người ta gõ` : "Tag viết có dấu", 20));
+  if (search.length) {
+    const hits = tags.filter((t) => search.some((k) => key(k) === key(t))).length;
+    checks.push(check(hits >= 5, `${hits} tag trùng y từ khóa người ta tìm thật (vidIQ, nên ≥ 5)`, 20, hits * 4));
+  }
   return tally(checks);
 }
 
@@ -138,7 +164,7 @@ export function scoreMeta(m: VideoMeta, seriesTitle: string) {
   return {
     title: scoreTitle(m.title, kw, m.tags, m.seo?.titleScore, search.slice(0, 8)),
     description: scoreDescription(m.description, kw, m.tags),
-    tags: scoreTags(m.tags, kw, m.title, m.description),
+    tags: scoreTags(m.tags, kw, m.title, m.description, search.slice(0, 20)),
     short: scoreShort(m.shortTitle, m.shortDescription, kw),
   };
 }
@@ -146,9 +172,12 @@ export function scoreMeta(m: VideoMeta, seriesTitle: string) {
 /** Điểm tổng tối thiểu — dưới mức này pipeline tự chạy magic fill, bảng hiện nút. */
 export const SEO_TARGET = 90;
 
-/** Điểm tổng = trung bình 4 mục (vòng điểm trên bảng AI Agent). */
+/**
+ * Điểm tổng = trung bình tiêu đề / mô tả / tag — đúng 3 mục vidIQ chấm cho video dài.
+ * Short chấm riêng, không cộng vào (trước đây Short dễ được 100 nên đẩy điểm tổng cao hơn vidIQ).
+ */
 export function totalScore(s: ReturnType<typeof scoreMeta>) {
-  const parts = [s.title, s.description, s.tags, s.short];
+  const parts = [s.title, s.description, s.tags];
   return Math.round(parts.reduce((n, p) => n + p.score, 0) / parts.length);
 }
 

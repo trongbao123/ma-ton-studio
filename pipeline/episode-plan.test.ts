@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { pickBatch } from "./compile-plan";
-import { buildEpisodeToc, chaptersToWrite, ensureEpisodeLabel, episodeBacklog, fullLabel, imageCount, occupiesDailySlot, pickPublishSlot, tocText, vnDay } from "./episode-plan";
+import { buildEpisodeToc, chaptersToWrite, coldOpenSceneCount, ensureEpisodeLabel, episodeBacklog, fullLabel, imageCount, occupiesDailySlot, pickPublishSlot, tocText, vnDay } from "./episode-plan";
 
 const row = (id: number, number: number, o: Partial<Parameters<typeof episodeBacklog>[0][number]> = {}) => ({
   id, number, status: "ready" as const, youtubeVideoId: null, publishAt: null, hasLong: true, meta: null, ...o,
@@ -95,6 +95,24 @@ describe("buildEpisodeToc", () => {
   it("qua 1 giờ dùng H:MM:SS", () => {
     const toc = buildEpisodeToc([{ number: 1, title: "A", seconds: 3700, sub: [] }, { number: 2, title: "B", seconds: 10, sub: [] }]);
     expect(tocText(toc).split("\n")[1]).toBe("1:01:40 Chương 2: B");
+  });
+  it("có đoạn mở đầu: 00:00 là mở đầu, mọi chương và mục con dời theo", () => {
+    const toc = buildEpisodeToc(
+      [
+        { number: 4, title: "A", seconds: 2400, sub: [{ start: 0, title: "Mở đầu" }, { start: 300, title: "Đột kích" }] },
+        { number: 5, title: "B", seconds: 2400, sub: [] },
+      ],
+      { seconds: 32, title: "Mở đầu" },
+    );
+    expect(tocText(toc).split("\n")).toEqual(["00:00 Mở đầu", "00:32 Chương 4: A", "05:32 · Đột kích", "40:32 Chương 5: B"]);
+  });
+});
+
+describe("coldOpenSceneCount", () => {
+  it("~7 giây 1 ảnh, kẹp 3–6", () => {
+    expect(coldOpenSceneCount(10)).toBe(3);
+    expect(coldOpenSceneCount(32)).toBe(5);
+    expect(coldOpenSceneCount(90)).toBe(6);
   });
 });
 

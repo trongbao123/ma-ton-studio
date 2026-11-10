@@ -11,7 +11,7 @@ const metaSchema = z.object({
   title: z.string().describe("Tiêu đề YouTube 50–70 ký tự (quá 70 bị cắt trên điện thoại): mở đầu bằng 1 từ khóa tìm kiếm thật điểm cao (vd 'Truyện tu tiên'), tiếp theo là móc câu gây tò mò về khoảnh khắc gay cấn nhất chương, cuối là tên truyện ngắn + số chương; viết hoa chữ cái đầu như câu thường (KHÔNG in hoa toàn bộ)"),
   titleAlternatives: z.array(z.string()).describe("2 phương án tiêu đề khác theo cùng yêu cầu, góc gây tò mò khác nhau"),
   description: z.string().describe("Mô tả 220–300 từ, chia 3–4 đoạn: câu đầu tiên chứa tên truyện; tóm tắt hấp dẫn không spoil kết; nhắc tên truyện ít nhất 2 lần và lồng tự nhiên ít nhất 1/3 số tag (không nhồi nhét); kêu gọi đăng ký/like/bật chuông; dòng cuối 3–5 hashtag"),
-  tags: z.array(z.string()).describe("15–25 tag tiếng Việt và không dấu, tổng 300–480 ký tự; tag đầu tiên là từ khóa tìm kiếm thật điểm cao nhất, có tên truyện; trộn tag ngắn 1–2 từ và tag dài 3+ từ; không trùng nhau"),
+  tags: z.array(z.string()).describe("15–25 tag tiếng Việt CÓ DẤU viết y như người xem gõ tìm (vd 'truyện tu tiên', KHÔNG viết 'truyen tu tien'); ít nhất 5 tag lấy nguyên văn từ danh sách từ khóa vidIQ, tổng 300–480 ký tự; tag đầu tiên là từ khóa tìm kiếm thật điểm cao nhất, có tên truyện; trộn tag ngắn 1–2 từ và tag dài 3+ từ; không trùng nhau"),
   shortTitle: z.string().describe("Tiêu đề Short ≤ 60 ký tự, có tên nhân vật chính hoặc tên truyện, có #shorts"),
   shortDescription: z.string().describe("1–2 câu có tên truyện, mời xem video full trên kênh, kèm #shorts"),
   shortScript: z.string().describe("Lời đọc cho Short 90–130 từ: hook cực mạnh câu đầu, kể đoạn gay cấn nhất, dừng ở cao trào, câu cuối mời xem video full"),

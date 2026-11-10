@@ -48,6 +48,25 @@ export function stillSegmentArgs(o: { img: string; out: string; frames: number; 
   ];
 }
 
+/** Timescale track video của đoạn tĩnh (ffmpeg mặc định cho 24 fps) — đoạn mở đầu phải trùng để concat copy không lệch mốc. */
+export const STILL_TIMESCALE = "12288";
+
+/**
+ * Đưa 1 clip ngắn (vd đoạn mở đầu cao trào dựng bằng buildVideo, 30 fps, aac 44.1k, chưa chuẩn hoá tiếng)
+ * về đúng thông số video chương tĩnh — 24 fps, yuv420p, aac 48k stereo, giọng ≈ -16 LUFS — để ghép vào tập bằng concat copy,
+ * không phải encode lại cả tập dài.
+ */
+export function conformArgs(o: { input: string; out: string; w: number; h: number }) {
+  return [
+    "-i", o.input,
+    "-vf", `scale=${o.w}:${o.h}:force_original_aspect_ratio=decrease,pad=${o.w}:${o.h}:(ow-iw)/2:(oh-ih)/2,fps=${STILL_FPS},format=yuv420p`,
+    "-af", `loudnorm=I=${VOICE_LUFS}:TP=-1.5:LRA=11,aresample=${AUDIO_RATE},aformat=sample_fmts=fltp:channel_layouts=stereo`,
+    "-c:v", "libx264", "-preset", STILL_PRESET, "-crf", STILL_CRF, "-g", STILL_GOP, "-r", String(STILL_FPS), "-video_track_timescale", STILL_TIMESCALE,
+    "-c:a", "aac", "-b:a", AUDIO_BITRATE, "-ar", AUDIO_RATE, "-ac", "2",
+    "-movflags", "+faststart", o.out,
+  ];
+}
+
 /** Đọc "Integrated loudness" (LUFS) từ bản tóm tắt của filter ebur128 trong stderr ffmpeg; không đọc được (im lặng = -inf) thì null. */
 export function parseIntegratedLufs(stderr: string) {
   const all = [...stderr.matchAll(/^\s*I:\s+(-?\d+(?:\.\d+)?)\s+LUFS/gm)];

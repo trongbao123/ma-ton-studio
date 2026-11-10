@@ -7,11 +7,13 @@ import type { Chapter, Series, VideoMeta } from "@/db/schema";
 import { QuotaExhaustedError, textProvider } from "@/lib/ai";
 import { AI_NOTE, optimizeMeta } from "@/lib/seo-optimize";
 import { composeDescription, hashtagsFor, headings, segmentsFromText } from "./description";
-import { buildEpisodeToc, ensureEpisodeLabel, fullLabel } from "./episode-plan";
+import { buildEpisodeToc, coldOpenSceneCount, ensureEpisodeLabel, fullLabel } from "./episode-plan";
+import { duration, ffmpeg } from "./ffmpeg";
 import { playlistUrl, seriesPlaylist } from "./playlist";
 import { scenePrompts } from "./prompts";
 import { buildVideo, musicCredit, narrate, pickMusic, splitScenes, thumbnail } from "./render";
-import { generateTitles, genreSeeds, keywordResearch, scoreTitles } from "./vidiq";
+import { conformArgs } from "./still";
+import { chooseTitle, generateTitles, genreSeeds, keywordResearch, scoreTitles } from "./vidiq";
 
 const SHORT_SCENES = 5;
 
@@ -34,12 +36,13 @@ const episodeSchema = z.object({
   title: z.string().describe("Tiêu đề YouTube 50–70 ký tự kiểu kênh truyện audio lớn: mở bằng HOOK gây sốc/tò mò về khoảnh khắc gay cấn nhất (không spoil kết), chứa 1 từ khóa tìm kiếm điểm cao, kết bằng nhãn 'FULL …H' hoặc 'Tập N (Chương X–Y)'; viết hoa chữ cái đầu như câu thường"),
   titleAlternatives: z.array(z.string()).describe("2 phương án tiêu đề khác, hook khác nhau, cùng yêu cầu"),
   description: z.string().describe("Mô tả 220–300 từ, 3–4 đoạn (KHÔNG kèm mục lục, hệ thống tự thêm): câu đầu chứa tên truyện; giới thiệu hấp dẫn các chương trong tập, không spoil kết; nhắc tên truyện ≥ 2 lần; kêu gọi đăng ký/like/bật chuông"),
-  tags: z.array(z.string()).describe("15–25 tag tiếng Việt và không dấu, tổng 300–480 ký tự; tag đầu là từ khóa điểm cao nhất, có tên truyện; không trùng"),
+  tags: z.array(z.string()).describe("15–25 tag tiếng Việt CÓ DẤU viết y như người xem gõ tìm (vd 'truyện tu tiên', KHÔNG viết 'truyen tu tien'); ít nhất 5 tag lấy nguyên văn từ danh sách từ khóa vidIQ, tổng 300–480 ký tự; tag đầu là từ khóa điểm cao nhất, có tên truyện; không trùng"),
   thumbnailText: z.string().describe("Chữ trên thumbnail 2–3 từ IN HOA, cảm xúc mạnh, KHÔNG lặp số tập"),
   thumbnailPrompt: z.string().describe("English image prompt for a YouTube thumbnail: extreme close-up of the main character's face at the most dramatic moment, glowing eyes or energy, focal point on the RIGHT half, darker simpler LEFT third for text, high contrast"),
   characterLook: z.string().describe("English: ngoại hình nhân vật chính"),
   shortTitle: z.string().describe("Tiêu đề Short ≤ 60 ký tự, có tên truyện, có #shorts"),
   shortDescription: z.string().describe("1–2 câu có tên truyện, mời xem tập full trên kênh, kèm #shorts"),
+  coldOpen: z.string().describe("Lời đọc MỞ ĐẦU video 25–40 giây (70–110 từ), phát ngay giây đầu tiên để giữ người xem: kể khoảnh khắc gay cấn nhất của tập như đang diễn ra trước mắt; câu đầu tiên là biến cố/hành động cụ thể (KHÔNG chào hỏi, KHÔNG đọc tên truyện, KHÔNG nói 'trong tập này'); dừng ngay trước kết quả; câu cuối gợi tò mò để nghe từ đầu, vd 'Nhưng để hiểu vì sao mọi chuyện ra nông nỗi này, phải quay về từ đầu…'"),
   shortScript: z.string().describe("Lời đọc Short 60–90 giây (170–230 từ): hook cực mạnh câu đầu, kể khoảnh khắc KỊCH TÍNH nhất trong 3 chương, dừng ở cao trào, câu cuối mời xem tập full"),
 });
 
@@ -57,6 +60,40 @@ async function writeMeta(o: EpisodeInput, seoText: string | null, total: number)
     tier: "quality",
     task: "meta",
   });
+}
+
+/**
+ * Đoạn mở đầu cao trào 25–40 giây đặt trước chương đầu của tập: ảnh chuyển động + phụ đề, ~7 giây đổi ảnh.
+ * Video cũ mở bằng câu đọc tên truyện trên 1 ảnh đứng yên → người xem từ đề xuất thoát sau ~10 giây, YouTube ngừng đẩy.
+ * Encode lại cho trùng thông số chương tĩnh để ghép copy. Lỗi/hết quota thì bỏ đoạn mở đầu, không làm hỏng tập.
+ */
+async function makeColdOpen(o: EpisodeInput, m: z.infer<typeof episodeSchema>, music: string | null): Promise<{ file: string; seconds: number } | null> {
+  if (!m.coldOpen?.trim()) return null;
+  try {
+    const dir = path.join(o.dir, "cold");
+    await mkdir(dir, { recursive: true });
+    const narration = await narrate(m.coldOpen, dir, o.s.ttsVoice);
+    const scenes = splitScenes(narration.cues, coldOpenSceneCount(narration.seconds), narration.seconds);
+    const prompts = await scenePrompts(m.characterLook, scenes.map((x) => x.text));
+    const raw = await buildVideo({
+      dir, name: "cold", narration, scenes, prompts, music,
+      w: 1920, h: 1080, imgW: 1280, imgH: 768, fontSize: 62, marginV: 70,
+    });
+    const file = path.join(dir, "cold-open.mp4");
+    await ffmpeg(conformArgs({ input: raw.out, out: file, w: 1920, h: 1080 }));
+    const seconds = await duration(file);
+    // YouTube bỏ cả mục lục nếu có mốc < 10 giây.
+    if (seconds < 10) {
+      console.warn(`⚠ Đoạn mở đầu chỉ ${seconds.toFixed(1)} giây — bỏ.`);
+      return null;
+    }
+    console.log(`  Mở đầu cao trào: ${seconds.toFixed(1)} giây, ${scenes.length} ảnh`);
+    return { file, seconds };
+  } catch (e) {
+    if (e instanceof QuotaExhaustedError) console.warn("⚠ Bỏ qua đoạn mở đầu (hết quota)");
+    else console.warn("⚠ Bỏ qua đoạn mở đầu:", e instanceof Error ? e.message : e);
+    return null;
+  }
 }
 
 /** Short 60–90 giây từ lời đọc kịch tính nhất; lỗi/hết quota thì bỏ Short, không làm hỏng tập. */
@@ -93,7 +130,7 @@ export async function buildEpisodeContent(o: EpisodeInput) {
   const ideas = await generateTitles(m.title, m.description);
   const all = [...options.map((t, i) => ({ title: t, score: scores?.[i] ?? null })), ...ideas.filter((x) => !options.includes(x.title))];
   for (const x of all) console.log(`  ${x.score ?? "?"} — ${x.title}`);
-  const best = all.reduce((b, x) => ((x.score ?? -1) > (b.score ?? -1) ? x : b));
+  const best = chooseTitle(all, keywords);
   const title = ensureEpisodeLabel(best.title, o);
 
   const music = await pickMusic(o.videoId);
@@ -120,7 +157,10 @@ export async function buildEpisodeContent(o: EpisodeInput) {
     ...(pl ? [`📜 Nghe trọn bộ theo thứ tự: ${playlistUrl(pl)}`] : []),
     ...(o.previousEpisodeUrl ? [`⏮ Tập trước: ${o.previousEpisodeUrl}`] : []),
   ];
-  const description = composeDescription(fixed.meta.description, buildEpisodeToc(items), links, hashtagsFor(keywords), o.credits.join("\n\n"));
+  console.log("● Mở đầu cao trào");
+  const coldOpen = await makeColdOpen(o, m, music);
+  const toc = buildEpisodeToc(items, coldOpen ? { seconds: coldOpen.seconds, title: "Mở đầu" } : undefined);
+  const description = composeDescription(fixed.meta.description, toc, links, hashtagsFor(keywords), o.credits.join("\n\n"));
   const credit = music ? `\n\n${musicCredit(music)}` : "";
   const meta: VideoMeta = { ...fixed.meta, title, description, shortDescription: `${fixed.meta.shortDescription}${credit}`, compilation: o.compilation };
   console.log(`  Điểm SEO: ${fixed.score}; tiêu đề: ${meta.title}`);
@@ -132,5 +172,5 @@ export async function buildEpisodeContent(o: EpisodeInput) {
   });
   console.log("● Short");
   const short = await makeShort(o, m, music);
-  return { meta, thumb, short };
+  return { meta, thumb, short, coldOpen };
 }

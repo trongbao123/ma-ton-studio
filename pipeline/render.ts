@@ -17,7 +17,7 @@ import { imageCount } from "./episode-plan";
 import { ensureRelease, uploadAsset } from "./release";
 import { keepOrNextSlot } from "./schedule";
 import { loadSecrets } from "@/lib/secrets";
-import { generateTitles, genreSeeds, keywordResearch, scoreTitles } from "./vidiq";
+import { chooseTitle, generateTitles, genreSeeds, keywordResearch, scoreTitles } from "./vidiq";
 import { AI_NOTE, optimizeMeta } from "@/lib/seo-optimize";
 import { autoPublishEligible, publishToYoutube } from "./youtube";
 
@@ -82,6 +82,15 @@ export function splitScenes(cues: Cue[], n: number, total: number) {
     const text = cues.filter((c) => c.start < end && c.end > start).map((c) => c.text).join(" ");
     return { start, end, text };
   });
+}
+
+/**
+ * Cỡ chữ title card vừa khung: mặc định w/22, dòng dài thì thu nhỏ để chiếm ≤ 90% chiều ngang
+ * (chữ Việt có dấu rộng ~0.6 cỡ chữ). Trước đây tên chương dài bị cắt mất hai đầu ngay 5 giây đầu video.
+ */
+export function titleCardFontSize(text: string, w: number) {
+  const longest = Math.max(1, ...text.split("\n").map((l) => [...l].length));
+  return Math.max(24, Math.min(Math.round(w / 22), Math.floor((w * 0.9) / (longest * 0.6))));
 }
 
 const FADE = 0.8;
@@ -231,7 +240,7 @@ export async function buildVideo(opts: {
   const text = BURN_TEXT
     ? `,ass=${filterPath(ass)}:fontsdir=${filterPath(FONT_DIR)}` +
       (opts.titleCard
-        ? `,drawtext=fontfile=${filterPath(FONT)}:text='${escText(opts.titleCard)}':fontsize=${Math.round(w / 22)}:fontcolor=white:borderw=5:bordercolor=black@0.8:x=(w-tw)/2:y=(h-th)/2:alpha='if(lt(t,0.6),t/0.6,if(lt(t,4),1,max(0,(5-t))))':enable='lt(t,5)'`
+        ? `,drawtext=fontfile=${filterPath(FONT)}:text='${escText(opts.titleCard)}':fontsize=${titleCardFontSize(opts.titleCard, w)}:fontcolor=white:borderw=5:bordercolor=black@0.8:x=(w-tw)/2:y=(h-th)/2:alpha='if(lt(t,0.6),t/0.6,if(lt(t,4),1,max(0,(5-t))))':enable='lt(t,5)'`
         : "") +
       (opts.hook ? hookText(opts.hook, w) : "")
     : "";
@@ -543,7 +552,7 @@ export async function renderVideo(videoId: number) {
       const ideas = await cached(path.join(dir, "vidiq-generated-titles-v2.json"), () => generateTitles(m.title, m.description));
       const all = [...options.map((t, i) => ({ title: t, score: scores?.[i] ?? null })), ...ideas.filter((x) => !options.includes(x.title))];
       if (all.some((x) => x.score != null)) {
-        const best = all.reduce((b, x) => ((x.score ?? -1) > (b.score ?? -1) ? x : b));
+        const best = chooseTitle(all, searchKeywords);
         title = best.title;
         seoInfo = { titleScore: best.score, titleOptions: all, keywords: searchKeywords };
         track.log("agent", `vidIQ chấm tiêu đề: ${all.map((x) => `${x.score ?? "?"} — ${x.title}`).join(" | ")}`.slice(0, 600));

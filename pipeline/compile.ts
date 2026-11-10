@@ -1,7 +1,7 @@
 // Bản gộp: ghép nhiều video chương ĐÃ render của một bộ truyện thành video dài 1–2 giờ (tăng watch time).
 // Không tốn quota giọng/ảnh của chương — chỉ có 1 thumbnail mới + meta AI. Chạy: render.yml với video_id = "compile:<seriesId>".
 import { execFile } from "node:child_process";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { and, eq, gte, inArray, isNotNull } from "drizzle-orm";
@@ -20,7 +20,7 @@ import { episodeBacklog } from "./episode-plan";
 import { nextPublishSlot } from "./schedule";
 import { ensureRelease, uploadAsset } from "./release";
 import { autoPublishEligible, publishToYoutube } from "./youtube";
-import { closeVidiq, generateTitles, genreSeeds, keywordResearch, scoreTitles } from "./vidiq";
+import { chooseTitle, closeVidiq, generateTitles, genreSeeds, keywordResearch, scoreTitles } from "./vidiq";
 
 const run = promisify(execFile);
 
@@ -35,7 +35,7 @@ const metaSchema = z.object({
   title: z.string().describe("Tiêu đề YouTube 50–70 ký tự: mở đầu bằng 1 từ khóa tìm kiếm thật điểm cao (vd 'Truyện tu tiên'), có tên truyện ngắn, 'Chương X–Y', gợi ý 'trọn bộ' / 'nghe liền mạch'; viết hoa chữ cái đầu như câu thường (KHÔNG in hoa toàn bộ)"),
   titleAlternatives: z.array(z.string()).describe("2 phương án tiêu đề khác theo cùng yêu cầu"),
   description: z.string().describe("Mô tả 220–300 từ, 3–4 đoạn (KHÔNG kèm mục lục chương, hệ thống tự thêm): câu đầu chứa tên truyện; giới thiệu hấp dẫn các chương gộp, không spoil kết; nhắc tên truyện ≥ 2 lần, lồng ≥ 1/3 số tag; kêu gọi đăng ký/like/bật chuông; dòng cuối 3–5 hashtag"),
-  tags: z.array(z.string()).describe("15–25 tag tiếng Việt và không dấu, tổng 300–480 ký tự; tag đầu là từ khóa tìm kiếm điểm cao nhất, có tên truyện; trộn tag ngắn và dài; không trùng"),
+  tags: z.array(z.string()).describe("15–25 tag tiếng Việt CÓ DẤU viết y như người xem gõ tìm (vd 'truyện tu tiên', KHÔNG viết 'truyen tu tien'); ít nhất 5 tag lấy nguyên văn từ danh sách từ khóa vidIQ, tổng 300–480 ký tự; tag đầu là từ khóa tìm kiếm điểm cao nhất, có tên truyện; trộn tag ngắn và dài; không trùng"),
   thumbnailText: z.string().describe("Chữ trên thumbnail 2–3 từ IN HOA, cảm xúc mạnh, KHÔNG lặp 'TRỌN BỘ' hay số chương (đã có nhãn riêng)"),
   thumbnailPrompt: z.string().describe("English image prompt for a YouTube thumbnail: extreme close-up of the main character's face and upper body at a dramatic moment, intense emotion, glowing eyes or energy, one focal point on the RIGHT half, darker simpler LEFT third for text, high contrast, saturated colors"),
   characterLook: z.string().describe("English: mô tả ngoại hình nhân vật chính"),
@@ -143,7 +143,7 @@ async function buildMeta(s: typeof series.$inferSelect, batch: Row[], label: str
   const ideas = await generateTitles(m.title, m.description);
   const all = [...options.map((t, i) => ({ title: t, score: scores?.[i] ?? null })), ...ideas.filter((x) => !options.includes(x.title))];
   for (const x of all) console.log(`  ${x.score ?? "?"} — ${x.title}`);
-  const best = all.reduce((b, x) => ((x.score ?? -1) > (b.score ?? -1) ? x : b));
+  const best = chooseTitle(all, keywords);
   return { m, best, all, keywords };
 }
 
@@ -195,7 +195,7 @@ export async function compileSeries(seriesId: number) {
     console.log(`● Ghép ${files.length} video — ${Math.round(total / 60)} phút`);
     const out = path.join(dir, "long.mp4");
     await concatLongs(files, dir, out, total);
-    const seconds = await duration(out);
+    let seconds = await duration(out);
     for (const f of files) await rm(path.dirname(f), { recursive: true, force: true });
 
     const credits = collectMusicCredits(batch.map((r) => r.meta?.description ?? ""));
@@ -213,6 +213,14 @@ export async function compileSeries(seriesId: number) {
         chapters: batch.map((r, i) => ({ chapter: chapterRows.find((c) => c.id === r.chapterId)!, seconds: durations[i] })),
       });
       ({ meta, thumb, short } = built);
+      // Đoạn mở đầu cao trào ghép lên trước chương đầu (concat copy — đã encode trùng thông số chương tĩnh).
+      if (built.coldOpen) {
+        const withIntro = path.join(dir, "long-intro.mp4");
+        await concatLongs([built.coldOpen.file, out], dir, withIntro, built.coldOpen.seconds + seconds);
+        await rm(out, { force: true });
+        await rename(withIntro, out);
+        seconds = await duration(out);
+      }
     } else {
     console.log("● Meta");
     const { m, best, all, keywords } = await buildMeta(s, batch, label, durations);

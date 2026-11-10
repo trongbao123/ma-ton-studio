@@ -31,6 +31,11 @@ export function chaptersToWrite(o: { chaptersPerDay: number; writtenToday: numbe
   return Math.max(0, Math.min(o.chaptersPerDay - o.writtenToday, room));
 }
 
+/** Đoạn mở đầu cao trào: ~7 giây đổi 1 ảnh, 3–6 ảnh. */
+export function coldOpenSceneCount(seconds: number) {
+  return Math.min(6, Math.max(3, Math.round(seconds / 7)));
+}
+
 /** Số ảnh cho video chương: nội bộ (tập) 1 ảnh/60 giây, tối đa 30; thường 1 ảnh/25 giây, tối đa 30. Luôn ≥ 6. */
 export function imageCount(seconds: number, episode: boolean) {
   const per = episode ? EPISODE_IMAGE_SECONDS : DEFAULT_IMAGE_SECONDS;
@@ -83,9 +88,11 @@ export type TocItem = { number: number; title: string; seconds: number; sub: { s
  * Mục lục YouTube cho tập: mỗi chương một mốc "Chương N: …" rồi các mục con "· tên đoạn" (cộng dồn thời lượng các chương trước).
  * Mục con đầu (00:00 của chương) bỏ vì trùng mốc chương.
  */
-export function buildEpisodeToc(items: TocItem[]) {
+export function buildEpisodeToc(items: TocItem[], intro?: { seconds: number; title: string }) {
   const toc: { start: number; title: string }[] = [];
-  let offset = 0;
+  // Đoạn mở đầu cao trào nằm trước chương đầu: mốc 00:00 là nó (YouTube bắt buộc chương đầu ở 00:00), các chương dời theo.
+  let offset = intro && intro.seconds > 0 ? intro.seconds : 0;
+  if (offset) toc.push({ start: 0, title: intro!.title });
   for (const it of items) {
     toc.push({ start: offset, title: `Chương ${it.number}: ${it.title}` });
     for (const s of it.sub.slice(1)) toc.push({ start: offset + s.start, title: `· ${s.title}` });

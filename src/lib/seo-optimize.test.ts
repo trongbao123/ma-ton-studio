@@ -19,9 +19,9 @@ const weak: VideoMeta = {
   shortDescription: "",
 };
 const tags = [
-  "than ma tang co", "thon thien luc", "truyen tien hiep", "lam uyen", "truyen audio", "tien hiep",
-  "truyen audio tien hiep hay nhat", "nghe truyen tien hiep moi nhat", "than an thon phe", "co than huyet mach",
-  "truyen kiem hiep", "doc truyen tien hiep", "audiobook viet nam", "truyen tien hiep full",
+  "thần ma táng cổ", "thôn thiên lục", "truyện tiên hiệp", "lâm uyên", "truyện audio", "tiên hiệp",
+  "truyện audio tiên hiệp hay nhất", "nghe truyện tiên hiệp mới nhất", "thần ấn thôn phệ", "cổ thần huyết mạch",
+  "truyện kiếm hiệp", "đọc truyện tiên hiệp", "audiobook việt nam", "truyện tiên hiệp full",
 ];
 const strong = {
   title: "Thần Ma Táng Cổ - Chương 2: Lâm Uyên rèn đúc, thần ấn thôn phệ",

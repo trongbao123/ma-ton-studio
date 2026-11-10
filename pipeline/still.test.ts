@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AMBIENT_GAIN, MUSIC_GAIN, episodeAudioGraph, episodeMuxArgs, parseIntegratedLufs, stillFrames, stillSegmentArgs, voiceGainDb } from "./still";
+import { AMBIENT_GAIN, MUSIC_GAIN, STILL_TIMESCALE, conformArgs, episodeAudioGraph, episodeMuxArgs, parseIntegratedLufs, stillFrames, stillSegmentArgs, voiceGainDb } from "./still";
 
 describe("stillFrames", () => {
   it("làm tròn theo mốc cộng dồn: tổng các đoạn bằng đúng số khung của cả timeline", () => {
@@ -92,5 +92,17 @@ describe("parseIntegratedLufs / voiceGainDb", () => {
     expect(voiceGainDb(-80)).toBe(30);
     expect(voiceGainDb(10)).toBe(-20);
     expect(voiceGainDb(null)).toBeNull();
+  });
+});
+
+describe("conformArgs", () => {
+  it("đưa clip mở đầu về đúng thông số chương tĩnh để concat copy", () => {
+    const a = conformArgs({ input: "cold.mp4", out: "c.mp4", w: 1920, h: 1080 }).join(" ");
+    expect(a).toContain("fps=24");
+    expect(a).toContain("-r 24");
+    expect(a).toContain(`-video_track_timescale ${STILL_TIMESCALE}`);
+    expect(a).toContain("-ar 48000 -ac 2");
+    expect(a).toContain("loudnorm=I=-16");
+    expect(a.endsWith("c.mp4")).toBe(true);
   });
 });

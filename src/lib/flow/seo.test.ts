@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { focusKeywords, norm, scoreDescription, scoreMeta, scoreShort, scoreTags, scoreTitle } from "./seo";
 
 const kw = focusKeywords("Thần Ma Táng Cổ: Thôn Thiên Lục");
-const tags = ["than ma tang co", "thon thien luc", "truyen tien hiep", "lam uyen", "truyen audio", "audio tien hiep hay nhat"];
+const tags = ["thần ma táng cổ", "thôn thiên lục", "truyện tiên hiệp", "lâm uyên", "truyện audio", "audio tiên hiệp hay nhất"];
 
 describe("norm / focusKeywords", () => {
   it("bỏ dấu và chữ đ", () => expect(norm("Đấu La Đại Lục!")).toBe("dau la dai luc"));
@@ -18,9 +18,12 @@ describe("scoreTitle", () => {
   it("thiếu từ khóa và in hoa toàn bộ thì thấp", () => {
     expect(scoreTitle("SÁT Ý BÙNG NỔ KINH HOÀNG", kw, tags).score).toBeLessThan(40);
   });
-  it("ưu tiên điểm vidIQ khi có", () => {
-    const s = scoreTitle("Thần Ma Táng Cổ - Chương 2", kw, tags, 73.4);
-    expect(s).toMatchObject({ score: 73, source: "vidiq" });
+  it("có điểm vidIQ thì lấy mức thấp hơn giữa vidIQ và checklist", () => {
+    const good = "Thần Ma Táng Cổ - Chương 2: Lâm Uyên rèn đúc quyết sinh";
+    expect(scoreTitle(good, kw, tags, 73.4)).toMatchObject({ score: 73, source: "vidiq" });
+    // vidIQ chấm 91 (hấp dẫn) nhưng thiếu từ khóa tìm kiếm thật → không được 91.
+    const s = scoreTitle("Lâm Uyên thức tỉnh Ám Ảnh Ma Đồng: Cuộc săn sinh tử bắt đầu!", kw, tags, 91, ["truyện tu tiên"]);
+    expect(s.score).toBeLessThan(70);
     expect(s.checks.length).toBeGreaterThan(0);
   });
 });
@@ -34,6 +37,19 @@ describe("scoreDescription", () => {
       "#truyenaudio #tienhiep #thanmatangco",
     ].join("\n\n");
     expect(scoreDescription(long, kw, tags).score).toBeGreaterThanOrEqual(80);
+  });
+});
+
+describe("giữ dấu như vidIQ", () => {
+  it("tag không dấu không tính là khớp tiêu đề/mô tả và bị trừ điểm", () => {
+    const title = "Truyện tu tiên: Lâm Uyên rèn đúc | Thần Ma Táng Cổ Chương 2";
+    const desc = "Thần Ma Táng Cổ, truyện audio tiên hiệp. Truyện tu tiên mới.";
+    const search = ["truyện tu tiên", "truyện audio", "tiên hiệp"];
+    const accented = scoreTags(["truyện tu tiên", "truyện audio", "thần ma táng cổ", "tiên hiệp"], kw, title, desc, search);
+    const plain = scoreTags(["truyen tu tien", "truyen audio", "than ma tang co", "tien hiep"], kw, title, desc, search);
+    expect(plain.checks.find((c) => c.text.includes("không dấu"))?.ok).toBe(false);
+    expect(accented.checks.find((c) => c.text.includes("có dấu"))?.ok).toBe(true);
+    expect(plain.score).toBeLessThan(accented.score - 30);
   });
 });
 
