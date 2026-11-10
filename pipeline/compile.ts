@@ -4,10 +4,10 @@ import { execFile } from "node:child_process";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { and, eq, gte, isNotNull } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { chapters, series, videos, type VideoMeta } from "@/db/schema";
+import { chapters, series, videos, type Series, type VideoMeta } from "@/db/schema";
 import { QuotaExhaustedError, textProvider } from "@/lib/ai";
 import { escapeHtml, notify, WEB_URL } from "@/lib/notify";
 import { loadSecrets } from "@/lib/secrets";
@@ -15,6 +15,9 @@ import { AI_NOTE, optimizeMeta } from "@/lib/seo-optimize";
 import { buildChapterMarks, collectMusicCredits, COMPILE_SIZE, compileLabel, nextCompileSlot, pickBatch, type CompileCandidate } from "./compile-plan";
 import { duration, ffmpeg, streamSignature } from "./ffmpeg";
 import { thumbnail } from "./render";
+import { buildEpisodeContent } from "./episode";
+import { episodeBacklog } from "./episode-plan";
+import { nextPublishSlot } from "./schedule";
 import { ensureRelease, uploadAsset } from "./release";
 import { autoPublishEligible, publishToYoutube } from "./youtube";
 import { closeVidiq, generateTitles, genreSeeds, keywordResearch, scoreTitles } from "./vidiq";
@@ -25,6 +28,8 @@ const run = promisify(execFile);
 const STALE_HOURS = 4;
 /** Bản gộp lỗi thì chờ ngần này giờ mới tự gộp lại (tránh lặp vô hạn mỗi 3 tiếng). */
 const RETRY_AFTER_HOURS = 24;
+/** Tập ngày lỗi thì thử lại sau ngần này giờ (lượt daily kế tiếp) — không chờ cả ngày vì còn lịch 15h. */
+const EPISODE_RETRY_AFTER_HOURS = 5;
 
 const metaSchema = z.object({
   title: z.string().describe("Tiêu đề YouTube 50–70 ký tự: mở đầu bằng 1 từ khóa tìm kiếm thật điểm cao (vd 'Truyện tu tiên'), có tên truyện ngắn, 'Chương X–Y', gợi ý 'trọn bộ' / 'nghe liền mạch'; viết hoa chữ cái đầu như câu thường (KHÔNG in hoa toàn bộ)"),
@@ -36,8 +41,12 @@ const metaSchema = z.object({
   characterLook: z.string().describe("English: mô tả ngoại hình nhân vật chính"),
 });
 
-type Row = {
+export type Row = {
   id: number;
+  publishAt: Date | null;
+  youtubeVideoId: string | null;
+  youtubeUrl: string | null;
+  hasLong: boolean;
   status: (typeof videos.$inferSelect)["status"];
   assets: Record<string, number>;
   meta: VideoMeta | null;
@@ -48,34 +57,47 @@ type Row = {
   summary: string;
 };
 
-async function seriesRows(seriesId: number): Promise<Row[]> {
-  return db()
+export async function seriesRows(seriesId: number): Promise<Row[]> {
+  const rows = await db()
     .select({
       id: videos.id, status: videos.status, assets: videos.assets, meta: videos.meta, updatedAt: videos.updatedAt,
+      publishAt: videos.publishAt, youtubeVideoId: videos.youtubeVideoId, youtubeUrl: videos.youtubeUrl,
       chapterId: chapters.id, number: chapters.number, title: chapters.title, summary: chapters.summary,
     })
     .from(videos)
     .innerJoin(chapters, eq(chapters.id, videos.chapterId))
     .where(eq(chapters.seriesId, seriesId));
+  return rows.map((r) => ({ ...r, hasLong: Boolean(r.assets["long.mp4"]) }));
+}
+
+/** Bản gộp/tập "đang dựng" mà quá STALE_HOURS không cập nhật = job đã chết → coi như lỗi để chương được ghép lại. */
+export function withStaleAsFailed(rows: Row[], now = new Date()): Row[] {
+  return rows.map((r) =>
+    r.meta?.compilation && (r.status === "rendering" || r.status === "queued") && now.getTime() - r.updatedAt.getTime() >= STALE_HOURS * 3600_000
+      ? { ...r, status: "failed" as const }
+      : r,
+  );
 }
 
 /** Trạng thái gộp của một bộ truyện: có đang làm / vừa lỗi không, và 5 chương kế tiếp sẵn sàng gộp (nếu có). */
-export async function compileState(seriesId: number, now = new Date()) {
-  const rows = await seriesRows(seriesId);
+export async function compileState(s: Series, now = new Date()) {
+  const seriesId = s.id;
+  const episode = s.episodeChapters > 0;
+  const rows = withStaleAsFailed(await seriesRows(seriesId), now);
   const fresh = (r: Row) => now.getTime() - r.updatedAt.getTime() < STALE_HOURS * 3600_000;
   const compiles = rows.filter((r) => r.meta?.compilation);
   const active = compiles.some((r) => (r.status === "rendering" || r.status === "queued") && fresh(r));
-  const recentFailed = compiles.some((r) => r.status === "failed" && now.getTime() - r.updatedAt.getTime() < RETRY_AFTER_HOURS * 3600_000);
+  const recentFailed = compiles.some((r) => r.status === "failed" && now.getTime() - r.updatedAt.getTime() < (episode ? EPISODE_RETRY_AFTER_HOURS : RETRY_AFTER_HOURS) * 3600_000);
   // Bản gộp lỗi / job chết thì các chương của nó được gộp lại.
   const used = new Set(
     compiles
       .filter((r) => r.status === "ready" || r.status === "published" || ((r.status === "rendering" || r.status === "queued") && fresh(r)))
       .flatMap((r) => r.meta!.compilation!.videoIds),
   );
-  const candidates: CompileCandidate[] = rows
-    .filter((r) => !r.meta?.compilation && (r.status === "ready" || r.status === "published") && r.assets["long.mp4"] && !used.has(r.id))
-    .map((r) => ({ chapterId: r.chapterId, number: r.number, title: r.title, videoId: r.id }));
-  return { active, recentFailed, batch: pickBatch(candidates), rows };
+  const episodeNo = rows.filter((r) => r.meta?.compilation?.episode && r.status !== "failed").length + 1;
+  const legacy = rows.filter((r) => !r.meta?.compilation && (r.status === "ready" || r.status === "published") && r.assets["long.mp4"] && !used.has(r.id));
+  const candidates: CompileCandidate[] = (episode ? episodeBacklog(rows, now).ready : legacy).map((r) => ({ chapterId: r.chapterId, number: r.number, title: r.title, videoId: r.id }));
+  return { active, recentFailed, batch: pickBatch(candidates, episode ? s.episodeChapters : COMPILE_SIZE), rows, episodeNo };
 }
 
 /** Ghép các file: cùng thông số thì concat copy (nhanh, không mất chất lượng), khác thì re-encode như render. */
@@ -130,18 +152,27 @@ export async function compileSeries(seriesId: number) {
   await loadSecrets(true);
   const [s] = await db().select().from(series).where(eq(series.id, seriesId));
   if (!s) throw new Error(`Không có bộ truyện #${seriesId}`);
-  const state = await compileState(seriesId);
+  const episode = s.episodeChapters > 0;
+  const size = episode ? s.episodeChapters : COMPILE_SIZE;
+  const state = await compileState(s);
   if (state.active) return console.log(`⏭ ${s.title}: đã có bản gộp đang làm — bỏ qua.`);
-  if (!state.batch) return console.log(`⏭ ${s.title}: chưa đủ ${COMPILE_SIZE} chương liền nhau đã có video dài — dừng.`);
+  if (!state.batch) return console.log(`⏭ ${s.title}: chưa đủ ${size} chương liền nhau đã có video dài — dừng.`);
+  // Bản dựng dở của job đã chết: đánh dấu lỗi để UI không treo "đang render" mãi.
+  for (const r of state.rows.filter((x) => x.meta?.compilation && x.status === "rendering")) {
+    if (Date.now() - r.updatedAt.getTime() >= STALE_HOURS * 3600_000) await db().update(videos).set({ status: "failed", error: "Job dừng giữa chừng", updatedAt: new Date() }).where(eq(videos.id, r.id));
+  }
   const batch = state.batch.map((c) => state.rows.find((r) => r.id === c.videoId)!);
   const from = batch[0].number;
   const to = batch[batch.length - 1].number;
   const label = compileLabel(from, to);
-  const compilation = { seriesId, from, to, videoIds: batch.map((r) => r.id) };
-  console.log(`▶ Bản gộp ${s.title} — chương ${label} (video ${compilation.videoIds.join(", ")})`);
+  const compilation: NonNullable<VideoMeta["compilation"]> = {
+    seriesId, from, to, videoIds: batch.map((r) => r.id), ...(episode ? { episode: true, episodeNo: state.episodeNo } : {}),
+  };
+  const name = episode ? `Tập ${state.episodeNo} (chương ${label})` : `Bản gộp chương ${label}`;
+  console.log(`▶ ${name} — ${s.title} (video ${compilation.videoIds.join(", ")})`);
 
   // Giữ chỗ ngay (status rendering + compilation) để job daily không dispatch trùng và 5 chương này không bị gộp lần nữa.
-  const placeholder: VideoMeta = { title: `Bản gộp chương ${label} (đang dựng)`, description: "", tags: [], shortTitle: "", shortDescription: "", compilation };
+  const placeholder: VideoMeta = { title: `${name} (đang dựng)`, description: "", tags: [], shortTitle: "", shortDescription: "", compilation };
   const [row] = await db()
     .insert(videos)
     .values({
@@ -167,10 +198,25 @@ export async function compileSeries(seriesId: number) {
     const seconds = await duration(out);
     for (const f of files) await rm(path.dirname(f), { recursive: true, force: true });
 
+    const credits = collectMusicCredits(batch.map((r) => r.meta?.description ?? ""));
+    let meta: VideoMeta;
+    let thumb: string | null;
+    let short: string | null = null;
+    if (episode) {
+      console.log("● Nội dung tập");
+      const chapterRows = await db().select().from(chapters).where(inArray(chapters.id, batch.map((r) => r.chapterId)));
+      const prevUrl = state.rows
+        .filter((r) => r.meta?.compilation?.episode && r.youtubeUrl)
+        .sort((a, b) => (b.meta!.compilation!.episodeNo ?? 0) - (a.meta!.compilation!.episodeNo ?? 0))[0]?.youtubeUrl ?? null;
+      const built = await buildEpisodeContent({
+        s, dir, videoId, from, to, compilation, credits, episodeNo: state.episodeNo, previousEpisodeUrl: prevUrl,
+        chapters: batch.map((r, i) => ({ chapter: chapterRows.find((c) => c.id === r.chapterId)!, seconds: durations[i] })),
+      });
+      ({ meta, thumb, short } = built);
+    } else {
     console.log("● Meta");
     const { m, best, all, keywords } = await buildMeta(s, batch, label, durations);
     const marks = buildChapterMarks(batch.map((r, i) => ({ number: r.number, title: r.title, seconds: durations[i] })));
-    const credits = collectMusicCredits(batch.map((r) => r.meta?.description ?? ""));
     const draft: VideoMeta = {
       title: best.title.length > 100 ? `${best.title.slice(0, 97)}…` : best.title,
       description: `${m.description}\n\n${AI_NOTE}`,
@@ -188,23 +234,24 @@ export async function compileSeries(seriesId: number) {
     );
     // Mục lục + ghi công nhạc gắn SAU bước tối ưu để AI không xoá/sửa mất.
     const description = [fixed.meta.description, `📑 Mục lục:\n${marks}`, ...credits].join("\n\n");
-    const meta: VideoMeta = { ...fixed.meta, description, compilation };
+    meta = { ...fixed.meta, description, compilation };
     console.log(`  Điểm SEO: ${fixed.score}; tiêu đề: ${meta.title}`);
 
     console.log("● Thumbnail");
-    const thumb = await makeThumbnail(dir, m, label, batch[batch.length - 1].id);
+    thumb = await makeThumbnail(dir, m, label, batch[batch.length - 1].id);
+    }
     const metaFile = path.join(dir, "youtube.txt");
     await writeFile(metaFile, `${meta.title}\n\n${meta.description}\n\nTags: ${meta.tags.join(", ")}\n`);
 
     console.log("● Upload lên kho");
     const releaseId = await ensureRelease(videoId, true);
-    for (const f of [out, ...(thumb ? [thumb] : []), metaFile]) await uploadAsset(videoId, releaseId, f);
+    for (const f of [out, ...(thumb ? [thumb] : []), ...(short ? [short] : []), metaFile]) await uploadAsset(videoId, releaseId, f);
 
     const taken = await db()
       .select({ at: videos.publishAt })
       .from(videos)
       .where(and(isNotNull(videos.publishAt), gte(videos.publishAt, new Date())));
-    const publishAt = nextCompileSlot(taken.map((t) => t.at!));
+    const publishAt = episode ? await nextPublishSlot() : nextCompileSlot(taken.map((t) => t.at!));
     const publish = await autoPublishEligible(videoId);
     await db()
       .update(videos)
@@ -214,17 +261,17 @@ export async function compileSeries(seriesId: number) {
       })
       .where(eq(videos.id, videoId));
     await notify(
-      `🎞 <b>Bản gộp sẵn sàng</b>\n${escapeHtml(meta.title)}\n⏱ ${Math.round(seconds / 60)} phút (chương ${label})\n` +
+      `🎞 <b>${episode ? `Tập ${state.episodeNo} sẵn sàng` : "Bản gộp sẵn sàng"}</b>\n${escapeHtml(meta.title)}\n⏱ ${Math.round(seconds / 60)} phút (chương ${label})\n` +
         `📅 Lịch đăng: ${publishAt.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", weekday: "long", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}\n` +
         `👉 ${WEB_URL}/videos/${videoId}`,
     );
-    if (publish) await publishToYoutube(videoId, { long: out, thumb: thumb ?? undefined });
+    if (publish) await publishToYoutube(videoId, { long: out, thumb: thumb ?? undefined, short: short ?? undefined });
     if (process.env.GITHUB_ACTIONS) await rm(dir, { recursive: true, force: true });
-    console.log(`✔ Xong bản gộp #${videoId} (${Math.round(seconds / 60)} phút)`);
+    console.log(`✔ Xong ${name} #${videoId} (${Math.round(seconds / 60)} phút)`);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     await db().update(videos).set({ status: "failed", error: msg.slice(0, 2000), updatedAt: new Date() }).where(eq(videos.id, videoId));
-    await notify(`❌ <b>Bản gộp lỗi</b> ${escapeHtml(s.title)} — chương ${label}\n${escapeHtml(msg.slice(0, 300))}\n👉 ${WEB_URL}/videos/${videoId}`);
+    await notify(`❌ <b>${episode ? `Tập ${state.episodeNo}` : "Bản gộp"} lỗi</b> ${escapeHtml(s.title)} — chương ${label}\n${escapeHtml(msg.slice(0, 300))}\n👉 ${WEB_URL}/videos/${videoId}`);
     throw e;
   } finally {
     await closeVidiq();

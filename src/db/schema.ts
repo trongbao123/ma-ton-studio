@@ -20,6 +20,8 @@ export const series = pgTable("series", {
   autoApprove: boolean("auto_approve").notNull().default(false),
   /** Số chương tối đa autopilot viết mỗi ngày (còn bị chặn bởi quota free). */
   chaptersPerDay: integer("chapters_per_day").notNull().default(2),
+  /** > 0 = chế độ "tập dài mỗi ngày": số chương ghép thành 1 tập (video chương chỉ render nội bộ, không đăng lẻ). 0 = đăng từng chương. */
+  episodeChapters: integer("episode_chapters").notNull().default(0),
   /** Chỉ dẫn giọng đọc cho TTS. */
   /** Giọng Gemini TTS — chỉnh trên node Giọng đọc, áp dụng từ lần render sau. */
   ttsVoice: text("tts_voice").notNull().default("Algenib"),
@@ -60,7 +62,8 @@ export type VideoMeta = {
   /** keywords: từ khóa người xem tìm thật (vidIQ, VN), xếp theo điểm — dùng làm từ khóa chính khi chấm/sửa SEO. */
   seo?: { titleScore?: number | null; titleOptions?: { title: string; score: number | null }[]; keywords?: string[] };
   /** Có = đây là bản gộp nhiều chương (chapterId của row = chương cuối). videoIds: các video chương đã gộp. */
-  compilation?: { seriesId: number; from: number; to: number; videoIds: number[] };
+  /** episode = true: đây là "Tập N" của chế độ tập dài mỗi ngày (episodeNo = N); không có = bản gộp 5 chương cũ. */
+  compilation?: { seriesId: number; from: number; to: number; videoIds: number[]; episode?: boolean; episodeNo?: number };
 };
 
 /** Một lần render cho một chương: video dài + 1 Short + thumbnail, lưu ở GitHub Release `video-<id>`. */

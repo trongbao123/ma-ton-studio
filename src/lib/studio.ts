@@ -1,4 +1,4 @@
-import { count, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { chapters, series, videos, type Video } from "@/db/schema";
 import { TITLES, type NodeId } from "@/lib/flow/model";
@@ -57,7 +57,9 @@ export type VideoCard = {
   chapterTitle: string;
   seriesTitle: string;
   /** Có = bản gộp chương from–to (chapterNo = chương cuối). */
-  compilation: { from: number; to: number } | null;
+  compilation: { from: number; to: number; episodeNo: number | null } | null;
+  /** Video chương nội bộ của chế độ tập (nguyên liệu ghép, không đăng lẻ). */
+  internal: boolean;
   /** Bước đang chạy, vd "Vẽ ảnh cảnh 18/30" — chỉ có với pipeline ghi tiến độ. */
   live: string | null;
   /** 0–1, tiến độ cả video khi đang render. */
@@ -86,16 +88,24 @@ export function liveSummary(p: VideoProgress | null | undefined): { live: string
   return { live, pct };
 }
 
-export async function videoCards(opts: { limit?: number; statuses?: Video["status"][] } = {}): Promise<VideoCard[]> {
+export type VideoKind = "episode" | "internal";
+
+export async function videoCards(opts: { limit?: number; statuses?: Video["status"][]; kind?: VideoKind } = {}): Promise<VideoCard[]> {
+  const isEpisode = sql`${videos.meta}->'compilation'->>'episode' = 'true'`;
+  const isInternal = sql`${series.episodeChapters} > 0 and ${videos.meta}->'compilation' is null and ${videos.youtubeVideoId} is null`;
+  const where = and(
+    opts.statuses ? inArray(videos.status, opts.statuses) : undefined,
+    opts.kind === "episode" ? isEpisode : opts.kind === "internal" ? isInternal : undefined,
+  );
   const rows = await db()
-    .select({ v: videos, chapterNo: chapters.number, chapterTitle: chapters.title, seriesTitle: series.title })
+    .select({ v: videos, chapterNo: chapters.number, chapterTitle: chapters.title, seriesTitle: series.title, episodeChapters: series.episodeChapters })
     .from(videos)
     .innerJoin(chapters, eq(chapters.id, videos.chapterId))
     .innerJoin(series, eq(series.id, chapters.seriesId))
-    .where(opts.statuses ? inArray(videos.status, opts.statuses) : undefined)
+    .where(where)
     .orderBy(desc(videos.id))
     .limit(opts.limit ?? 60);
-  return rows.map(({ v, ...r }) => ({
+  return rows.map(({ v, episodeChapters, ...r }) => ({
     id: v.id,
     status: v.status,
     uploadStatus: v.uploadStatus,
@@ -106,7 +116,8 @@ export async function videoCards(opts: { limit?: number; statuses?: Video["statu
     thumbVersion: v.assets["thumbnail.jpg"] ?? null,
     youtubeVideoId: v.youtubeVideoId,
     youtubeShortId: v.youtubeShortId,
-    compilation: v.meta?.compilation ? { from: v.meta.compilation.from, to: v.meta.compilation.to } : null,
+    compilation: v.meta?.compilation ? { from: v.meta.compilation.from, to: v.meta.compilation.to, episodeNo: v.meta.compilation.episode ? (v.meta.compilation.episodeNo ?? null) : null } : null,
+    internal: episodeChapters > 0 && !v.meta?.compilation && !v.youtubeVideoId,
     ...r,
     ...(v.status === "rendering" ? liveSummary(v.progress) : { live: null, pct: null }),
   }));

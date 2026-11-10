@@ -4,14 +4,15 @@ import { access, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promise
 import path from "node:path";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { chapters, series, videos, type VideoMeta } from "@/db/schema";
+import { chapters, series, videos, type Chapter, type Series, type VideoMeta } from "@/db/schema";
 import { QuotaExhaustedError, textProvider } from "@/lib/ai";
 import { escapeHtml, notify, WEB_URL } from "@/lib/notify";
 import { drawImage, imagesReady } from "./images";
 import { duration, ffmpeg, filterPath, once, pool } from "./ffmpeg";
 import { Tracker } from "./progress";
 import { freshInsights, loadTrends, seoHints } from "@/lib/trends";
-import { metaRequest, scenePrompts, scenesRequest, videoMeta } from "./prompts";
+import { characterLookFor, metaRequest, scenePrompts, scenesRequest, videoMeta } from "./prompts";
+import { imageCount } from "./episode-plan";
 import { ensureRelease, uploadAsset } from "./release";
 import { keepOrNextSlot } from "./schedule";
 import { loadSecrets } from "@/lib/secrets";
@@ -30,7 +31,15 @@ const FONT = `${FONT_DIR}/BeVietnamPro-Bold.ttf`;
 const BURN_TEXT = process.env.BURN_TEXT !== "0";
 const FPS = 30;
 
-type Narration = { audio: string; cues: Cue[]; seconds: number };
+/**
+ * Mức chất lượng dựng. `fast` cho video chương nội bộ của chế độ tập (chỉ dùng làm nguyên liệu ghép, không đăng lẻ):
+ * phóng ảnh 1,5× thay 2× và bỏ làm nét (shot rẻ ~3,4×), 24 fps, bỏ vignette (tốn ~40% bước trộn cuối). Đo local: ≈ -48% CPU/phút video.
+ */
+export type Quality = { scale: number; sharpen: boolean; fps: number; vignette: boolean; crf: number; tag: string };
+const NORMAL: Quality = { scale: 2, sharpen: true, fps: FPS, vignette: true, crf: 22, tag: "2" };
+const FAST: Quality = { scale: 1.5, sharpen: false, fps: 24, vignette: false, crf: 23, tag: "f" };
+
+export type Narration = { audio: string; cues: Cue[]; seconds: number };
 
 /** Kết quả AI được cache trong thư mục render: lần chạy lại (sau khi hết quota) không tốn lượt gọi lại. */
 async function cached<T>(file: string, make: () => Promise<T>): Promise<T> {
@@ -44,7 +53,7 @@ const MAX_TTS_CHARS = 4000;
 const ttsChunks = (text: string) => packChunks(sentences(text), MAX_TTS_CHARS);
 
 /** Đọc toàn bộ văn bản thành 1 file WAV + cue phụ đề. File cache có tên giọng: đổi giọng thì đọc lại. */
-async function narrate(text: string, dir: string, voice: string, onChunk?: (i: number, total: number) => void, cueChars = 70): Promise<Narration> {
+export async function narrate(text: string, dir: string, voice: string, onChunk?: (i: number, total: number) => void, cueChars = 70): Promise<Narration> {
   const chunks = ttsChunks(text);
   const files = await pool(chunks, 3, async (chunk, i) => {
     const f = path.join(dir, `tts-${voice}-${String(i).padStart(3, "0")}.wav`);
@@ -68,7 +77,7 @@ async function narrate(text: string, dir: string, voice: string, onChunk?: (i: n
 }
 
 /** Chia timeline thành `n` cảnh liền nhau theo cue, trả về [start, end, text]. */
-function splitScenes(cues: Cue[], n: number, total: number) {
+export function splitScenes(cues: Cue[], n: number, total: number) {
   const span = total / n;
   return Array.from({ length: n }, (_, i) => {
     const start = i * span;
@@ -114,16 +123,17 @@ const ZOOM = 0.06;
  * zoompan làm tròn toạ độ theo pixel nguồn, nguồn 4K thì mỗi bước chỉ còn ½ pixel ở 1080p → hết rung.
  * Cắt 7% đáy để bỏ logo Pollinations.
  */
-export async function shot(img: string, out: string, seconds: number, w: number, h: number, motion: Motion) {
-  const frames = Math.max(1, Math.round(seconds * FPS));
+export async function shot(img: string, out: string, seconds: number, w: number, h: number, motion: Motion, q: Quality = NORMAL) {
+  const frames = Math.max(1, Math.round(seconds * q.fps));
+  const up = q.scale;
   const { z, x, y } = motionExpr(motion, frames);
   await ffmpeg([
     "-loop", "1", "-i", img, "-t", seconds.toFixed(3),
     "-vf",
-    `${LOGO_CROP}scale=${w * 2}:${h * 2}:force_original_aspect_ratio=increase:flags=lanczos,crop=${w * 2}:${h * 2}:(iw-ow)/2:(ih-oh)*0.3,unsharp=5:5:1.0,` +
-      `zoompan=z='${z}':x='${x}':y='${y}':d=1:s=${w}x${h}:fps=${FPS},format=yuv420p`,
+    `${LOGO_CROP}scale=${w * up}:${h * up}:force_original_aspect_ratio=increase:flags=${q.sharpen ? "lanczos" : "bicubic"},crop=${w * up}:${h * up}:(iw-ow)/2:(ih-oh)*0.3,${q.sharpen ? "unsharp=5:5:1.0," : ""}` +
+      `zoompan=z='${z}':x='${x}':y='${y}':d=1:s=${w}x${h}:fps=${q.fps},format=yuv420p`,
     // File tạm (còn mã hoá lại ở bước cuối) → nén nhanh hơn, crf thấp hơn để không mất chất lượng; đỡ phút GitHub Actions.
-    "-c:v", "libx264", "-preset", "superfast", "-crf", "18", "-r", String(FPS), out,
+    "-c:v", "libx264", "-preset", "superfast", "-crf", "18", "-r", String(q.fps), out,
   ]);
 }
 
@@ -149,10 +159,13 @@ export async function buildVideo(opts: {
   w: number; h: number; imgW: number; imgH: number; fontSize: number; marginV: number; titleCard?: string;
   /** Short: chữ lớn 2 giây đầu để giữ người lướt; thanh tiến độ mảnh trên đỉnh. */
   hook?: string; progressBar?: boolean;
+  /** Mặc định NORMAL; video chương nội bộ của chế độ tập dùng FAST. */
+  quality?: Quality;
   /** Báo tiến độ cho màn flow: ảnh vẽ xong (lần đầu), tổng số shot, từng shot xong, việc ghép. */
   on?: { image?: (i: number, file: string, model?: string) => Promise<void>; shots?: (n: number) => void; shot?: () => void; log?: (text: string) => void };
 }) {
   const { dir, name, narration, prompts, scenes, w, h, on } = opts;
+  const q = opts.quality ?? NORMAL;
   // Mỗi ảnh (1 scene) tách thành nhiều cảnh ~10s với kiểu máy quay khác nhau.
   const shots = scenes.flatMap((sc, i) => {
     const action = prompts[i].action;
@@ -188,8 +201,8 @@ export async function buildVideo(opts: {
     const fadesNext = j % GROUP !== GROUP - 1 && j !== shots.length - 1;
     const seconds = sh.seconds + (fadesNext ? shots[j + 1].fade : 0);
     // "shot2": đổi tên khi đổi cách mã hoá để không trộn file cũ; once() → job bị huỷ chạy lại thì bỏ qua cảnh đã dựng.
-    const file = path.join(dir, `${name}-shot2-${String(j).padStart(3, "0")}.mp4`);
-    await once(file, (tmp) => shot(img, tmp, seconds, w, h, sh.motion));
+    const file = path.join(dir, `${name}-shot${q.tag}-${String(j).padStart(3, "0")}.mp4`);
+    await once(file, (tmp) => shot(img, tmp, seconds, w, h, sh.motion, q));
     if (j % 10 === 0) console.log(`  ${name} cảnh ${j + 1}/${shots.length}`);
     on?.shot?.();
     return { file, seconds, fade: sh.fade, fx: sh.fx };
@@ -198,13 +211,13 @@ export async function buildVideo(opts: {
 
   const groups: string[] = [];
   for (let g = 0; g * GROUP < files.length; g++) {
-    const out = path.join(dir, `${name}-group2-${g}.mp4`);
+    const out = path.join(dir, `${name}-group${q.tag}-${g}.mp4`);
     await once(out, (tmp) => crossfadeGroup(files.slice(g * GROUP, (g + 1) * GROUP), tmp));
     groups.push(out);
   }
   const list = path.join(dir, `${name}-groups.txt`);
   await writeFile(list, groups.map((c) => `file '${c}'`).join("\n"));
-  const silent = path.join(dir, `${name}-silent2.mp4`);
+  const silent = path.join(dir, `${name}-silent${q.tag}.mp4`);
   await once(silent, (tmp) => ffmpeg(["-f", "concat", "-safe", "0", "-i", list, "-c", "copy", tmp]));
 
   const out = path.join(dir, `${name}.mp4`);
@@ -217,7 +230,7 @@ export async function buildVideo(opts: {
   const ass = path.join(dir, `${name}.ass`);
   await writeFile(ass, toAss(narration.cues, { width: w, height: h, fontSize: opts.fontSize, marginV: opts.marginV, karaoke: true }));
   // Màu điện ảnh: tăng tương phản nhẹ, tối 4 góc, hạt phim.
-  const grade = "eq=contrast=1.05:saturation=1.08,vignette=PI/6";
+  const grade = q.vignette ? "eq=contrast=1.05:saturation=1.08,vignette=PI/6" : "eq=contrast=1.05:saturation=1.08";
   const text = BURN_TEXT
     ? `,ass=${filterPath(ass)}:fontsdir=${filterPath(FONT_DIR)}` +
       (opts.titleCard
@@ -239,7 +252,7 @@ export async function buildVideo(opts: {
       "-i", silent, "-i", narration.audio, ...audio,
       "-vf", `${grade}${text}${bar},format=yuv420p`,
       // Hạt phim làm bitrate phình (12 phút ≈ 256MB) → chặn ~5Mbps, đủ nét cho YouTube 1080p.
-      "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-maxrate", "5M", "-bufsize", "10M",
+      "-c:v", "libx264", "-preset", "veryfast", "-crf", String(q.crf), "-maxrate", "5M", "-bufsize", "10M",
       "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart", tmp,
     ]),
   );
@@ -280,7 +293,7 @@ function escText(s: string) {
  * Nhạc nền trong pipeline/music/ (Kevin MacLeod, incompetech.com — CC BY 4.0: được kiếm tiền, phải ghi công).
  * Chọn theo id video để chạy lại vẫn đúng bài đã ghi công trong mô tả.
  */
-async function pickMusic(seed: number) {
+export async function pickMusic(seed: number) {
   const dir = path.resolve("pipeline/music");
   const files = (await readdir(dir).catch(() => [] as string[])).filter((f) => f.endsWith(".mp3")).sort();
   return files.length ? path.join(dir, files[seed % files.length]) : null;
@@ -361,6 +374,74 @@ function clip(req: { system: string; prompt: string }) {
 
 const SHORT_SCENES = 5;
 
+/** Cache cảnh/ảnh của video chương gắn với số ảnh `n`: đổi cách chia (vd chuyển sang chế độ tập) thì bỏ ảnh/cảnh cũ — ảnh lệch lời đọc. */
+async function resetStaleScenes(dir: string, n: number) {
+  const marker = path.join(dir, "scene-plan.txt");
+  if ((await readFile(marker, "utf8").catch(() => "")) === String(n)) return;
+  for (const f of await readdir(dir).catch(() => [] as string[])) if (/^long-(img-\d+\.jpg|shot|group|silent)/.test(f)) await rm(path.join(dir, f), { force: true });
+  await writeFile(marker, String(n));
+}
+
+/**
+ * Video chương của chế độ tập: chỉ là nguyên liệu để ghép tập (không đăng lẻ, không Short, không thumbnail, không SEO/vidIQ,
+ * không playlist, không upload xem trước). Giọng + ảnh (1 ảnh/60 giây) + video dài ở mức FAST; xong thì `ready`, chờ ghép.
+ */
+async function renderInternalChapter(o: { videoId: number; s: Series; c: Chapter; dir: string; track: Tracker; releaseId: number | null }) {
+  const { videoId, s, c, dir, track, releaseId } = o;
+  track.start("agent", { long: 1 });
+  const look = await cached(path.join(dir, "look-v1.json"), () => characterLookFor(s));
+  track.model("agent", textProvider().lastModel);
+  const music = await pickMusic(videoId);
+  const credit = music ? `\n\n${musicCredit(music)}` : "";
+  const meta: VideoMeta = {
+    title: `Chương ${c.number}: ${c.title}`,
+    description: `Nguyên liệu của tập — không đăng lẻ.${credit}`,
+    tags: [], shortTitle: "", shortDescription: "",
+  };
+  await db().update(videos).set({ meta }).where(eq(videos.id, videoId));
+
+  const longText = `${s.title}. Chương ${c.number}: ${c.title}.\n${c.content}`;
+  track.start("tts", { long: ttsChunks(longText).length });
+  track.log("tts", `Giọng ${s.ttsVoice}`);
+  console.log("● Chương nội bộ: đọc giọng");
+  const long = await narrate(longText, dir, s.ttsVoice, (i, total) => track.tick("tts", "long", `Đoạn ${i + 1}/${total}`));
+  track.finish("tts");
+
+  const n = imageCount(long.seconds, true);
+  await resetStaleScenes(dir, n);
+  const scenes = splitScenes(long.cues, n, long.seconds);
+  const prompts = await cached(path.join(dir, `long-scenes-${n}.json`), () => scenePrompts(look.characterLook, scenes.map((x) => x.text)));
+  track.tick("agent", "long", `${n} prompt cảnh`);
+  track.finish("agent");
+
+  track.start("images", { long: n });
+  track.start("video");
+  const video = await buildVideo({
+    dir, name: "long", narration: long, prompts, scenes,
+    w: 1920, h: 1080, imgW: 1280, imgH: 768, fontSize: 62, marginV: 70,
+    titleCard: `${s.title}\n\nChương ${c.number}: ${c.title}`,
+    music, quality: FAST,
+    on: {
+      image: async (i) => track.tick("images", "long", `Ảnh ${i + 1}/${n} xong`),
+      shots: (count) => track.total("video", "long", count),
+      shot: () => track.tick("video", "long"),
+      log: (text) => track.log("video", text),
+    },
+  });
+  track.finish("images");
+  track.log("video", "Upload file lên kho");
+  await uploadAsset(videoId, releaseId, video.out);
+  track.finish("video");
+  await track.flush();
+  await db()
+    .update(videos)
+    .set({ status: "ready", meta, durationSec: Math.round(long.seconds), publishAt: null, uploadStatus: "none", updatedAt: new Date() })
+    .where(eq(videos.id, videoId));
+  if (process.env.GITHUB_ACTIONS) await rm(dir, { recursive: true, force: true });
+  console.log(`✔ Xong chương nội bộ #${videoId} (${Math.round(long.seconds / 60)} phút, ${n} ảnh)`);
+}
+
+
 export async function renderVideo(videoId: number) {
   // Key dán trên trang Cài đặt AI (lưu DB) — dùng được ngay mà không cần thêm GitHub Secrets.
   await loadSecrets(true);
@@ -398,6 +479,10 @@ export async function renderVideo(videoId: number) {
     if (!hasImages && !(await imagesReady())) throw new QuotaExhaustedError("Hết quota ảnh Cloudflare hôm nay — chờ reset 7h sáng (hoặc thêm AI vẽ khác trong Cài đặt AI).");
     // Video đã lên YouTube thì giữ release cũ (thay dần từng file); chưa thì làm sạch để xem tiến độ từ đầu.
     const releaseId = await ensureRelease(videoId, !v.youtubeVideoId);
+    if (s.episodeChapters > 0) {
+      await renderInternalChapter({ videoId, s, c, dir, track, releaseId });
+      return;
+    }
     const wantShort = s.makeShort;
 
     // ── AI Agent: tiêu đề, mô tả, kịch bản Short. Prompt ảnh làm sau khi có giọng đọc (chia cảnh theo thời gian).
@@ -473,8 +558,8 @@ export async function renderVideo(videoId: number) {
     track.finish("tts");
 
     // ── AI Agent: prompt ảnh từng cảnh.
-    // 1 ảnh ~25s (tách ~2–3 cảnh), tối đa 30 ảnh để vừa quota Cloudflare free 1 ngày.
-    const n = Math.min(30, Math.max(6, Math.round(long.seconds / 25)));
+    // 1 ảnh ~25s (tách ~2–3 cảnh), tối đa 30 ảnh để vừa quota Cloudflare free 1 ngày (imageCount).
+    const n = imageCount(long.seconds, false);
     const longScenes = splitScenes(long.cues, n, long.seconds);
     track.set({ prompts: { meta: clip(metaRequest(s, c, undefined, trendHints)), scenes: clip(scenesRequest(m.characterLook, longScenes.map((x) => x.text))) } });
     const longPrompts = await cached(path.join(dir, `long-scenes-${n}.json`), () => scenePrompts(m.characterLook, longScenes.map((x) => x.text)));

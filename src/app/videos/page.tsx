@@ -3,11 +3,13 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { VideoTile } from "@/components/studio-cards";
 import type { Video } from "@/db/schema";
-import { videoCards } from "@/lib/studio";
+import { videoCards, type VideoKind } from "@/lib/studio";
 import { readStatsSnapshot } from "@/lib/youtube-stats";
 
-const FILTERS: { id: string; label: string; statuses?: Video["status"][] }[] = [
+const FILTERS: { id: string; label: string; statuses?: Video["status"][]; kind?: VideoKind }[] = [
   { id: "all", label: "Tất cả" },
+  { id: "episode", label: "Tập", kind: "episode" },
+  { id: "internal", label: "Chương (nội bộ)", kind: "internal" },
   { id: "running", label: "Đang làm", statuses: ["queued", "rendering"] },
   { id: "ready", label: "Chờ đăng", statuses: ["ready"] },
   { id: "published", label: "Đã đăng", statuses: ["published"] },
@@ -58,7 +60,7 @@ async function Tabs({ searchParams }: { searchParams: PageProps<"/videos">["sear
 async function Grid({ searchParams }: { searchParams: PageProps<"/videos">["searchParams"] }) {
   await connection();
   const f = await current(searchParams);
-  const [list, stats] = await Promise.all([videoCards({ statuses: f.statuses }), readStatsSnapshot()]);
+  const [list, stats] = await Promise.all([videoCards({ statuses: f.statuses, kind: f.kind }), readStatsSnapshot()]);
   if (!list.length)
     return (
       <p className="rounded-xl border border-dashed border-border p-10 text-center text-muted">

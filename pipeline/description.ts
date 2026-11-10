@@ -41,7 +41,7 @@ export function segmentsFromText(content: string, total: number): Segment[] {
 }
 
 /** Tên ngắn cho từng đoạn (3–8 chữ, gây tò mò, không spoil kết) — model rẻ. */
-async function headings(segments: Segment[]): Promise<string[]> {
+export async function headings(segments: Segment[]): Promise<string[]> {
   const { titles } = await textProvider().generateJson({
     system: "Bạn đặt tên mục lục (YouTube chapters) cho video truyện audio tiên hiệp.",
     prompt: `Đặt tên cho ${segments.length} đoạn dưới đây, mỗi tên 3–8 chữ tiếng Việt, gây tò mò, không spoil kết, không đánh số.\n\n${segments
@@ -90,6 +90,13 @@ export function splitBody(description: string) {
 
 const hashtagOf = (k: string) => `#${k.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/gi, "d").replace(/[^a-zA-Z0-9]/g, "")}`;
 
+/** 3–5 hashtag: 3 cố định của kênh + 2 từ khóa tìm kiếm đầu. */
+export function hashtagsFor(keywords?: string[]) {
+  return ["#TruyenAudio", "#TruyenTuTien", "#TienHiep", ...(keywords ?? []).slice(0, 2).map(hashtagOf)]
+    .filter((h, i, a) => h.length > 3 && a.indexOf(h) === i)
+    .slice(0, 5);
+}
+
 /** Mô tả đủ mục lục + link + hashtag. `links` thêm từ ngoài (vd danh sách phát). Lỗi AI/DB thì bỏ phần đó, không chặn render. */
 export async function enrichDescription(
   meta: VideoMeta,
@@ -100,8 +107,6 @@ export async function enrichDescription(
     .then((t) => o.segments.map((s, i) => ({ start: s.start, title: t[i] })))
     .catch(() => []);
   const links = [...(o.links ?? []), ...(await chapterLinks(o.seriesId, o.chapterNumber).catch(() => []))];
-  const hashtags = ["#TruyenAudio", "#TruyenTuTien", "#TienHiep", ...(o.keywords ?? []).slice(0, 2).map(hashtagOf)]
-    .filter((h, i, a) => h.length > 3 && a.indexOf(h) === i)
-    .slice(0, 5);
+  const hashtags = hashtagsFor(o.keywords);
   return { ...meta, description: composeDescription(body, toc, links, hashtags, credit) };
 }

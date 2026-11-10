@@ -36,6 +36,13 @@
       "when": 1794238426706,
       "tag": "0004_burly_polaris",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794303447924,
+      "tag": "0005_episode_chapters",
+      "breakpoints": true
     }
   ]
 }

@@ -4,27 +4,29 @@ import { chapters, series, videos } from "@/db/schema";
 import { QuotaExhaustedError } from "@/lib/ai";
 import { escapeHtml, notify, WEB_URL } from "@/lib/notify";
 import { planChapters, writeChapterStep } from "@/lib/story/service";
+import { maxContinues } from "@/lib/story/prompts";
 import { quotaDay } from "@/lib/ai/usage";
 import { aiUsage } from "@/db/schema";
 import { loadSecrets } from "@/lib/secrets";
-import { compileSeries, compileState } from "./compile";
+import { compileSeries, compileState, seriesRows, withStaleAsFailed } from "./compile";
+import { chaptersToWrite, episodeBacklog, vnDay, writtenMarker } from "./episode-plan";
 import { renderVideo } from "./render";
 
 /** Số chương chờ duyệt tối đa khi không tự duyệt — tránh viết dồn khi người dùng chưa kịp đọc. */
 const MAX_PENDING = 3;
 
 
-async function writeNext(seriesId: number): Promise<{ id: number; number: number; title: string; words: number }> {
+async function writeNext(seriesId: number, targetWords: number): Promise<{ id: number; number: number; title: string; words: number }> {
   const list = await db().select().from(chapters).where(eq(chapters.seriesId, seriesId)).orderBy(asc(chapters.number));
   if (list.filter((c) => c.status === "outline").length < 2) {
     console.log("  lên dàn ý 10 chương");
     await planChapters(seriesId, 10);
-    return writeNext(seriesId);
+    return writeNext(seriesId, targetWords);
   }
   const next = list.find((c) => c.status === "outline")!;
   console.log(`  viết chương ${next.number}: ${next.title}`);
   let r = await writeChapterStep(next.id, next.content ? "continue" : "start");
-  for (let i = 0; i < 2 && !r.enough; i++) r = await writeChapterStep(next.id, "continue");
+  for (let i = 0; i < maxContinues(targetWords) && !r.enough; i++) r = await writeChapterStep(next.id, "continue");
   const done = await writeChapterStep(next.id, "finish");
   return { id: next.id, number: next.number, title: next.title, words: done.words };
 }
@@ -91,7 +93,7 @@ async function dispatchCompile(seriesId: number) {
 /** Đủ chương đã render chưa nằm trong bản gộp nào thì kích hoạt gộp. Lỗi dispatch chỉ báo (1 lần/ngày), không làm hỏng job. */
 async function dispatchCompilations() {
   for (const s of await db().select().from(series).where(eq(series.autopilot, true))) {
-    const { active, recentFailed, batch } = await compileState(s.id);
+    const { active, recentFailed, batch } = await compileState(s);
     if (!batch) continue;
     if (active || recentFailed) {
       console.log(`  ${s.title}: đủ chương để gộp nhưng ${active ? "đang có bản gộp chạy" : "bản gộp trước vừa lỗi (chờ 24h)"} — bỏ qua`);
@@ -99,8 +101,10 @@ async function dispatchCompilations() {
     }
     const range = `${batch[0].number}–${batch[batch.length - 1].number}`;
     try {
-      await dispatchCompile(s.id);
-      console.log(`🎞 ${s.title}: kích hoạt bản gộp chương ${range}`);
+      // Chế độ tập: ghép ngay trong job daily (đỡ phút Actions của job riêng, kịp 15h); bản gộp 5 chương cũ bị tắt.
+      if (s.episodeChapters > 0) await compileSeries(s.id);
+      else await dispatchCompile(s.id);
+      console.log(`🎞 ${s.title}: ${s.episodeChapters > 0 ? "dựng tập" : "kích hoạt bản gộp"} chương ${range}`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error(`Không kích hoạt được bản gộp ${s.title}: ${msg}`);
@@ -136,17 +140,29 @@ async function main() {
     if (!quotaLeft) break;
     console.log(`▶ ${s.title}`);
     try {
-      // Viết trước, đăng theo lịch: giữ sẵn BUFFER video chưa lên sóng (chờ render / đã lên lịch ở tương lai).
-      // Đủ kho thì thôi viết → chạy đều 1 video/ngày, không đốt quota và phút Actions.
+      // Viết trước, đăng theo lịch: giữ sẵn kho video/tập chưa lên sóng. Đủ kho thì thôi viết → không đốt quota và phút Actions.
       const now = new Date();
-      const stock = (
-        await db()
-          .select({ id: videos.id, status: videos.status, publishAt: videos.publishAt, meta: videos.meta })
-          .from(videos)
-          .innerJoin(chapters, eq(chapters.id, videos.chapterId))
-          .where(eq(chapters.seriesId, s.id))
-      ).filter((v) => !v.meta?.compilation && v.status !== "failed" && (!v.publishAt || v.publishAt > now));
-      const want = Math.min(s.chaptersPerDay, Math.max(0, BUFFER - stock.length));
+      let want: number;
+      if (s.episodeChapters > 0) {
+        // Chế độ tập: chỉ tiêu theo marker "đã viết hôm nay" (ngày VN), kho tính theo tập chờ đăng + chương lẻ chưa vào tập.
+        const { upcoming, loose } = episodeBacklog(withStaleAsFailed(await seriesRows(s.id), now), now);
+        const [mark] = await db().select({ calls: aiUsage.calls }).from(aiUsage).where(and(eq(aiUsage.day, vnDay(now)), eq(aiUsage.model, writtenMarker(s.id))));
+        want = chaptersToWrite({
+          chaptersPerDay: s.chaptersPerDay, writtenToday: mark?.calls ?? 0,
+          stockChapters: upcoming.length * s.episodeChapters + loose.length, episodeChapters: s.episodeChapters,
+        });
+        console.log(`  tập: ${upcoming.length} chờ đăng, ${loose.length} chương lẻ, đã viết hôm nay ${mark?.calls ?? 0}/${s.chaptersPerDay} → viết thêm ${want}`);
+      } else {
+        const stock = (
+          await db()
+            .select({ id: videos.id, status: videos.status, publishAt: videos.publishAt, meta: videos.meta })
+            .from(videos)
+            .innerJoin(chapters, eq(chapters.id, videos.chapterId))
+            .where(eq(chapters.seriesId, s.id))
+        ).filter((v) => !v.meta?.compilation && v.status !== "failed" && (!v.publishAt || v.publishAt > now));
+        want = Math.min(s.chaptersPerDay, Math.max(0, BUFFER - stock.length));
+        if (!want) console.log(`  kho đủ ${stock.length}/${BUFFER} video chờ đăng — chưa cần viết thêm`);
+        }
       for (let done = 0; done < want; done++) {
         const pending = await db()
           .select({ id: chapters.id })
@@ -156,7 +172,12 @@ async function main() {
           console.log(`  dừng: đã có ${pending.length} chương chờ duyệt`);
           break;
         }
-        const ch = await writeNext(s.id);
+        const ch = await writeNext(s.id, s.targetWords);
+        // Marker ngay sau khi viết xong (không đếm theo chapters.updatedAt vì sửa SEO/duyệt cũng đổi nó).
+        await db()
+          .insert(aiUsage)
+          .values({ day: vnDay(), model: writtenMarker(s.id), calls: 1 })
+          .onConflictDoUpdate({ target: [aiUsage.day, aiUsage.model], set: { calls: sql`${aiUsage.calls} + 1` } });
         if (s.autoApprove) {
           await db().update(chapters).set({ status: "approved", updatedAt: new Date() }).where(eq(chapters.id, ch.id));
           await db().insert(videos).values({ chapterId: ch.id });
@@ -166,7 +187,6 @@ async function main() {
             (s.autoApprove ? "Đã tự duyệt, đang xếp hàng render." : `Chờ đạo hữu duyệt 👉 ${WEB_URL}/chapters/${ch.id}`),
         );
       }
-      if (!want) console.log(`  kho đủ ${stock.length}/${BUFFER} video chờ đăng — chưa cần viết thêm`);
     } catch (e) {
       if (e instanceof QuotaExhaustedError) {
         console.log(`⏸ ${e.message}`);

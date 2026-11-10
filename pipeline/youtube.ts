@@ -71,11 +71,13 @@ const slot = (d: Date) =>
 export async function autoPublishEligible(videoId: number) {
   if (!process.env.GITHUB_ACTIONS) return false;
   const [row] = await db()
-    .select({ ytId: videos.youtubeVideoId, autoPublish: series.autoPublish })
+    .select({ ytId: videos.youtubeVideoId, autoPublish: series.autoPublish, episodeChapters: series.episodeChapters, meta: videos.meta })
     .from(videos)
     .innerJoin(chapters, eq(chapters.id, videos.chapterId))
     .innerJoin(series, eq(series.id, chapters.seriesId))
     .where(eq(videos.id, videoId));
+  // Chế độ tập: video chương chỉ là nguyên liệu, chỉ tập (meta.compilation.episode) mới đăng.
+  if (row && row.episodeChapters > 0 && !row.meta?.compilation?.episode) return false;
   return Boolean(row?.autoPublish && !row.ytId && (await getYoutubeAuth()));
 }
 
@@ -107,8 +109,8 @@ export async function publishToYoutube(videoId: number, files: { long: string; s
     await db().update(videos).set({ youtubeVideoId: id, youtubeUrl: `https://youtu.be/${id}`, publishAt }).where(eq(videos.id, videoId));
     track.tick("youtube", "long", `Video dài: youtu.be/${id}`);
 
-    // Video chương tự vào danh sách phát của bộ truyện (bản gộp thì không — tránh lặp nội dung trong playlist).
-    if (!meta.compilation) {
+    // Video chương tự vào danh sách phát của bộ truyện (bản gộp 5 chương cũ thì không — tránh lặp nội dung; tập ngày thì có).
+    if (!meta.compilation || meta.compilation.episode) {
       const [ch] = await db().select({ seriesId: chapters.seriesId }).from(chapters).where(eq(chapters.id, v.chapterId));
       await addToSeriesPlaylist(ch.seriesId, id).then(
         (pl) => track.log("youtube", `Đã thêm vào danh sách phát ${playlistUrl(pl)}`),

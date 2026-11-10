@@ -1,0 +1,113 @@
+import { describe, expect, it } from "vitest";
+import { pickBatch } from "./compile-plan";
+import { buildEpisodeToc, chaptersToWrite, ensureEpisodeLabel, episodeBacklog, fullLabel, imageCount, occupiesDailySlot, pickPublishSlot, tocText, vnDay } from "./episode-plan";
+
+const row = (id: number, number: number, o: Partial<Parameters<typeof episodeBacklog>[0][number]> = {}) => ({
+  id, number, status: "ready" as const, youtubeVideoId: null, publishAt: null, hasLong: true, meta: null, ...o,
+});
+const ep = (id: number, videoIds: number[], o: Partial<Parameters<typeof episodeBacklog>[0][number]> = {}) =>
+  row(id, videoIds.length + 3, { meta: { title: "", description: "", tags: [], shortTitle: "", shortDescription: "", compilation: { seriesId: 4, from: 4, to: 6, videoIds, episode: true, episodeNo: 1 } }, ...o });
+
+describe("vnDay", () => {
+  it("sau 17:00 UTC đã sang ngày mới giờ VN", () => {
+    expect(vnDay(new Date("2026-11-10T16:59:00Z"))).toBe("2026-11-10");
+    expect(vnDay(new Date("2026-11-10T17:00:00Z"))).toBe("2026-11-11");
+  });
+  it("lượt 8h17 VN và 20h17 VN cùng ngày", () => {
+    expect(vnDay(new Date("2026-11-10T01:17:00Z"))).toBe(vnDay(new Date("2026-11-10T13:17:00Z")));
+  });
+});
+
+describe("chaptersToWrite", () => {
+  const base = { chaptersPerDay: 3, writtenToday: 0, stockChapters: 0, episodeChapters: 3 };
+  it("đầu ngày, kho trống: viết đủ 3", () => expect(chaptersToWrite(base)).toBe(3));
+  it("đã viết đủ hôm nay: 0 (marker, không đếm theo updatedAt)", () => expect(chaptersToWrite({ ...base, writtenToday: 3 })).toBe(0));
+  it("đã viết 1: còn 2", () => expect(chaptersToWrite({ ...base, writtenToday: 1 })).toBe(2));
+  it("kho 1 tập chờ đăng (3 chương): vẫn viết đủ 3 (tối đa 2 tập)", () => expect(chaptersToWrite({ ...base, stockChapters: 3 })).toBe(3));
+  it("kho đã 2 tập: 0", () => expect(chaptersToWrite({ ...base, stockChapters: 6 })).toBe(0));
+  it("kho 1 tập + 2 chương lẻ: chỉ viết 1", () => expect(chaptersToWrite({ ...base, stockChapters: 5 })).toBe(1));
+  it("không âm khi kho vượt", () => expect(chaptersToWrite({ ...base, stockChapters: 9 })).toBe(0));
+});
+
+describe("imageCount", () => {
+  it("chương nội bộ 40 phút: chặn ở 30 ảnh", () => expect(imageCount(2400, true)).toBe(30));
+  it("chương nội bộ 20 phút: 1 ảnh/60 giây", () => expect(imageCount(1200, true)).toBe(20));
+  it("tối thiểu 6 ảnh", () => expect(imageCount(60, true)).toBe(6));
+  it("video thường vẫn 1 ảnh/25 giây", () => expect(imageCount(500, false)).toBe(20));
+});
+
+describe("pickPublishSlot (15h VN = 08:00 UTC)", () => {
+  const at = (iso: string) => pickPublishSlot([], 8, new Date(iso)).toISOString();
+  it("dựng xong lúc 11h VN: đăng 15h hôm nay", () => expect(at("2026-11-10T04:00:00Z")).toBe("2026-11-10T08:00:00.000Z"));
+  it("còn < 2 giờ: lùi sang mai", () => expect(at("2026-11-10T06:30:00Z")).toBe("2026-11-11T08:00:00.000Z"));
+  it("ngày đã có tập: nhảy sang ngày kế (mỗi ngày 1 tập)", () => {
+    const taken = [new Date("2026-11-10T08:00:00Z"), new Date("2026-11-11T08:00:00Z")];
+    expect(pickPublishSlot(taken, 8, new Date("2026-11-10T01:00:00Z")).toISOString()).toBe("2026-11-12T08:00:00.000Z");
+  });
+});
+
+describe("occupiesDailySlot", () => {
+  const meta = (c?: object) => ({ title: "", description: "", tags: [], shortTitle: "", shortDescription: "", ...(c ? { compilation: { seriesId: 1, from: 1, to: 5, videoIds: [], ...c } } : {}) });
+  it("chương thường và tập có; bản gộp 5 chương không", () => {
+    expect(occupiesDailySlot(meta())).toBe(true);
+    expect(occupiesDailySlot(null)).toBe(true);
+    expect(occupiesDailySlot(meta({ episode: true }))).toBe(true);
+    expect(occupiesDailySlot(meta({}))).toBe(false);
+  });
+});
+
+describe("episodeBacklog + chọn lô 3 chương", () => {
+  it("chương cũ đã đăng lẻ giữ nguyên: tập 1 bắt đầu từ chương 4", () => {
+    const rows = [row(10, 1, { status: "published", youtubeVideoId: "a" }), row(11, 2, { status: "published", youtubeVideoId: "b" }), row(12, 3, { status: "published", youtubeVideoId: "c" }), row(13, 4), row(14, 5), row(15, 6), row(16, 7)];
+    const { ready } = episodeBacklog(rows);
+    const batch = pickBatch(ready.map((r) => ({ chapterId: r.id, number: r.number, title: "", videoId: r.id })), 3);
+    expect(batch?.map((c) => c.number)).toEqual([4, 5, 6]);
+  });
+  it("chưa đủ 3 chương liền nhau thì null", () => {
+    const { ready } = episodeBacklog([row(13, 4), row(14, 5)]);
+    expect(pickBatch(ready.map((r) => ({ chapterId: r.id, number: r.number, title: "", videoId: r.id })), 3)).toBeNull();
+  });
+  it("chương đã nằm trong tập (không lỗi) thì không ghép lại; tập lỗi thì được ghép lại", () => {
+    const base = [row(13, 4), row(14, 5), row(15, 6)];
+    expect(episodeBacklog([...base, ep(20, [13, 14, 15])]).ready).toHaveLength(0);
+    expect(episodeBacklog([...base, ep(20, [13, 14, 15], { status: "failed" })]).ready).toHaveLength(3);
+  });
+  it("chương chưa render xong là loose nhưng chưa ready", () => {
+    const b = episodeBacklog([row(13, 4, { status: "rendering", hasLong: false }), row(14, 5)]);
+    expect(b.loose).toHaveLength(2);
+    expect(b.ready).toHaveLength(1);
+  });
+  it("tập đã qua giờ đăng không còn là upcoming; tập đang dựng / chờ đăng thì có", () => {
+    const now = new Date("2026-11-10T09:00:00Z");
+    const rows = [ep(20, [1, 2, 3], { publishAt: new Date("2026-11-10T08:00:00Z") }), ep(21, [4, 5, 6], { publishAt: new Date("2026-11-11T08:00:00Z") }), ep(22, [7, 8, 9], { status: "rendering" })];
+    expect(episodeBacklog(rows, now).upcoming.map((r) => r.id)).toEqual([21, 22]);
+  });
+});
+
+describe("buildEpisodeToc", () => {
+  it("mốc chương cộng dồn, mục con cộng offset, bỏ mục con 00:00", () => {
+    const toc = buildEpisodeToc([
+      { number: 4, title: "A", seconds: 2400, sub: [{ start: 0, title: "Mở đầu" }, { start: 300, title: "Đột kích" }] },
+      { number: 5, title: "B", seconds: 2400, sub: [{ start: 0, title: "Mở đầu" }, { start: 600, title: "Phản đòn" }] },
+    ]);
+    expect(tocText(toc).split("\n")).toEqual(["00:00 Chương 4: A", "05:00 · Đột kích", "40:00 Chương 5: B", "50:00 · Phản đòn"]);
+  });
+  it("qua 1 giờ dùng H:MM:SS", () => {
+    const toc = buildEpisodeToc([{ number: 1, title: "A", seconds: 3700, sub: [] }, { number: 2, title: "B", seconds: 10, sub: [] }]);
+    expect(tocText(toc).split("\n")[1]).toBe("1:01:40 Chương 2: B");
+  });
+});
+
+describe("tiêu đề tập", () => {
+  it("fullLabel làm tròn giờ", () => {
+    expect(fullLabel(7300)).toBe("FULL 2H");
+    expect(fullLabel(1000)).toBe("FULL 1H");
+  });
+  it("giữ tiêu đề đã có nhãn", () => expect(ensureEpisodeLabel("Hắn nuốt thần ma | FULL 2H", { episodeNo: 1, from: 4, to: 6 })).toBe("Hắn nuốt thần ma | FULL 2H"));
+  it("thiếu nhãn thì nối Tập N (Chương X–Y)", () => expect(ensureEpisodeLabel("Hắn nuốt thần ma", { episodeNo: 2, from: 7, to: 9 })).toBe("Hắn nuốt thần ma | Tập 2 (Chương 7–9)"));
+  it("tiêu đề quá dài vẫn ≤ 100 ký tự và còn nhãn", () => {
+    const out = ensureEpisodeLabel("x".repeat(150), { episodeNo: 2, from: 7, to: 9 });
+    expect(out.length).toBeLessThanOrEqual(100);
+    expect(out.endsWith("Tập 2 (Chương 7–9)")).toBe(true);
+  });
+});

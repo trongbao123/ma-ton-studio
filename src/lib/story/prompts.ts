@@ -72,7 +72,22 @@ Mỗi chương đẩy truyện tiến lên, có ít nhất một điểm sướn
   };
 }
 
-export function chapterPrompt(s: Series, previous: Chapter[], chapter: Chapter) {
+/** Chương dài (≥ ngần này từ) phải viết nhiều lượt: AI một lần chỉ ra được ~3000–4000 từ. */
+export const LONG_CHAPTER_WORDS = 5000;
+/** Mỗi lượt "viết tiếp" thêm tối đa ngần này từ (chương dài) — lượt dài hơn AI hay tóm tắt, lặp, kết sớm. */
+const PART_WORDS = 3000;
+export const isLongChapter = (targetWords: number) => targetWords >= LONG_CHAPTER_WORDS;
+/** Số lượt "viết tiếp" tối đa tới khi đủ ~80% độ dài mục tiêu. */
+export const maxContinues = (targetWords: number) => (isLongChapter(targetWords) ? 5 : 2);
+
+/** `partial`: chương dài viết nhiều lượt — lượt đầu chỉ viết phần mở đầu, chưa kết chương. */
+export function chapterPrompt(s: Series, previous: Chapter[], chapter: Chapter, opts: { partial?: boolean } = {}) {
+  const long = isLongChapter(s.targetWords);
+  const length = long
+    ? `Chương DÀI khoảng ${s.targetWords} từ, chia 6–8 cảnh liền mạch.${
+        opts.partial ? ` Bạn viết theo nhiều lượt: lượt này CHỈ viết phần đầu (khoảng ${PART_WORDS} từ, 2–3 cảnh đầu của dàn ý), dừng ở giữa mạch truyện — KHÔNG kết chương, KHÔNG cliffhanger, KHÔNG tóm tắt.` : ""
+      }`
+    : `Độ dài khoảng ${s.targetWords} từ.`;
   return {
     system: `${WRITER_SYSTEM}\nGiọng văn của bộ này: ${s.style || "kể ngôi thứ ba, nhịp nhanh"}.`,
     prompt: `${storyContext(s, previous)}
@@ -81,10 +96,10 @@ Viết chương ${chapter.number}: "${chapter.title}".
 Dàn ý:
 ${chapter.outline}
 
-Độ dài khoảng ${s.targetWords} từ. Chỉ trả về nội dung chương, không lặp lại tiêu đề, không lời bình.
+${length} Chỉ trả về nội dung chương, không lặp lại tiêu đề, không lời bình.
 
 Cách viết (bắt buộc):
-- Chia 3–4 cảnh liền mạch; mỗi cảnh có mục tiêu, trở ngại và một thay đổi. Không tóm tắt sự kiện — diễn ra trước mắt người nghe.
+- ${long ? "Chia 6–8 cảnh liền mạch" : "Chia 3–4 cảnh liền mạch"}; mỗi cảnh có mục tiêu, trở ngại và một thay đổi. Không tóm tắt sự kiện — diễn ra trước mắt người nghe.
 - Tả bằng giác quan cụ thể (mùi máu, tiếng xương gãy, hơi lạnh của sát khí) thay vì tính từ chung chung "rất mạnh", "vô cùng đáng sợ".
 - Thoại chiếm khoảng 1/3: ngắn, mỗi nhân vật một giọng riêng; xen suy nghĩ nội tâm của nhân vật chính.
 - Ít nhất 1 khoảnh khắc cảm xúc thật (mất mát, ân tình, nhớ người thân) và 1 khoảnh khắc "sướng" (lật kèo, vả mặt, đột phá) có phản ứng đám đông.
@@ -94,6 +109,12 @@ Cách viết (bắt buộc):
 }
 
 export function continuePrompt(base: { system: string; prompt: string }, written: string, targetWords: number) {
+  const remaining = Math.max(targetWords - wordCount(written), 500);
+  // Chương dài: còn nhiều thì chỉ viết 1 phần rồi dừng giữa mạch; phần cuối mới đi hết dàn ý + cliffhanger.
+  const more = isLongChapter(targetWords) && remaining > PART_WORDS + 500;
+  const task = more
+    ? `Viết TIẾP từ đúng chỗ dừng, thêm khoảng ${PART_WORDS} từ, đi tiếp các cảnh kế trong dàn ý. Chương CHƯA kết: không cliffhanger, không tóm tắt, không nhắc lại sự kiện đã viết.`
+    : `Viết TIẾP từ đúng chỗ dừng, thêm khoảng ${remaining} từ, đi hết dàn ý và kết bằng cliffhanger. Không lặp lại đoạn đã viết, không tóm tắt.`;
   return {
     system: base.system,
     prompt: `${base.prompt}
@@ -101,8 +122,20 @@ export function continuePrompt(base: { system: string; prompt: string }, written
 # Phần đã viết (${wordCount(written)} từ)
 ${written}
 
-Chương còn quá ngắn. Viết TIẾP từ đúng chỗ dừng, thêm khoảng ${targetWords - wordCount(written)} từ, đi hết dàn ý và kết bằng cliffhanger. Không lặp lại đoạn đã viết, không tóm tắt.`,
+Chương còn quá ngắn. ${task}`,
   };
+}
+
+const normalizeParagraph = (p: string) => p.toLowerCase().replace(/\s+/g, " ").trim();
+
+/** Bỏ các đoạn trong phần mới đã có nguyên văn ở phần trước (AI viết tiếp hay chép lại đoạn cuối). Đoạn ngắn (thoại) giữ nguyên. */
+export function dropRepeatedParagraphs(written: string, part: string) {
+  const seen = new Set(written.split(/\n{2,}/).map(normalizeParagraph).filter((p) => p.length >= 60));
+  return part
+    .split(/\n{2,}/)
+    .filter((p) => !seen.has(normalizeParagraph(p)))
+    .join("\n\n")
+    .trim();
 }
 
 export function wordCount(text: string) {

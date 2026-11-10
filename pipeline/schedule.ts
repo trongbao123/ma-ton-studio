@@ -1,22 +1,19 @@
 import { and, gte, isNotNull } from "drizzle-orm";
 import { db } from "@/db";
 import { videos } from "@/db/schema";
+import { occupiesDailySlot, pickPublishSlot } from "./episode-plan";
 
 /** Giờ đăng video chương: 15h giờ Việt Nam = 08h UTC (đổi giờ thì sửa ở đây). */
 export const PUBLISH_HOUR_UTC = 8;
 
-/** Khung giờ đăng tiếp theo: 15h giờ Việt Nam, mỗi ngày 1 video chương, bắt đầu từ hôm nay (hoặc mai nếu còn < 2 tiếng). */
+/** Khung giờ đăng tiếp theo: 15h giờ Việt Nam, mỗi ngày 1 video (chương hoặc tập), bắt đầu từ hôm nay (hoặc mai nếu còn < 2 tiếng). */
 export async function nextPublishSlot(now = new Date()) {
   const taken = await db()
     .select({ at: videos.publishAt, meta: videos.meta })
     .from(videos)
     .where(and(isNotNull(videos.publishAt), gte(videos.publishAt, now)));
-  // Bản gộp có khung riêng (12h VN) — không chiếm ngày của video chương.
-  const days = new Set(taken.filter((t) => !t.meta?.compilation).map((t) => t.at!.toISOString().slice(0, 10)));
-  const slot = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), PUBLISH_HOUR_UTC));
-  if (slot.getTime() - now.getTime() < 2 * 3600_000) slot.setUTCDate(slot.getUTCDate() + 1);
-  while (days.has(slot.toISOString().slice(0, 10))) slot.setUTCDate(slot.getUTCDate() + 1);
-  return slot;
+  // Bản gộp 5 chương cũ có khung riêng (12h VN) — không chiếm ngày; tập ngày thì chiếm.
+  return pickPublishSlot(taken.filter((t) => occupiesDailySlot(t.meta)).map((t) => t.at!), PUBLISH_HOUR_UTC, now);
 }
 
 /** Giữ lịch cũ nếu còn ở tương lai (≥ 15 phút), không thì lấy khung giờ mới — render lại muộn không đăng vào giờ đã qua. */

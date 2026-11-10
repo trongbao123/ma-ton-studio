@@ -10,6 +10,8 @@ import {
   outlinePrompt,
   outlineSchema,
   continuePrompt,
+  dropRepeatedParagraphs,
+  isLongChapter,
   summaryPrompt,
   wordCount,
 } from "./prompts";
@@ -47,7 +49,7 @@ export type WriteMode = "start" | "continue" | "finish";
 
 /**
  * Viết chương theo từng lượt để mỗi request nằm dưới maxDuration (300s) của Vercel.
- * Trình duyệt điều phối: start → continue (tới khi `enough`, tối đa 2 lần) → finish (tóm tắt, chuyển chờ duyệt).
+ * Trình duyệt điều phối: start → continue (tới khi `enough`, tối đa `maxContinues`: 2 lần, chương dài 5 lần) → finish (tóm tắt, chuyển chờ duyệt).
  */
 export async function writeChapterStep(chapterId: number, mode: WriteMode) {
   const chapter = await getChapter(chapterId);
@@ -60,14 +62,14 @@ export async function writeChapterStep(chapterId: number, mode: WriteMode) {
     const summary = await ai.generateText({ ...summaryPrompt(chapter, content), temperature: 0.3, tier: "cheap", task: "summary" });
     await db().update(chapters).set({ summary, status: "draft", updatedAt: new Date() }).where(eq(chapters.id, chapterId));
   } else {
-    const base = chapterPrompt(s, await previousChapters(chapter), chapter);
+    const base = chapterPrompt(s, await previousChapters(chapter), chapter, { partial: isLongChapter(s.targetWords) });
     const part = await ai.generateText({
       ...(mode === "start" ? base : continuePrompt(base, content, s.targetWords)),
       maxOutputTokens: 16000,
       temperature: 0.9,
       task: "story",
     });
-    content = mode === "start" ? part : `${content}\n\n${part}`;
+    content = mode === "start" ? part : `${content}\n\n${dropRepeatedParagraphs(content, part)}`;
     await db()
       .update(chapters)
       .set({ content, summary: "", status: "outline", updatedAt: new Date() })

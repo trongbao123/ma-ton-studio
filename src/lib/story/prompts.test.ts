@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Chapter, Series } from "@/db/schema";
-import { RECENT_SUMMARY_WINDOW, chapterPrompt, outlinePrompt, storyContext } from "./prompts";
+import { RECENT_SUMMARY_WINDOW, chapterPrompt, continuePrompt, dropRepeatedParagraphs, isLongChapter, maxContinues, outlinePrompt, storyContext } from "./prompts";
 
 const s: Series = {
   id: 1,
@@ -13,6 +13,7 @@ const s: Series = {
   autopilot: false,
   autoApprove: false,
   chaptersPerDay: 2,
+  episodeChapters: 0,
   voiceStyle: "",
   ttsVoice: "Algenib",
   makeShort: true,
@@ -67,5 +68,39 @@ describe("chapterPrompt", () => {
     expect(p.prompt).toContain("dàn ý 2");
     expect(p.prompt).toContain("3000 từ");
     expect(p.system).toContain("ngôi thứ nhất");
+  });
+});
+
+describe("chương dài (tập dài mỗi ngày)", () => {
+  const long: Series = { ...s, targetWords: 7000 };
+  const words = (n: number) => Array.from({ length: n }, (_, i) => `từ${i}`).join(" ");
+
+  it("chỉ chương ≥ 5000 từ mới viết nhiều lượt, cho phép nhiều lượt tiếp hơn", () => {
+    expect(isLongChapter(3500)).toBe(false);
+    expect(isLongChapter(7000)).toBe(true);
+    expect(maxContinues(3500)).toBe(2);
+    expect(maxContinues(7000)).toBe(5);
+  });
+
+  it("lượt đầu chương dài chỉ viết phần đầu, không kết chương", () => {
+    const p = chapterPrompt(long, [], ch(1), { partial: true }).prompt;
+    expect(p).toContain("CHỈ viết phần đầu");
+    expect(p).toContain("KHÔNG cliffhanger");
+    expect(chapterPrompt(long, [], ch(1)).prompt).not.toContain("CHỈ viết phần đầu");
+    expect(chapterPrompt(s, [], ch(1), { partial: true }).prompt).not.toContain("CHỈ viết phần đầu");
+  });
+
+  it("viết tiếp: còn nhiều thì dừng giữa mạch, còn ít mới kết cliffhanger", () => {
+    const base = chapterPrompt(long, [], ch(1));
+    expect(continuePrompt(base, words(3000), 7000).prompt).toContain("CHƯA kết");
+    expect(continuePrompt(base, words(6000), 7000).prompt).toContain("kết bằng cliffhanger");
+    expect(continuePrompt(chapterPrompt(s, [], ch(1)), words(1000), 3000).prompt).toContain("kết bằng cliffhanger");
+  });
+
+  it("bỏ đoạn AI chép lại nguyên văn, giữ thoại ngắn trùng", () => {
+    const para = "Hắn đứng giữa đại điện, ánh mắt lạnh như băng, sát khí cuộn trào khiến toàn bộ đám đông nín thở.";
+    const written = `Mở đầu.\n\n${para}\n\n"Được."`;
+    const part = `${para}\n\n"Được."\n\nĐoạn mới hoàn toàn.`;
+    expect(dropRepeatedParagraphs(written, part)).toBe('"Được."\n\nĐoạn mới hoàn toàn.');
   });
 });

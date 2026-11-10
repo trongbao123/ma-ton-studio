@@ -105,7 +105,7 @@ export function VideoTile({ v, snapshot }: { v: VideoCard; snapshot?: YtStatsMap
           // eslint-disable-next-line @next/next/no-img-element -- ảnh từ GitHub Release qua redirect
           <img src={assetUrl(v.id, "thumbnail.jpg", v.thumbVersion)} alt="" width={640} height={360} loading="lazy" decoding="async" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" />
         ) : (
-          <span className="absolute inset-0 grid place-items-center font-serif text-4xl font-extrabold text-white/15">{v.compilation ? `Chương ${v.compilation.from}–${v.compilation.to}` : `Chương ${v.chapterNo}`}</span>
+          <span className="absolute inset-0 grid place-items-center font-serif text-4xl font-extrabold text-white/15">{v.compilation ? (v.compilation.episodeNo ? `Tập ${v.compilation.episodeNo}` : `Chương ${v.compilation.from}–${v.compilation.to}`) : `Chương ${v.chapterNo}`}</span>
         )}
         {v.durationSec ? <span className="absolute bottom-2 right-2 rounded-md bg-black/80 px-1.5 py-0.5 text-[11px] font-semibold">{clock(v.durationSec)}</span> : null}
         {v.pct != null && (
@@ -115,9 +115,17 @@ export function VideoTile({ v, snapshot }: { v: VideoCard; snapshot?: YtStatsMap
         )}
       </div>
       <div className="mt-3 space-y-1">
-        <p className="truncate text-xs text-muted">{v.seriesTitle}</p>
+        <p className="flex items-center gap-2 truncate text-xs text-muted">
+          <span className="truncate">{v.seriesTitle}</span>
+          {v.compilation?.episodeNo ? <span className="shrink-0 rounded bg-gold/20 px-1.5 py-0.5 font-semibold text-gold">Tập</span> : null}
+          {v.internal ? <span className="shrink-0 rounded bg-white/10 px-1.5 py-0.5">Chương (nội bộ)</span> : null}
+        </p>
         <p className="line-clamp-2 text-[15px] font-semibold leading-snug group-hover:text-white">
-          {v.compilation ? `Bản gộp chương ${v.compilation.from}–${v.compilation.to}` : `Chương ${v.chapterNo}: ${v.chapterTitle}`}
+          {v.compilation
+            ? v.compilation.episodeNo
+              ? `Tập ${v.compilation.episodeNo} (Chương ${v.compilation.from}–${v.compilation.to})`
+              : `Bản gộp chương ${v.compilation.from}–${v.compilation.to}`
+            : `Chương ${v.chapterNo}: ${v.chapterTitle}`}
         </p>
         <div className="text-xs">
           <VideoState v={v} />

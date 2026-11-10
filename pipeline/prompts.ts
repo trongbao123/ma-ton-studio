@@ -77,3 +77,15 @@ export async function scenePrompts(characterLook: string, scenes: string[]) {
 }
 
 export { ART_STYLE };
+
+/** Mô tả ngoại hình nhân vật chính (tiếng Anh) cho prompt ảnh — video chương nội bộ chỉ cần thứ này, không cần cả bộ SEO. */
+export async function characterLookFor(s: Series) {
+  return textProvider().generateJson({
+    system: "You describe fictional characters for an image model.",
+    prompt: `Truyện: ${s.title}\nNhân vật/bối cảnh:\n${s.bible.slice(0, 3000)}\n\nMô tả ngoại hình nhân vật chính để giữ nhất quán giữa các ảnh.`,
+    schema: z.object({ characterLook: z.string().describe("English: tuổi, tóc, mắt, trang phục, khí chất của nhân vật chính, 1–2 câu") }),
+    temperature: 0.2,
+    tier: "cheap",
+    task: "scenes",
+  });
+}

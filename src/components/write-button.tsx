@@ -14,7 +14,7 @@ export function WriteButton({ chapterId, label, variant = "secondary" }: { chapt
     setError(undefined);
     setStatus("AI đang viết…");
     let r = await writeChapterAction(chapterId, "start");
-    for (let i = 0; i < 2 && !("error" in r) && !r.enough; i++) {
+    for (let i = 0; i < 5 && !("error" in r) && !r.enough; i++) {
       setStatus(`Đã ${r.words} từ, viết tiếp…`);
       r = await writeChapterAction(chapterId, "continue");
     }
