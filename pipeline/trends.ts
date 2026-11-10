@@ -20,7 +20,10 @@ export function fitArgs(schema: Schema, args: Record<string, unknown>) {
 /** Gọi 1 tool vidIQ; lỗi chỉ cảnh báo, trả null. */
 async function call(name: string, args: Record<string, unknown>) {
   try {
-    return await callVidiq(name, fitArgs((await vidiqSchema(name)) as Schema, args));
+    const out = await callVidiq(name, fitArgs((await vidiqSchema(name)) as Schema, args));
+    // Log đầu kết quả để chỉnh parser khi vidIQ đổi định dạng.
+    console.log(`  vidIQ ${name}: ${(out ?? "").replace(/\s+/g, " ").slice(0, 300)}`);
+    return out;
   } catch (e) {
     console.warn(`⚠ vidIQ ${name} lỗi:`, e instanceof Error ? e.message : e);
     return null;
@@ -36,21 +39,22 @@ const dedupe = (list: TrendVideo[]) => [...new Map(list.map((v) => [v.url ?? v.t
 export async function scanTrends() {
   // Key vidIQ lưu mã hoá trong DB (Cài đặt AI) — chạy riêng bằng CLI thì phải nạp, không thì vidIQ im lặng trả rỗng.
   await loadSecrets(true);
-  const after = new Date(Date.now() - WINDOW_DAYS * 86_400_000).toISOString();
+  // vidIQ nhận ngày dạng YYYY-MM-DD (ISO đầy đủ có giờ bị từ chối).
+  const after = new Date(Date.now() - WINDOW_DAYS * 86_400_000).toISOString().slice(0, 10);
   const trending: TrendVideo[] = [];
   const outliers: TrendVideo[] = [];
   const texts: { label: string; text: string }[] = [];
 
   for (const seed of SEEDS) {
-    const t = await call("vidiq_trending_videos", { titleQuery: seed, channelCountry: "VN", videoTitleLanguage: "vi", videoPublishedAfter: after, limit: PER_CALL });
+    const t = await call("vidiq_trending_videos", { titleQuery: seed, videoFormat: "long", channelCountry: "VN", videoTitleLanguage: "vi", videoPublishedAfter: after, sortBy: "vph", limit: PER_CALL });
     if (t) trending.push(...parseVideos(t));
     const o = await call("vidiq_outliers", { keyword: seed, channelCountry: "VN", language: "vi", publishedWithin: "30d", minOutlierScore: 3, limit: PER_CALL });
     if (o) outliers.push(...parseVideos(o));
   }
   const [rising, questions, comments] = await Promise.all([
-    call("vidiq_keyword_research", { mode: "rising", keyword: SEEDS[0], country: "VN", limit: 20 }),
+    call("vidiq_keyword_research", { mode: "rising", niche: "truyện audio tu tiên tiên hiệp", country: "VN", limit: 20 }),
     call("vidiq_keyword_research", { mode: "questions", keyword: SEEDS[0], country: "VN", limit: 20 }),
-    call("vidiq_comment_insights", { mode: "niche", niche: "truyện audio tu tiên tiên hiệp", language: "vi" }),
+    call("vidiq_comment_insights", { mode: "discover", niche: "truyện audio tu tiên tiên hiệp", language: "vi" }),
   ]);
   if (rising) texts.push({ label: "Từ khóa đang lên", text: rising });
   if (questions) texts.push({ label: "Câu hỏi người xem hay tìm", text: questions });
