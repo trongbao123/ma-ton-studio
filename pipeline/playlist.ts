@@ -3,6 +3,7 @@
 import { and, asc, eq, isNotNull } from "drizzle-orm";
 import { db } from "@/db";
 import { appSettings, chapters, series, videos } from "@/db/schema";
+import { loadSecrets } from "@/lib/secrets";
 import { accessToken, getYoutubeAuth, noAngle } from "@/lib/youtube";
 
 const KEY = "yt_playlists";
@@ -65,6 +66,8 @@ export async function addToSeriesPlaylist(seriesId: number, youtubeId: string) {
 
 /** Bù cho video đã đăng trước khi có tính năng này: thêm theo thứ tự chương (bỏ bản gộp). */
 export async function backfillPlaylist(seriesId: number) {
+  // Chạy riêng bằng CLI: key YouTube (client id/secret) lưu mã hoá trong DB → phải nạp trước.
+  await loadSecrets(true);
   const rows = await db()
     .select({ ytId: videos.youtubeVideoId, number: chapters.number, meta: videos.meta })
     .from(videos)
