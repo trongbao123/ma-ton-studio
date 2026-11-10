@@ -4,6 +4,8 @@ import OpenAI from "openai";
 import { db } from "@/db";
 import { appSettings } from "@/db/schema";
 import { QuotaExhaustedError } from "@/lib/ai";
+import { cliReady, codexImage } from "@/lib/ai/cli";
+import { saveSecret } from "@/lib/secrets";
 import { recordUsage } from "@/lib/ai/usage";
 import { DEFAULT_IMAGE_MODEL, IMAGE_PROVIDERS, IMAGE_ROUTING_KEY, normalizeImageRouting, type ImageProviderId, type ImageRoute } from "@/lib/ai/routing";
 
@@ -52,7 +54,8 @@ async function saveImage(file: string, buf: Buffer) {
 type DrawOpts = { width: number; height: number; seed: number };
 
 /** Có key cho AI vẽ này không (Cloudflare không token thì vẫn chạy bằng Pollinations). */
-const hasKey = (p: ImageProviderId) => p === "cloudflare" || Boolean(process.env[IMAGE_PROVIDERS.find((x) => x.id === p)!.env]);
+const hasKey = (p: ImageProviderId) =>
+  p === "cloudflare" || (Boolean(process.env[IMAGE_PROVIDERS.find((x) => x.id === p)!.env]) && (p !== "codex" || cliReady("codex")));
 
 let routes: ImageRoute[] | null = null;
 
@@ -65,6 +68,8 @@ export async function imageRouting(): Promise<ImageRoute[]> {
     raw = row?.value ?? null;
   }
   const list = normalizeImageRouting(raw).filter((r) => hasKey(r.provider));
+  // Có gói ChatGPT Plus (Codex) mà chưa xếp → đưa lên đầu: ảnh đẹp nhất, không tốn tiền; hết lượt gói thì sang AI sau.
+  if (hasKey("codex") && !list.some((r) => r.provider === "codex")) list.unshift({ provider: "codex", model: "" });
   // Có key DeepInfra mà chưa xếp vào danh sách → tự thêm cuối làm dự phòng (Cloudflare free hết quota thì vẽ tiếp, khỏi chờ 7h sáng).
   if (hasKey("deepinfra") && !list.some((r) => r.provider === "deepinfra")) list.push({ provider: "deepinfra", model: "" });
   routes = list.length ? list : [{ provider: "cloudflare", model: "" }];
@@ -86,7 +91,19 @@ export async function imagesReady() {
  * Không chèn ảnh Pollinations free xấu khi đã có Cloudflare.
  */
 /** Trả tên model đã vẽ (undefined nếu ảnh có sẵn trong cache) — để màn flow / trang Hạn mức biết AI nào vẽ. */
-export async function drawImage(prompt: string, outFile: string, opts: DrawOpts): Promise<string | undefined> {
+export function drawImage(prompt: string, outFile: string, opts: DrawOpts): Promise<string | undefined> {
+  // Nhiều cảnh dùng chung 1 ảnh và chạy song song → chỉ vẽ 1 lần (Codex mất vài phút/ảnh, vẽ trùng là phí lượt gói).
+  let job = inflight.get(outFile);
+  if (!job) {
+    job = drawOnce(prompt, outFile, opts).finally(() => inflight.delete(outFile));
+    inflight.set(outFile, job);
+  }
+  return job;
+}
+
+const inflight = new Map<string, Promise<string | undefined>>();
+
+async function drawOnce(prompt: string, outFile: string, opts: DrawOpts): Promise<string | undefined> {
   if (await validImage(outFile)) return undefined;
   await rm(outFile, { force: true });
   const list = await imageRouting();
@@ -95,7 +112,8 @@ export async function drawImage(prompt: string, outFile: string, opts: DrawOpts)
   for (const r of list) {
     try {
       const model = r.model || DEFAULT_IMAGE_MODEL[r.provider];
-      if (r.provider === "gemini") await geminiImage(prompt, outFile, model, opts);
+      if (r.provider === "codex") await saveImage(outFile, await codexImage(process.env.CODEX_AUTH_JSON!, prompt, aspect(opts), (fresh) => saveSecret("CODEX_AUTH_JSON", fresh)));
+      else if (r.provider === "gemini") await geminiImage(prompt, outFile, model, opts);
       else if (r.provider === "openai") await openaiImage(prompt, outFile, model, opts);
       else if (r.provider === "deepinfra") await deepinfraFlux(prompt, outFile, model, opts);
       else if (hasCloudflare()) await cloudflareFlux(prompt, outFile, r.model || CF_MODEL);

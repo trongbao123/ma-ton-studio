@@ -97,10 +97,11 @@ export const ROUTING_KEY = "ai_routing";
 
 // ── Vẽ ảnh
 
-export type ImageProviderId = "cloudflare" | "deepinfra" | "gemini" | "openai";
+export type ImageProviderId = "codex" | "cloudflare" | "deepinfra" | "gemini" | "openai";
 export type ImageRoute = { provider: ImageProviderId; model: string };
 
 export const IMAGE_PROVIDERS: { id: ImageProviderId; label: string; env: string; models: string[]; note: string }[] = [
+  { id: "codex", label: "ChatGPT gói Plus (Codex vẽ)", env: "CODEX_AUTH_JSON", models: ["gpt-image (gói)"], note: "đẹp nhất, không tốn tiền — dùng lượt vẽ của gói Plus, ~3–6 phút/ảnh" },
   { id: "cloudflare", label: "Cloudflare FLUX", env: "CLOUDFLARE_API_TOKEN", models: ["@cf/black-forest-labs/flux-1-schnell"], note: "free ~1 video/ngày" },
   {
     id: "deepinfra",
@@ -114,6 +115,7 @@ export const IMAGE_PROVIDERS: { id: ImageProviderId; label: string; env: string;
 ];
 
 export const DEFAULT_IMAGE_MODEL: Record<ImageProviderId, string> = {
+  codex: "gpt-image (gói)",
   cloudflare: "@cf/black-forest-labs/flux-1-schnell",
   deepinfra: "black-forest-labs/FLUX-1-schnell",
   gemini: "gemini-nano-banana-2.1",

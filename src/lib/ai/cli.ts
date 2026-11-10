@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
@@ -252,5 +252,51 @@ export class CliProvider implements TextProvider {
       }
     }
     throw new Error(`${this.kind} (gói) trả JSON không đúng khuôn: ${error}`);
+  }
+}
+
+/** File ảnh mới nhất Codex lưu trong CODEX_HOME/generated_images (công cụ vẽ ảnh của Codex tự lưu ở đó). */
+async function newestImage(dir: string): Promise<string | null> {
+  const entries = await readdir(dir, { recursive: true }).catch(() => [] as string[]);
+  let best: { file: string; at: number } | null = null;
+  for (const e of entries) {
+    if (!/\.(png|jpe?g|webp)$/i.test(e)) continue;
+    const file = path.join(dir, e);
+    const at = (await stat(file)).mtimeMs;
+    if (!best || at > best.at) best = { file, at };
+  }
+  return best?.file ?? null;
+}
+
+/**
+ * Vẽ 1 ảnh bằng công cụ vẽ của Codex, đăng nhập gói ChatGPT Plus (không tốn credit API).
+ * Sandbox read-only: Codex chỉ gọi công cụ vẽ, ảnh tự lưu vào CODEX_HOME → mình tự lấy file.
+ */
+export async function codexImage(
+  cred: string,
+  prompt: string,
+  aspect: "16:9" | "9:16" | "1:1",
+  persist?: (cred: string) => Promise<void>,
+): Promise<Buffer> {
+  const home = await prepareHome("codex", cred, "");
+  try {
+    const work = path.join(home, "work");
+    await mkdir(work, { recursive: true });
+    const cmd: Command = {
+      bin: "codex",
+      args: ["exec", "--skip-git-repo-check", "--ephemeral", "--sandbox", "read-only", "--color", "never", "-c", "features.image_generation=true", "-"],
+      env: { ...baseEnv(home), CODEX_HOME: path.join(home, ".codex") },
+      stdin: `Use your image generation tool to create exactly ONE image, aspect ratio ${aspect}. Do not ask questions, do not write files, just generate it.\n\nImage prompt: ${prompt}`,
+    };
+    const res = await run(cmd, work);
+    const img = await newestImage(path.join(home, ".codex", "generated_images"));
+    if (!img) throw classify("codex", `${res.stderr}\n${res.stdout}`.trim().slice(-600) || "Codex không vẽ ra ảnh.");
+    if (persist) {
+      const fresh = await readFile(path.join(home, ".codex", "auth.json"), "utf8").catch(() => "");
+      if (fresh && fresh.trim() !== cred.trim()) await persist(fresh).catch((e) => console.warn("Không lưu được token Codex mới:", e));
+    }
+    return await readFile(img);
+  } finally {
+    await rm(home, { recursive: true, force: true }).catch(() => {});
   }
 }
