@@ -7,11 +7,13 @@
 #   REPO     mặc định trongbao123/ma-ton-studio
 #   LABEL    mặc định railway  → biến repo RUNNER_LABEL = railway để workflow chạy ở đây
 #   RUNNERS  mặc định 2
+#   NAME     tiền tố tên runner, mỗi máy một tên (vd win, mac) — trùng tên thì máy sau đè đăng ký máy trước
 set -euo pipefail
 : "${GH_PAT:?Thiếu GH_PAT}"
 REPO="${REPO:-trongbao123/ma-ton-studio}"
 LABEL="${LABEL:-railway}"
 N="${RUNNERS:-2}"
+NAME="${NAME:-$LABEL}"
 HOME_DIR=/home/runner
 
 token() {
@@ -45,8 +47,8 @@ for i in $(seq 1 "$N"); do
     find "$HOME_DIR" -maxdepth 1 -type f ! -name start.sh ! -name '.*' -exec cp {} "$d"/ \;
   fi
   (cd "$d" && ./config.sh --unattended --replace --url "https://github.com/$REPO" --token "$reg" \
-    --name "$LABEL-$i" --labels "$LABEL" --work _work >/dev/null)
-  echo "✔ Runner $LABEL-$i đã đăng ký"
+    --name "$NAME-$i" --labels "$LABEL" --work _work >/dev/null)
+  echo "✔ Runner $NAME-$i (nhãn $LABEL) đã đăng ký"
   (cd "$d" && ./run.sh) &
   pids+=($!)
 done
