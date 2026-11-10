@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { rename, rm, stat } from "node:fs/promises";
 import { promisify } from "node:util";
+import { parseIntegratedLufs } from "./still";
 
 const run = promisify(execFile);
 const FFMPEG = process.env.FFMPEG ?? "ffmpeg";
@@ -18,6 +19,16 @@ export async function ffmpeg(args: string[]) {
 export async function duration(file: string): Promise<number> {
   const { stdout } = await run(FFPROBE, ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file]);
   return Number(stdout.trim());
+}
+
+/** Độ to tích hợp (LUFS) của file âm thanh, đo bằng ebur128 (~1 giây cho 40 phút); không đo được thì null. */
+export async function measureLufs(file: string): Promise<number | null> {
+  try {
+    const { stderr } = await run(FFMPEG, ["-hide_banner", "-nostats", "-i", file, "-af", "ebur128=framelog=quiet", "-f", "null", "-"], { maxBuffer: 16 * 1024 * 1024 });
+    return parseIntegratedLufs(stderr);
+  } catch {
+    return null;
+  }
 }
 
 /** Chữ ký codec/kích thước/fps của các luồng — 2 file cùng chữ ký thì ghép concat `-c copy` an toàn. */

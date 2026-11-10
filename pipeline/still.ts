@@ -1,0 +1,93 @@
+// Chế độ dựng "tĩnh" cho video chương nội bộ của chế độ tập (phần thuần: chỉ dựng tham số ffmpeg, không chạy gì).
+// Mỗi ảnh = 1 đoạn ảnh tĩnh, mờ vào/ra 0,5 giây; các đoạn nối bằng concat copy; âm thanh trộn 1 lần ở bước cuối, video copy nguyên.
+// Lý do: hết zoompan/xfade/ass/re-encode toàn video → vừa ngân sách ~25 phút CPU cho 2 giờ video trên runner 2 vCPU.
+
+export const STILL_FPS = 24;
+/** Dip-to-black ở đầu và cuối mỗi đoạn. */
+export const STILL_FADE_SECONDS = 0.5;
+const STILL_CRF = "23";
+const STILL_PRESET = "veryfast";
+/** Khung hình khoá mỗi 5 giây — đủ cho YouTube và cho tua. */
+const STILL_GOP = String(STILL_FPS * 5);
+
+/** Mức tiếng sau khi chuẩn hoá: giọng đọc -16 LUFS (chuẩn YouTube/podcast). */
+export const VOICE_LUFS = -16;
+/** Nhạc nền trước khi tự hạ: ≈ -15 dB; khi có giọng sidechain hạ thêm ~9–12 dB → ≈ -24 dB dưới giọng. */
+export const MUSIC_GAIN = 0.18;
+/** Nền "ma đạo" tự sinh vốn nhỏ hơn nhạc thật nên cho to hơn một chút. */
+export const AMBIENT_GAIN = 0.3;
+const MUSIC_FADE_IN = 3;
+const MUSIC_FADE_OUT = 5;
+export const AUDIO_BITRATE = "192k";
+export const AUDIO_RATE = "48000";
+
+/** Số khung hình của đoạn [start, end] giây: làm tròn theo MỐC cộng dồn nên tổng các đoạn không trôi so với giọng đọc. */
+export function stillFrames(start: number, end: number, fps = STILL_FPS) {
+  return Math.max(1, Math.round(end * fps) - Math.round(start * fps));
+}
+
+/** Ảnh → đoạn video tĩnh `frames` khung hình, 1920×1080 (scale/crop một lần), mờ vào/ra. `logoCrop` là chuỗi filter cắt logo (có dấu phẩy cuối) hoặc rỗng. */
+export function stillSegmentArgs(o: { img: string; out: string; frames: number; w: number; h: number; logoCrop?: string; fps?: number }) {
+  const fps = o.fps ?? STILL_FPS;
+  const seconds = o.frames / fps;
+  const fade = Math.min(STILL_FADE_SECONDS, seconds / 2);
+  const vf = [
+    `${o.logoCrop ?? ""}scale=${o.w}:${o.h}:force_original_aspect_ratio=increase:flags=bicubic`,
+    `crop=${o.w}:${o.h}:(iw-ow)/2:(ih-oh)*0.3`,
+    "format=yuv420p",
+    // Nhân khung đã scale/crop (1 khung) thay vì `-loop 1` bắt scale lại từng khung: đo local ≈ -18% thời gian đoạn, ra cùng file.
+    "loop=loop=-1:size=1:start=0",
+    `fade=t=in:st=0:d=${fade}`,
+    `fade=t=out:st=${(seconds - fade).toFixed(3)}:d=${fade}`,
+  ].join(",");
+  return [
+    "-framerate", String(fps), "-i", o.img, "-frames:v", String(o.frames),
+    "-vf", vf,
+    "-c:v", "libx264", "-preset", STILL_PRESET, "-tune", "stillimage", "-crf", STILL_CRF, "-g", STILL_GOP, "-r", String(fps),
+    o.out,
+  ];
+}
+
+/** Đọc "Integrated loudness" (LUFS) từ bản tóm tắt của filter ebur128 trong stderr ffmpeg; không đọc được (im lặng = -inf) thì null. */
+export function parseIntegratedLufs(stderr: string) {
+  const all = [...stderr.matchAll(/^\s*I:\s+(-?\d+(?:\.\d+)?)\s+LUFS/gm)];
+  const last = all.at(-1);
+  return last ? Number(last[1]) : null;
+}
+
+const MAX_GAIN_DB = 30;
+const MIN_GAIN_DB = -20;
+
+/** Gain (dB) đưa giọng đã đo `measuredLufs` về -16 LUFS; không đo được thì null (rơi về loudnorm). Kẹp để file lỗi/gần im không bị khuếch đại vô lý. */
+export function voiceGainDb(measuredLufs: number | null) {
+  if (measuredLufs == null || !Number.isFinite(measuredLufs)) return null;
+  return Math.min(MAX_GAIN_DB, Math.max(MIN_GAIN_DB, VOICE_LUFS - measuredLufs));
+}
+
+/**
+ * Bộ lọc âm thanh: giọng về -16 LUFS; nhạc mờ vào/ra, tự hạ khi có giọng (sidechain); trộn rồi chặn đỉnh.
+ * Có `voiceGain` (đã đo bằng ebur128, ~1 giây) thì chỉ nhân gain; không thì dùng loudnorm (đo local: 34 giây/40 phút giọng — đắt gấp 40 lần).
+ */
+export function episodeAudioGraph(o: { seconds: number; musicGain: number; voiceGain: number | null }) {
+  const fadeOutAt = Math.max(0, o.seconds - MUSIC_FADE_OUT).toFixed(2);
+  const level = o.voiceGain == null ? `loudnorm=I=${VOICE_LUFS}:TP=-1.5:LRA=11` : `volume=${o.voiceGain.toFixed(2)}dB`;
+  return [
+    `[1:a]${level},aresample=${AUDIO_RATE},aformat=sample_fmts=fltp:channel_layouts=stereo,asplit=2[vo][sc]`,
+    `[2:a]aresample=${AUDIO_RATE},aformat=sample_fmts=fltp:channel_layouts=stereo,volume=${o.musicGain},afade=t=in:st=0:d=${MUSIC_FADE_IN},afade=t=out:st=${fadeOutAt}:d=${MUSIC_FADE_OUT}[mu]`,
+    "[mu][sc]sidechaincompress=threshold=0.04:ratio=6:attack=30:release=600:makeup=1[md]",
+    "[vo][md]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.9[a]",
+  ].join(";");
+}
+
+/** Bước cuối của chương tĩnh: nối các đoạn (concat copy) + trộn âm thanh trong MỘT lệnh, video `-c:v copy` (≈ 0 CPU video). */
+export function episodeMuxArgs(o: { list: string; narration: string; music: string; seconds: number; isAmbient: boolean; voiceGain: number | null; out: string }) {
+  return [
+    "-f", "concat", "-safe", "0", "-i", o.list,
+    "-i", o.narration,
+    "-stream_loop", "-1", "-t", o.seconds.toFixed(2), "-i", o.music,
+    "-filter_complex", episodeAudioGraph({ seconds: o.seconds, musicGain: o.isAmbient ? AMBIENT_GAIN : MUSIC_GAIN, voiceGain: o.voiceGain }),
+    "-map", "0:v", "-map", "[a]",
+    "-c:v", "copy", "-c:a", "aac", "-b:a", AUDIO_BITRATE, "-ar", AUDIO_RATE, "-ac", "2",
+    "-shortest", "-movflags", "+faststart", o.out,
+  ];
+}

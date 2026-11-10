@@ -8,8 +8,9 @@ import { chapters, series, videos, type Chapter, type Series, type VideoMeta } f
 import { QuotaExhaustedError, textProvider } from "@/lib/ai";
 import { escapeHtml, notify, WEB_URL } from "@/lib/notify";
 import { drawImage, imagesReady } from "./images";
-import { duration, ffmpeg, filterPath, once, pool } from "./ffmpeg";
+import { duration, ffmpeg, filterPath, measureLufs, once, pool } from "./ffmpeg";
 import { Tracker } from "./progress";
+import { episodeMuxArgs, stillFrames, stillSegmentArgs, voiceGainDb } from "./still";
 import { freshInsights, loadTrends, seoHints } from "@/lib/trends";
 import { characterLookFor, metaRequest, scenePrompts, scenesRequest, videoMeta } from "./prompts";
 import { imageCount } from "./episode-plan";
@@ -31,13 +32,9 @@ const FONT = `${FONT_DIR}/BeVietnamPro-Bold.ttf`;
 const BURN_TEXT = process.env.BURN_TEXT !== "0";
 const FPS = 30;
 
-/**
- * Mức chất lượng dựng. `fast` cho video chương nội bộ của chế độ tập (chỉ dùng làm nguyên liệu ghép, không đăng lẻ):
- * phóng ảnh 1,5× thay 2× và bỏ làm nét (shot rẻ ~3,4×), 24 fps, bỏ vignette (tốn ~40% bước trộn cuối). Đo local: ≈ -48% CPU/phút video.
- */
+/** Mức chất lượng dựng của video chương thường và Short (chương nội bộ của chế độ tập dùng `buildStillVideo`, xem still.ts). */
 export type Quality = { scale: number; sharpen: boolean; fps: number; vignette: boolean; crf: number; tag: string };
 const NORMAL: Quality = { scale: 2, sharpen: true, fps: FPS, vignette: true, crf: 22, tag: "2" };
-const FAST: Quality = { scale: 1.5, sharpen: false, fps: 24, vignette: false, crf: 23, tag: "f" };
 
 export type Narration = { audio: string; cues: Cue[]; seconds: number };
 
@@ -159,7 +156,7 @@ export async function buildVideo(opts: {
   w: number; h: number; imgW: number; imgH: number; fontSize: number; marginV: number; titleCard?: string;
   /** Short: chữ lớn 2 giây đầu để giữ người lướt; thanh tiến độ mảnh trên đỉnh. */
   hook?: string; progressBar?: boolean;
-  /** Mặc định NORMAL; video chương nội bộ của chế độ tập dùng FAST. */
+  /** Mặc định NORMAL. */
   quality?: Quality;
   /** Báo tiến độ cho màn flow: ảnh vẽ xong (lần đầu), tổng số shot, từng shot xong, việc ghép. */
   on?: { image?: (i: number, file: string, model?: string) => Promise<void>; shots?: (n: number) => void; shot?: () => void; log?: (text: string) => void };
@@ -255,6 +252,44 @@ export async function buildVideo(opts: {
       "-c:v", "libx264", "-preset", "veryfast", "-crf", String(q.crf), "-maxrate", "5M", "-bufsize", "10M",
       "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart", tmp,
     ]),
+  );
+  return { out };
+}
+
+/**
+ * Video chương nội bộ của chế độ tập: mỗi ảnh 1 đoạn tĩnh (mờ vào/ra), nối concat copy, trộn âm thanh ở bước cuối với video copy.
+ * Không phụ đề, không title card, không zoompan/xfade/grade. Giữ nguyên 1080p.
+ */
+export async function buildStillVideo(opts: {
+  dir: string; name: string; narration: Narration; music?: string | null; prompts: ScenePrompt[]; scenes: { start: number; end: number }[];
+  w: number; h: number; imgW: number; imgH: number;
+  on?: { image?: (i: number, file: string, model?: string) => Promise<void>; shots?: (n: number) => void; shot?: () => void; log?: (text: string) => void };
+}) {
+  const { dir, name, narration, prompts, scenes, w, h, on } = opts;
+  on?.shots?.(scenes.length);
+  const out = path.join(dir, `${name}.mp4`);
+  // Bản cuối đã xuất đủ dài (job trước bị huỷ ở bước sau) thì dùng lại.
+  if (await duration(out).then((d) => d >= narration.seconds - 1.5, () => false)) {
+    on?.log?.("Dùng lại video đã xuất ở lần chạy trước");
+    return { out };
+  }
+  await rm(out, { force: true });
+  const files = await pool(scenes, 3, async (sc, i) => {
+    const img = path.join(dir, `${name}-img-${i}.jpg`);
+    const model = await drawImage(prompts[i].prompt, img, { width: opts.imgW, height: opts.imgH, seed: 1000 + i * 7 });
+    await on?.image?.(i, img, model);
+    const file = path.join(dir, `${name}-seg-${String(i).padStart(3, "0")}.mp4`);
+    await once(file, (tmp) => ffmpeg(stillSegmentArgs({ img, out: tmp, frames: stillFrames(sc.start, sc.end), w, h, logoCrop: LOGO_CROP })));
+    on?.shot?.();
+    return file;
+  });
+  on?.log?.("Nối đoạn + trộn giọng, nhạc nền (video copy)");
+  const list = path.join(dir, `${name}-segments.txt`);
+  await writeFile(list, files.map((f) => `file '${f}'`).join("\n"));
+  const music = opts.music ?? (await ambientBed(dir));
+  const voiceGain = voiceGainDb(await measureLufs(narration.audio));
+  await once(out, (tmp) =>
+    ffmpeg(episodeMuxArgs({ list, narration: narration.audio, music, seconds: narration.seconds, isAmbient: music.endsWith("ambient.wav"), voiceGain, out: tmp })),
   );
   return { out };
 }
@@ -378,13 +413,13 @@ const SHORT_SCENES = 5;
 async function resetStaleScenes(dir: string, n: number) {
   const marker = path.join(dir, "scene-plan.txt");
   if ((await readFile(marker, "utf8").catch(() => "")) === String(n)) return;
-  for (const f of await readdir(dir).catch(() => [] as string[])) if (/^long-(img-\d+\.jpg|shot|group|silent)/.test(f)) await rm(path.join(dir, f), { force: true });
+  for (const f of await readdir(dir).catch(() => [] as string[])) if (/^long-(img-\d+\.jpg|shot|group|silent|seg)/.test(f)) await rm(path.join(dir, f), { force: true });
   await writeFile(marker, String(n));
 }
 
 /**
  * Video chương của chế độ tập: chỉ là nguyên liệu để ghép tập (không đăng lẻ, không Short, không thumbnail, không SEO/vidIQ,
- * không playlist, không upload xem trước). Giọng + ảnh (1 ảnh/60 giây) + video dài ở mức FAST; xong thì `ready`, chờ ghép.
+ * không playlist, không upload xem trước). Giọng + ảnh (1 ảnh/60 giây) + video ảnh tĩnh (buildStillVideo); xong thì `ready`, chờ ghép.
  */
 async function renderInternalChapter(o: { videoId: number; s: Series; c: Chapter; dir: string; track: Tracker; releaseId: number | null }) {
   const { videoId, s, c, dir, track, releaseId } = o;
@@ -416,11 +451,9 @@ async function renderInternalChapter(o: { videoId: number; s: Series; c: Chapter
 
   track.start("images", { long: n });
   track.start("video");
-  const video = await buildVideo({
-    dir, name: "long", narration: long, prompts, scenes,
-    w: 1920, h: 1080, imgW: 1280, imgH: 768, fontSize: 62, marginV: 70,
-    titleCard: `${s.title}\n\nChương ${c.number}: ${c.title}`,
-    music, quality: FAST,
+  const video = await buildStillVideo({
+    dir, name: "long", narration: long, prompts, scenes, music,
+    w: 1920, h: 1080, imgW: 1280, imgH: 768,
     on: {
       image: async (i) => track.tick("images", "long", `Ảnh ${i + 1}/${n} xong`),
       shots: (count) => track.total("video", "long", count),

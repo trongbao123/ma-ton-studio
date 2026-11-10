@@ -1,7 +1,9 @@
 name: daily
 on:
   schedule:
-    - cron: "17 1,7,13,19 * * *" # 6 tiếng/lần (8h17, 14h17, 20h17, 2h17 VN) — lượt 8h17 viết + render kịp lịch đăng 15h
+    # 2 lượt/ngày (8h17 và 20h17 VN): mỗi lượt tốn ~3–4 phút setup (apt, pnpm, cache) nên ít lượt hơn = đỡ phút Actions repo private (free 2.000 phút/tháng).
+    # Lượt 8h17 viết + render + dựng tập kịp lịch đăng 15h; lượt 20h17 làm tiếp phần dang dở (hết quota, lỗi) và dựng tập nếu còn thiếu.
+    - cron: "17 1,13 * * *"
   workflow_dispatch:
 permissions:
   contents: write
@@ -17,7 +19,7 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with: { node-version: 24, cache: pnpm }
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends ffmpeg
       - run: pnpm install --frozen-lockfile
       # AI dùng gói Pro/Plus (Claude Code, Codex, Gemini CLI) — không tốn credit API; đăng nhập dán ở Cài đặt AI.
       # Cài lỗi thì vẫn chạy tiếp bằng API như cũ.
