@@ -2,7 +2,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { aiUsage, appSettings, chapters, series, videos } from "@/db/schema";
-import { LAYOUT_KEY, mergeLayout } from "./layout";
+import { LAYOUT_KEY, LAYOUT_KEY_H, mergeLayout } from "./layout";
 import { configuredImageModel, containingCompilation, pickImageModel, type CompilationRef } from "./derive";
 import { IMAGE_ROUTING_KEY, normalizeImageRouting, normalizeRouting, ROUTING_KEY } from "@/lib/ai/routing";
 import { assetUrl } from "@/lib/asset-url";
@@ -47,13 +47,15 @@ function compilationOf(videoId: number, rows: Awaited<ReturnType<typeof compilat
 }
 
 /** Mọi khoá app_settings màn flow cần — đọc MỘT lần thay vì 7 truy vấn riêng. */
-const SETTING_KEYS = [SECRETS_KEY, YT_KEY, ROUTING_KEY, IMAGE_ROUTING_KEY, CLI_STATUS_KEY, TRENDS_KEY, LAYOUT_KEY];
+const SETTING_KEYS = [SECRETS_KEY, YT_KEY, ROUTING_KEY, IMAGE_ROUTING_KEY, CLI_STATUS_KEY, TRENDS_KEY, LAYOUT_KEY, LAYOUT_KEY_H];
 
 /**
  * Dữ liệu màn flow + bố cục đã lưu. Đúng 2 vòng tới DB: (1) video + chương + truyện + tóm tắt chương trước;
  * (2) một lô gồm toàn bộ app_settings cần, các bản gộp, lượt dùng ảnh — gửi chung một request HTTP.
  */
-export async function loadFlowPage(videoId: number): Promise<{ data: FlowData; layout: ReturnType<typeof mergeLayout> } | null> {
+export async function loadFlowPage(
+  videoId: number,
+): Promise<{ data: FlowData; layout: ReturnType<typeof mergeLayout>; layoutH: ReturnType<typeof mergeLayout> } | null> {
   const prev = alias(chapters, "prev_chapter");
   const [row] = await db()
     .select({ v: videos, c: chapters, s: series, prevSummary: prev.summary })
@@ -130,7 +132,7 @@ export async function loadFlowPage(videoId: number): Promise<{ data: FlowData; l
       available: withCliStatus(availableProviders(), cli),
     },
   };
-  return { data, layout: mergeLayout(setting[LAYOUT_KEY]) };
+  return { data, layout: mergeLayout(setting[LAYOUT_KEY]), layoutH: mergeLayout(setting[LAYOUT_KEY_H], "h") };
 }
 
 /** Dữ liệu màn flow (không kèm bố cục) — cho API / luồng SSE. */

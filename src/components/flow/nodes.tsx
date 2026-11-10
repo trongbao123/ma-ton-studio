@@ -57,7 +57,7 @@ const handle = "!h-2 !w-2 !min-h-0 !min-w-0 !border-0 !bg-transparent";
 const ring = (on?: boolean) => (on ? "outline outline-2 outline-offset-4 outline-amber-400" : "");
 
 /** `row`: hàng của thẻ trong cây, dùng để hiện lần lượt từ trên xuống. */
-export type CardNodeData = { view: CardView; selected?: boolean; row?: number };
+export type CardNodeData = { view: CardView; selected?: boolean; row?: number; horizontal?: boolean };
 
 /** Mỗi hàng trễ thêm 50ms khi vào trang lần đầu. */
 const STAGGER_MS = 50;
@@ -152,15 +152,16 @@ export function CardNode({ data }: NodeProps<Node<CardNodeData>>) {
             !
           </span>
         )}
-        {view.id !== "trends" && <Handle type="target" position={Position.Top} className={handle} isConnectable={false} />}
-        <Handle id="tools" type="source" position={Position.Right} className={handle} isConnectable={false} />
-        {view.id !== "youtube" && <Handle id="out" type="source" position={Position.Bottom} className={handle} isConnectable={false} />}
+        {/* Dọc: vào trên, ra dưới, node con bên phải. Ngang: vào trái, ra phải, node con bên dưới. */}
+        {view.id !== "trends" && <Handle type="target" position={data.horizontal ? Position.Left : Position.Top} className={handle} isConnectable={false} />}
+        <Handle id="tools" type="source" position={data.horizontal ? Position.Bottom : Position.Right} className={handle} isConnectable={false} />
+        {view.id !== "youtube" && <Handle id="out" type="source" position={data.horizontal ? Position.Right : Position.Bottom} className={handle} isConnectable={false} />}
       </div>
     </div>
   );
 }
 
-export type SubNodeData = { view: SubView; row?: number };
+export type SubNodeData = { view: SubView; row?: number; horizontal?: boolean };
 
 /** Node con kiểu n8n: vòng tròn logo/icon + nhãn + model hoặc giá trị thật, nằm bên phải thẻ cha; mờ khi chưa có dữ liệu. */
 export function SubNode({ data }: NodeProps<Node<SubNodeData>>) {
@@ -172,7 +173,7 @@ export function SubNode({ data }: NodeProps<Node<SubNodeData>>) {
       style={{ width: SUB_WIDTH, height: SUB_HEIGHT, animationDelay: `${(data.row ?? 0) * STAGGER_MS + SUB_DELAY_MS}ms` }}
       title={`${view.label}: ${view.value}`}
     >
-      <Handle type="target" position={Position.Left} className={handle} isConnectable={false} />
+      <Handle type="target" position={data.horizontal ? Position.Top : Position.Left} className={handle} isConnectable={false} />
       <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-full border-2 bg-[#23232b] ${view.ok ? "border-emerald-600/70" : "border-[#3d3d48]"}`}>
         {view.brand ? <BrandIcon id={view.brand} size={20} /> : Icon && <Icon size={18} strokeWidth={1.7} className="text-zinc-300" />}
       </span>

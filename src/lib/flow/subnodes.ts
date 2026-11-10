@@ -24,8 +24,17 @@ export const SUB_GAP = 6;
 export const SUB_INSET = 64;
 const SUB_TOP = 8;
 
-/** Vị trí (tương đối so với thẻ cha) của node con thứ i: xếp thành cột bên phải thẻ cha. */
-export function subOffset(index: number, parentWidth: number): { x: number; y: number } {
+/** Chiều cao ước của thẻ cha (thẻ tự co theo nội dung) — chỉ để đặt node con dưới thẻ ở chế độ ngang. */
+const CARD_EST_HEIGHT = 150;
+/** Khoảng hở giữa mép dưới thẻ cha và cột node con (chế độ ngang). */
+const SUB_DROP = 44;
+
+/**
+ * Vị trí (tương đối so với thẻ cha) của node con thứ i. Dọc: cột bên phải thẻ cha.
+ * Ngang: cột ngay dưới thẻ cha (bên phải là thẻ bước sau nên không đặt được).
+ */
+export function subOffset(index: number, parentWidth: number, horizontal = false): { x: number; y: number } {
+  if (horizontal) return { x: (parentWidth - SUB_WIDTH) / 2, y: CARD_EST_HEIGHT + SUB_DROP + index * (SUB_HEIGHT + SUB_GAP) };
   return { x: parentWidth + SUB_INSET, y: SUB_TOP + index * (SUB_HEIGHT + SUB_GAP) };
 }
 

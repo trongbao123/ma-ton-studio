@@ -22,5 +22,5 @@ async function VideoFlow({ params }: { params: Promise<{ id: string }> }) {
   const id = parseId((await params).id);
   const page = await loadFlowPage(id);
   if (!page) notFound();
-  return <FlowStudio data={page.data} layout={page.layout} />;
+  return <FlowStudio data={page.data} layout={page.layout} layoutH={page.layoutH} />;
 }

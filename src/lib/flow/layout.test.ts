@@ -61,3 +61,22 @@ describe("mergeLayout", () => {
     expect(Object.keys(mergeLayout({ ...full(), lạ: { x: 1, y: 1 } }))).toEqual(CARD_ORDER);
   });
 });
+
+describe("bố cục ngang", () => {
+  it("mỗi hàng của cây dọc thành một cột, x tăng dần từ trái sang phải", async () => {
+    const { COL_PITCH, DEFAULT_POSITIONS_H } = await import("./layout");
+    for (const id of CARD_ORDER) expect(DEFAULT_POSITIONS_H[id].x).toBe(ROW_OF[id] * COL_PITCH);
+    expect(DEFAULT_POSITIONS_H.trends.x).toBeLessThan(DEFAULT_POSITIONS_H.youtube.x);
+  });
+  it("nhánh song song xếp chồng trong cột, đối xứng quanh y = 0", async () => {
+    const { DEFAULT_POSITIONS_H, STACK_PITCH } = await import("./layout");
+    expect(DEFAULT_POSITIONS_H.images.y).toBe(0);
+    expect(DEFAULT_POSITIONS_H.tts.y).toBe(-STACK_PITCH);
+    expect(DEFAULT_POSITIONS_H.thumbnail.y).toBe(STACK_PITCH);
+    expect(DEFAULT_POSITIONS_H.long.y + DEFAULT_POSITIONS_H.short.y).toBe(0);
+  });
+  it("bố cục ngang hỏng thì về mặc định NGANG, không về dọc", async () => {
+    const { DEFAULT_POSITIONS_H } = await import("./layout");
+    expect(mergeLayout(null, "h")).toEqual(DEFAULT_POSITIONS_H);
+  });
+});

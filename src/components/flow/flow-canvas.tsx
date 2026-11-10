@@ -5,7 +5,7 @@ import { Background, BackgroundVariant, Controls, PanOnScrollMode, ReactFlow, Re
 import { useCallback, useEffect, useMemo, useRef, useTransition } from "react";
 import { resetFlowLayoutAction, saveFlowLayoutAction } from "@/app/actions";
 import { edgeTone, TREE_EDGES } from "@/lib/flow/edges";
-import { CARD_WIDTH, DEFAULT_POSITIONS, MAIN_ORDER, ROW_OF, type CanvasNodeId, type Pos } from "@/lib/flow/layout";
+import { CARD_WIDTH, defaultPositions, MAIN_ORDER, ROW_OF, type CanvasNodeId, type Orientation, type Pos } from "@/lib/flow/layout";
 import type { CardId, CardView } from "@/lib/flow/model";
 import { subOffset, type SubView } from "@/lib/flow/subnodes";
 import { edgeTypes } from "./flow-edge";
@@ -21,12 +21,13 @@ const DEFAULT_CARD_HEIGHT = 150;
 /** Vừa chọn thẻ trong khoảng này thì coi việc đổi bề rộng canvas là hệ quả của lần chọn. */
 const FOCUS_RECENT_MS = 600;
 
-function buildNodes(cards: Record<CardId, CardView>, subs: SubView[], layout: Record<CanvasNodeId, Pos>, selected: CardId): Node[] {
+function buildNodes(cards: Record<CardId, CardView>, subs: SubView[], layout: Record<CanvasNodeId, Pos>, selected: CardId, orientation: Orientation): Node[] {
+  const horizontal = orientation === "h";
   const main: Node[] = MAIN_ORDER.map((id) => ({
     id,
     type: "card",
     position: layout[id],
-    data: { view: cards[id], selected: id === selected, row: ROW_OF[id] },
+    data: { view: cards[id], selected: id === selected, row: ROW_OF[id], horizontal },
   }));
   // Node con gắn parentId nên đi theo thẻ cha khi kéo; vị trí tương đối, không lưu.
   const children: Node[] = subs.map((view) => {
@@ -35,9 +36,9 @@ function buildNodes(cards: Record<CardId, CardView>, subs: SubView[], layout: Re
       id: view.id,
       type: "sub",
       parentId: view.parent,
-      position: subOffset(siblings.indexOf(view), CARD_WIDTH),
+      position: subOffset(siblings.indexOf(view), CARD_WIDTH, horizontal),
       draggable: false,
-      data: { view, row: ROW_OF[view.parent] },
+      data: { view, row: ROW_OF[view.parent], horizontal },
     };
   });
   return [...main, ...children];
@@ -73,6 +74,8 @@ type CanvasProps = {
   panelOpen: boolean;
   /** Tăng lên mỗi lần bấm "Sắp xếp lại" → về cây mặc định. */
   resetCount: number;
+  /** Dọc / ngang — đổi hướng thì canvas dựng lại từ đầu (key) với bố cục của hướng đó. */
+  orientation: Orientation;
   onPick: (id: CardId) => void;
 };
 
@@ -87,8 +90,8 @@ export default function FlowCanvas(props: CanvasProps) {
   );
 }
 
-function Canvas({ cards, subs, layout, selected, panelOpen, resetCount, onPick }: CanvasProps) {
-  const [nodes, setNodes, onNodesChange] = useNodesState(buildNodes(cards, subs, layout, selected));
+function Canvas({ cards, subs, layout, selected, panelOpen, resetCount, orientation, onPick }: CanvasProps) {
+  const [nodes, setNodes, onNodesChange] = useNodesState(buildNodes(cards, subs, layout, selected, orientation));
   const edges = useMemo(() => buildEdges(cards, subs), [cards, subs]);
   const { setCenter, getNode, getNodes, getZoom, fitView } = useReactFlow();
   const [, startTransition] = useTransition();
@@ -146,15 +149,16 @@ function Canvas({ cards, subs, layout, selected, panelOpen, resetCount, onPick }
   const firstReset = useRef(true);
   useEffect(() => {
     if (firstReset.current) return void (firstReset.current = false);
-    setNodes((ns) => ns.map((n) => (n.parentId ? n : { ...n, position: DEFAULT_POSITIONS[n.id as CanvasNodeId] })));
+    setNodes((ns) => ns.map((n) => (n.parentId ? n : { ...n, position: defaultPositions(orientation)[n.id as CanvasNodeId] })));
     requestAnimationFrame(() => fitAll(CAMERA_MS));
-    startTransition(async () => void (await resetFlowLayoutAction()));
+    startTransition(async () => void (await resetFlowLayoutAction(orientation)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- chỉ chạy khi bấm "Sắp xếp lại"; đổi hướng thì canvas dựng lại từ đầu
   }, [resetCount, setNodes, fitAll]);
 
   // Kéo thả tự do (node con đi theo thẻ cha); vị trí lưu khi thả chuột.
   const savePositions = () => {
     const positions = Object.fromEntries(getNodes().filter((n) => !n.parentId).map((n) => [n.id, n.position]));
-    startTransition(async () => void (await saveFlowLayoutAction(positions)));
+    startTransition(async () => void (await saveFlowLayoutAction(positions, orientation)));
   };
 
   return (

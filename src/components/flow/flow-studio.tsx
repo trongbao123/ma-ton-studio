@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { rerenderAction } from "@/app/actions";
 import { ActionForm } from "@/components/action-form";
-import { MAIN_ORDER, type CanvasNodeId, type Pos } from "@/lib/flow/layout";
+import { MAIN_ORDER, type CanvasNodeId, type Orientation, type Pos } from "@/lib/flow/layout";
 import { buildFlow, formatSlot, formatTime, isStale, STATUS_LABEL, TITLES, type CardId, type CardView, type FlowData, type Issue, type NodeId } from "@/lib/flow/model";
 import { useLive, useLiveVideo } from "@/lib/live/store";
 import { buildSubs } from "@/lib/flow/subnodes";
@@ -22,7 +22,7 @@ const FlowCanvas = dynamic(() => import("./flow-canvas"), {
   ),
 });
 
-type Props = { data: FlowData; layout: Record<CanvasNodeId, Pos> };
+type Props = { data: FlowData; layout: Record<CanvasNodeId, Pos>; layoutH: Record<CanvasNodeId, Pos> };
 
 export function FlowStudio(props: Props) {
   return <Studio {...props} />;
@@ -183,7 +183,7 @@ function useLiveFlow(initial: FlowData) {
   return { data, live };
 }
 
-function Studio({ data: initial, layout }: Props) {
+function Studio({ data: initial, layout, layoutH }: Props) {
   const { data, live } = useLiveFlow(initial);
   const { cards, issues: baseIssues } = useMemo(() => buildFlow(data), [data]);
   const subs = useMemo(() => buildSubs(data, cards), [data, cards]);
@@ -205,6 +205,9 @@ function Studio({ data: initial, layout }: Props) {
 
   // Thu gọn bảng chi tiết / nhật ký để canvas rộng hơn; nhớ theo trình duyệt.
   const [panelOpen, setPanelOpen] = usePref("flow:panel", true);
+  // Sơ đồ ngang (trái → phải) hay dọc; nhớ theo trình duyệt, mỗi hướng có bố cục kéo thả riêng.
+  const [horizontal, setHorizontal] = usePref("flow:horizontal", false);
+  const orientation: Orientation = horizontal ? "h" : "v";
   const [logOpen, setLogOpen] = usePref("flow:log", true);
   const [logH, setLogH] = useLogHeight();
   const [logFull, setLogFull] = useState(false);
@@ -285,6 +288,15 @@ function Studio({ data: initial, layout }: Props) {
             Log render
           </a>
         )}
+        <button
+          type="button"
+          onClick={() => setHorizontal(!horizontal)}
+          title={horizontal ? "Chuyển sơ đồ sang dọc (trên → dưới)" : "Chuyển sơ đồ sang ngang (trái → phải)"}
+          className="btn-secondary !px-3.5 !py-1.5"
+        >
+          {horizontal ? "↕" : "↔"}
+          <span className="hidden sm:inline"> {horizontal ? "Dọc" : "Ngang"}</span>
+        </button>
         <button type="button" onClick={() => setResetCount((n) => n + 1)} className="btn-secondary !px-3.5 !py-1.5">
           ⤢<span className="hidden sm:inline"> Sắp xếp lại</span>
         </button>
@@ -304,7 +316,17 @@ function Studio({ data: initial, layout }: Props) {
           style={{ "--log-h": `${logH}px` } as React.CSSProperties}
           className={`area-canvas relative min-w-0 border-b border-border ${logOpen ? "h-[640px] lg:h-[calc(100dvh-120px-var(--log-h))] lg:min-h-[240px]" : "h-[640px] lg:h-full"}`}
         >
-          <FlowCanvas cards={cards} subs={subs} layout={layout} selected={selected} panelOpen={panelOpen} resetCount={resetCount} onPick={select} />
+          <FlowCanvas
+            key={orientation}
+            cards={cards}
+            subs={subs}
+            layout={horizontal ? layoutH : layout}
+            orientation={orientation}
+            selected={selected}
+            panelOpen={panelOpen}
+            resetCount={resetCount}
+            onPick={select}
+          />
           <p className="pointer-events-none absolute bottom-3 left-4 text-xs text-zinc-500">Kéo để dời · ⌘/Ctrl + cuộn để zoom</p>
         </div>
         <div className="area-insp relative flex min-h-0 flex-col [&>aside]:flex-1">

@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { SERIES_TAG, TRENDS_TAG } from "@/lib/cache-tags";
 import { appSettings, chapters, series, videos } from "@/db/schema";
-import { LAYOUT_KEY, mergeLayout, type Pos } from "@/lib/flow/layout";
+import { layoutKey, mergeLayout, type Orientation, type Pos } from "@/lib/flow/layout";
 import { draftBible, planChapters, writeChapterStep, type WriteMode } from "@/lib/story/service";
 import { dispatchPublish, dispatchRender, dispatchTrends, queueVideo } from "@/lib/story/videos";
 import { saveYoutubeAuth, updateYoutubeSnippet } from "@/lib/youtube";
@@ -151,20 +151,21 @@ export async function scanTrendsAction(): Promise<ActionState> {
 }
 
 /** Lưu vị trí node màn flow — một bố cục chung cho mọi video. Không revalidate: client đã giữ vị trí. */
-export async function saveFlowLayoutAction(positions: Record<string, Pos>): Promise<ActionState> {
+export async function saveFlowLayoutAction(positions: Record<string, Pos>, orientation: Orientation = "v"): Promise<ActionState> {
   return attempt(async () => {
-    const value = mergeLayout(positions);
+    const o: Orientation = orientation === "h" ? "h" : "v";
+    const value = mergeLayout(positions, o);
     await db()
       .insert(appSettings)
-      .values({ key: LAYOUT_KEY, value })
+      .values({ key: layoutKey(o), value })
       .onConflictDoUpdate({ target: appSettings.key, set: { value, updatedAt: new Date() } });
     return "Đã lưu bố cục.";
   });
 }
 
-export async function resetFlowLayoutAction(): Promise<ActionState> {
+export async function resetFlowLayoutAction(orientation: Orientation = "v"): Promise<ActionState> {
   return attempt(async () => {
-    await db().delete(appSettings).where(eq(appSettings.key, LAYOUT_KEY));
+    await db().delete(appSettings).where(eq(appSettings.key, layoutKey(orientation === "h" ? "h" : "v")));
     revalidatePath("/videos", "layout");
     return "Đã sắp xếp lại.";
   });
