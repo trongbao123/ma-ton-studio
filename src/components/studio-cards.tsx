@@ -84,7 +84,8 @@ function VideoState({ v }: { v: VideoCard }) {
   if (v.uploadStatus === "scheduled" && v.publishAt)
     return (
       <span className="flex items-center gap-1.5 text-jade">
-        <BrandIcon id="youtube" size={13} /> Lên lịch {formatSlot(v.publishAt)}
+        {/* YouTube báo đã public (đồng bộ về — kể cả bấm công khai sớm) thì là đã đăng, giờ là giờ đăng thật. */}
+        <BrandIcon id="youtube" size={13} /> {v.ytPrivacy === "public" ? "Đã đăng" : "Lên lịch"} {formatSlot(v.publishAt)}
       </span>
     );
   if (v.status === "ready")
@@ -101,9 +102,9 @@ export function VideoTile({ v, snapshot }: { v: VideoCard; snapshot?: YtStatsMap
   return (
     <Link href={`/videos/${v.id}`} className="group block focus-visible:outline-offset-4">
       <div className="relative aspect-video overflow-hidden rounded-xl border border-border bg-[#14151c]">
-        {v.hasThumb ? (
-          // eslint-disable-next-line @next/next/no-img-element -- ảnh từ GitHub Release qua redirect
-          <img src={assetUrl(v.id, "thumbnail.jpg", v.thumbVersion)} alt="" width={640} height={360} loading="lazy" decoding="async" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" />
+        {v.ytThumb || v.hasThumb ? (
+          // eslint-disable-next-line @next/next/no-img-element -- ảnh YouTube (i.ytimg.com) hoặc GitHub Release qua redirect
+          <img src={v.ytThumb ?? assetUrl(v.id, "thumbnail.jpg", v.thumbVersion)} alt="" width={640} height={360} loading="lazy" decoding="async" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" />
         ) : (
           <span className="absolute inset-0 grid place-items-center font-serif text-4xl font-extrabold text-white/15">{v.compilation ? (v.compilation.episodeNo ? `Tập ${v.compilation.episodeNo}` : `Chương ${v.compilation.from}–${v.compilation.to}`) : `Chương ${v.chapterNo}`}</span>
         )}

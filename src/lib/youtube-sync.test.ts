@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { VideoMeta } from "@/db/schema";
-import { mergeSnippet, youtubeIdFromUrl } from "./youtube-sync";
+import { bestThumb, mergeSnippet, youtubeIdFromUrl, youtubePatch } from "./youtube-sync";
 
 const meta: VideoMeta = {
   title: "Lâm Uyên thức tỉnh Ám Ảnh Ma Đồng | Chương 3",
@@ -36,5 +36,39 @@ describe("youtubeIdFromUrl", () => {
     expect(youtubeIdFromUrl("https://youtu.be/TfiX_eE0oGA?t=3")).toBe("TfiX_eE0oGA");
     expect(youtubeIdFromUrl("https://youtube.com/shorts/Q0JcrkHIqwM")).toBe("Q0JcrkHIqwM");
     expect(youtubeIdFromUrl(null)).toBeNull();
+  });
+});
+
+describe("youtubePatch", () => {
+  const info = (o: Partial<import("./youtube-sync").YtInfo> = {}) => ({
+    snippet: { title: meta.title, description: "Mô tả cũ", tags: ["truyện tu tiên"] },
+    thumb: "https://i.ytimg.com/vi/64x3Yi4MMYQ/maxresdefault.jpg?v=abc",
+    privacy: "public",
+    scheduledAt: null,
+    publishedAt: "2026-11-10T14:30:00Z",
+    ...o,
+  });
+  it("bấm công khai sớm: giờ đăng = giờ công khai thật, lưu thumbnail + privacy", () => {
+    const p = youtubePatch({ meta, publishAt: new Date("2026-11-11T08:00:00Z"), youtubeVideoId: "64x3Yi4MMYQ" }, { id: "64x3Yi4MMYQ", info: info() }, null)!;
+    expect(p.publishAt?.toISOString()).toBe("2026-11-10T14:30:00.000Z");
+    expect(p.meta?.yt).toEqual({ thumb: "https://i.ytimg.com/vi/64x3Yi4MMYQ/maxresdefault.jpg?v=abc", privacy: "public" });
+    expect(p.youtubeVideoId).toBeUndefined();
+  });
+  it("đã khớp hết thì không ghi gì", () => {
+    const synced = { ...meta, yt: { thumb: info().thumb, privacy: "public" } };
+    expect(youtubePatch({ meta: synced, publishAt: new Date("2026-11-10T14:30:00Z"), youtubeVideoId: "x" }, { id: "x", info: info() }, null)).toBeNull();
+  });
+  it("riêng tư có hẹn → giờ hẹn; video đăng tay chỉ có link → điền id", () => {
+    const p = youtubePatch({ meta, publishAt: null, youtubeVideoId: null }, { id: "lyh4iPDZscM", info: info({ privacy: "private", scheduledAt: "2026-11-12T08:00:00Z" }) }, null)!;
+    expect(p.publishAt?.toISOString()).toBe("2026-11-12T08:00:00.000Z");
+    expect(p.youtubeVideoId).toBe("lyh4iPDZscM");
+  });
+});
+
+describe("bestThumb", () => {
+  it("ưu tiên maxres, gắn ?v= theo etag", () => {
+    expect(bestThumb({ maxres: { url: "https://i.ytimg.com/a/maxres.jpg" }, high: { url: "h" } }, "etag-xyz")).toBe("https://i.ytimg.com/a/maxres.jpg?v=etag-xyz");
+    expect(bestThumb({ high: { url: "h.jpg" }, medium: { url: "m.jpg" } }, undefined)).toBe("m.jpg");
+    expect(bestThumb(undefined, "x")).toBeNull();
   });
 });

@@ -241,7 +241,8 @@ function renderSteps(d: FlowData): Record<RenderId, Base> {
   }
 
   if (v.uploadStatus === "uploading") steps.youtube = { state: "run", subtitle: "đang upload" };
-  else if (v.uploadStatus === "scheduled") steps.youtube = { state: "done", subtitle: v.publishAt ? `đã lên lịch · ${formatSlot(v.publishAt)}` : "đã lên lịch" };
+  else if (v.uploadStatus === "scheduled")
+    steps.youtube = { state: "done", subtitle: v.publishAt ? `${v.meta?.yt?.privacy === "public" ? "đã đăng" : "đã lên lịch"} · ${formatSlot(v.publishAt)}` : "đã lên lịch" };
   else if (v.uploadStatus === "failed") steps.youtube = { state: "error", subtitle: "upload lỗi", ...(v.uploadError ? { warning: v.uploadError } : {}) };
   else if (v.status === "published") steps.youtube = { state: "done", subtitle: "đã đăng" };
   else if (v.status === "failed") steps.youtube = { state: "skip", subtitle: "không đăng vì render lỗi" };

@@ -1,10 +1,10 @@
 import { desc, eq, inArray, isNotNull, or } from "drizzle-orm";
 import { db } from "@/db";
-import { appSettings, videos, type VideoMeta } from "@/db/schema";
+import { appSettings, videos } from "@/db/schema";
 import { chunk } from "./batch";
 import type { ChannelStat, LiveStats, YtStat, YtStatsMap } from "./live/types";
 import { accessToken, getYoutubeAuth, YoutubeAuthError } from "./youtube";
-import { mergeSnippet, youtubeIdFromUrl, type YtSnippet } from "./youtube-sync";
+import { bestThumb, youtubeIdFromUrl, youtubePatch, type YtInfo } from "./youtube-sync";
 
 /** Snapshot để trang mở lần đầu có số ngay (không cần migration — dùng bảng app_settings). */
 export const STATS_KEY = "yt_stats";
@@ -89,8 +89,10 @@ async function callApi<T>(path: string, auth: string): Promise<T | null> {
 
 type VideoItem = {
   id: string;
+  etag?: string;
   statistics?: { viewCount?: string; likeCount?: string; commentCount?: string };
-  snippet?: { title?: string; description?: string; tags?: string[] };
+  snippet?: { title?: string; description?: string; tags?: string[]; publishedAt?: string; thumbnails?: Parameters<typeof bestThumb>[0] };
+  status?: { privacyStatus?: string; publishAt?: string };
 };
 
 const num = (s: string | undefined) => {
@@ -98,45 +100,53 @@ const num = (s: string | undefined) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-/** Số liệu + snippet (tiêu đề/mô tả/tag) trong CÙNG lượt gọi — thêm part snippet không tốn thêm quota (vẫn 1 unit/50 video). */
-async function fetchVideoStats(ids: string[], auth: string): Promise<{ stats: YtStatsMap; snippets: Record<string, YtSnippet> }> {
+/**
+ * Số liệu + snippet (tiêu đề/mô tả/tag/thumbnail) + status (public/riêng tư, giờ hẹn) trong CÙNG lượt gọi —
+ * thêm part không tốn thêm quota (vẫn 1 unit/50 video).
+ */
+async function fetchVideoStats(ids: string[], auth: string): Promise<{ stats: YtStatsMap; infos: Record<string, YtInfo> }> {
   const stats: YtStatsMap = {};
-  const snippets: Record<string, YtSnippet> = {};
+  const infos: Record<string, YtInfo> = {};
   for (const batch of chunk(ids, BATCH)) {
-    const body = await callApi<{ items?: VideoItem[] }>(`videos?part=statistics,snippet&maxResults=${BATCH}&id=${batch.join(",")}`, auth);
+    const body = await callApi<{ items?: VideoItem[] }>(`videos?part=statistics,snippet,status&maxResults=${BATCH}&id=${batch.join(",")}`, auth);
     if (!body) break;
     const at = Date.now();
     for (const it of body.items ?? []) {
       const s = it.statistics ?? {};
       stats[it.id] = { views: num(s.viewCount), likes: num(s.likeCount), comments: num(s.commentCount), at } satisfies YtStat;
-      if (it.snippet?.title != null) snippets[it.id] = { title: it.snippet.title, description: it.snippet.description ?? "", tags: it.snippet.tags ?? [] };
+      const sn = it.snippet;
+      if (sn?.title == null) continue;
+      infos[it.id] = {
+        snippet: { title: sn.title, description: sn.description ?? "", tags: sn.tags ?? [] },
+        thumb: bestThumb(sn.thumbnails, it.etag),
+        privacy: it.status?.privacyStatus ?? null,
+        scheduledAt: it.status?.publishAt ?? null,
+        publishedAt: sn.publishedAt ?? null,
+      };
     }
   }
-  return { stats, snippets };
+  return { stats, infos };
 }
 
 /**
  * Ghi bản trên YouTube về DB: người dùng sửa tiêu đề/mô tả/tag trong Studio hay vidIQ thì app thấy bản mới
  * (màn flow, điểm SEO, Magic fill dựa trên bản đó — không ghi đè mất bản đã sửa tay). Trả số video đã cập nhật.
  */
-async function syncSnippets(snippets: Record<string, YtSnippet>): Promise<number> {
-  const ids = Object.keys(snippets);
+async function syncSnippets(infos: Record<string, YtInfo>): Promise<number> {
+  const ids = Object.keys(infos);
   if (!ids.length) return 0;
   const rows = await db()
-    .select({ id: videos.id, meta: videos.meta, long: videos.youtubeVideoId, short: videos.youtubeShortId, url: videos.youtubeUrl })
+    .select({ id: videos.id, meta: videos.meta, publishAt: videos.publishAt, long: videos.youtubeVideoId, short: videos.youtubeShortId, url: videos.youtubeUrl })
     .from(videos)
     .where(or(inArray(videos.youtubeVideoId, ids), inArray(videos.youtubeShortId, ids), isNotNull(videos.youtubeUrl)));
   let changed = 0;
   for (const r of rows) {
     if (!r.meta) continue;
-    let meta: VideoMeta = r.meta;
     const longId = r.long ?? youtubeIdFromUrl(r.url);
-    const long = longId ? snippets[longId] : undefined;
-    const short = r.short ? snippets[r.short] : undefined;
-    if (long) meta = mergeSnippet(meta, long, "long") ?? meta;
-    if (short) meta = mergeSnippet(meta, short, "short") ?? meta;
-    if (meta === r.meta) continue;
-    await db().update(videos).set({ meta, updatedAt: new Date() }).where(eq(videos.id, r.id));
+    const long = longId && infos[longId] ? { id: longId, info: infos[longId] } : null;
+    const patch = youtubePatch({ meta: r.meta, publishAt: r.publishAt, youtubeVideoId: r.long }, long, r.short ? (infos[r.short] ?? null) : null);
+    if (!patch) continue;
+    await db().update(videos).set({ ...patch, updatedAt: new Date() }).where(eq(videos.id, r.id));
     changed++;
   }
   return changed;
@@ -149,8 +159,8 @@ export async function syncFromYoutube(ids: string[]): Promise<number> {
   try {
     const yt = await getYoutubeAuth();
     if (!yt) return 0;
-    const { snippets } = await fetchVideoStats(list, await bearer(yt.refreshToken));
-    return await syncSnippets(snippets);
+    const { infos } = await fetchVideoStats(list, await bearer(yt.refreshToken));
+    return await syncSnippets(infos);
   } catch (e) {
     console.warn("Không đồng bộ được tiêu đề/mô tả từ YouTube:", e instanceof Error ? e.message : e);
     return 0;
@@ -186,12 +196,12 @@ async function refresh(extraIds: string[]): Promise<LiveStats> {
   const result: LiveStats = { videos: { ...snap.videos }, channel: snap.channel };
   try {
     if (stale.length) {
-      const { stats: fresh, snippets } = await fetchVideoStats(stale, auth);
+      const { stats: fresh, infos } = await fetchVideoStats(stale, auth);
       if (Object.keys(fresh).length) {
         Object.assign(result.videos, fresh);
         await saveSnapshot(STATS_KEY, result.videos);
       }
-      await syncSnippets(snippets).catch((e) => console.warn("Không đồng bộ được tiêu đề/mô tả từ YouTube:", e instanceof Error ? e.message : e));
+      await syncSnippets(infos).catch((e) => console.warn("Không đồng bộ được tiêu đề/mô tả từ YouTube:", e instanceof Error ? e.message : e));
     }
     if (channelStale && Date.now() >= blockedUntil) {
       const channel = await fetchChannelStat(auth);

@@ -53,6 +53,10 @@ export type VideoCard = {
   hasThumb: boolean;
   /** Id asset của thumbnail (null = chưa có). */
   thumbVersion: number | null;
+  /** Thumbnail đang dùng trên YouTube (đồng bộ về) — ưu tiên hơn ảnh app dựng, vì người dùng hay đổi tay. */
+  ytThumb: string | null;
+  /** public / private / unlisted theo YouTube (null = chưa đồng bộ). */
+  ytPrivacy: string | null;
   chapterNo: number;
   chapterTitle: string;
   seriesTitle: string;
@@ -114,6 +118,8 @@ export async function videoCards(opts: { limit?: number; statuses?: Video["statu
     publishAt: v.publishAt?.toISOString() ?? null,
     hasThumb: Boolean(v.assets["thumbnail.jpg"]),
     thumbVersion: v.assets["thumbnail.jpg"] ?? null,
+    ytThumb: v.meta?.yt?.thumb ?? null,
+    ytPrivacy: v.meta?.yt?.privacy ?? null,
     youtubeVideoId: v.youtubeVideoId,
     youtubeShortId: v.youtubeShortId,
     compilation: v.meta?.compilation ? { from: v.meta.compilation.from, to: v.meta.compilation.to, episodeNo: v.meta.compilation.episode ? (v.meta.compilation.episodeNo ?? null) : null } : null,

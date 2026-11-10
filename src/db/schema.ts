@@ -64,6 +64,8 @@ export type VideoMeta = {
   /** Có = đây là bản gộp nhiều chương (chapterId của row = chương cuối). videoIds: các video chương đã gộp. */
   /** episode = true: đây là "Tập N" của chế độ tập dài mỗi ngày (episodeNo = N); không có = bản gộp 5 chương cũ. */
   compilation?: { seriesId: number; from: number; to: number; videoIds: number[]; episode?: boolean; episodeNo?: number };
+  /** Bản đang chạy trên YouTube (đồng bộ về): thumbnail thật (kể cả đổi tay trong Studio) và trạng thái public/private/unlisted. */
+  yt?: { thumb: string | null; privacy: string | null };
 };
 
 /** Một lần render cho một chương: video dài + 1 Short + thumbnail, lưu ở GitHub Release `video-<id>`. */
