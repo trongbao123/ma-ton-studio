@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { availableProviders, canRun, providerFor } from "@/lib/ai";
 import { codexImage } from "@/lib/ai/cli";
-import { closeVidiq, keywordResearch, listVidiqTools, scoreTitles } from "./vidiq";
+import { callVidiq, closeVidiq, vidiqSchema } from "./vidiq";
 import { saveCliStatus, type CliStatus } from "@/lib/ai/cli-status";
 import { defaultRouting, isCli, PROVIDERS } from "@/lib/ai/routing";
 import { loadSecrets } from "@/lib/secrets";
@@ -58,11 +58,15 @@ async function main() {
   }
   // Chẩn đoán vidIQ: tool đang mở + kết quả thật cho từ khóa thể loại (in ra log, không ảnh hưởng exit code).
   if (process.env.VIDIQ_API_KEY && process.env.VIDIQ_DEBUG !== "0") {
-    for (const t of await listVidiqTools()) console.log(`  vidIQ tool: ${t.name} (${t.args.join(", ")}) — ${t.description.slice(0, 120)}`);
-    for (const seed of ["truyện tiên hiệp", "Thần Ma Táng Cổ Thôn Thiên Lục"]) {
-      console.log(`  vidIQ "${seed}":\n${(await keywordResearch(seed))?.slice(0, 1500) ?? "(không có)"}`);
+    for (const n of ["vidiq_score_title", "vidiq_score_thumbnail", "vidiq_generate_titles", "vidiq_keyword_research"]) console.log(`  SCHEMA ${n}: ${JSON.stringify(await vidiqSchema(n)).slice(0, 1500)}`);
+    const t = "Truyện tu tiên: Thiếu niên nuốt xác thần, một đao chém cả tông môn | Thần Ma Táng Cổ Chương 3";
+    for (const args of [{ title: t }, { title: t, type: "long", userGoal: "score title for a Vietnamese xianxia audio story channel" }]) {
+      try {
+        console.log(`  SCORE ${JSON.stringify(args)}:\n${(await callVidiq("vidiq_score_title", args))?.slice(0, 1500)}`);
+      } catch (e) {
+        console.log(`  SCORE lỗi: ${e instanceof Error ? e.message : e}`);
+      }
     }
-    console.log(`  vidIQ chấm: ${JSON.stringify(await scoreTitles(["Thần Ma Táng Cổ Chương 3 | Truyện Tiên Hiệp Hay Nhất", "Truyện tiên hiệp: Thiếu niên nuốt xác thần, một đao chém tông môn"]))}`);
     await closeVidiq();
   }
   await saveCliStatus(status);

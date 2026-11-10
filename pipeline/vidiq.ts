@@ -150,3 +150,19 @@ export async function closeVidiq() {
   await s?.client.close().catch(() => {});
   session = null;
 }
+
+/** Gọi thẳng 1 tool vidIQ theo tên, trả văn bản (dùng cho chẩn đoán / tool có schema rõ). */
+export async function callVidiq(name: string, args: Record<string, unknown>): Promise<string | null> {
+  const s = await connect();
+  if (!s) return null;
+  const res = await s.client.callTool({ name, arguments: args });
+  const text = textOf(res);
+  if ((res as { isError?: boolean }).isError) throw new Error(text.slice(0, 300));
+  return text;
+}
+
+/** JSON schema đầu vào của 1 tool vidIQ (chẩn đoán). */
+export async function vidiqSchema(name: string) {
+  const s = await connect();
+  return s?.tools.find((t) => t.name === name)?.inputSchema ?? null;
+}
