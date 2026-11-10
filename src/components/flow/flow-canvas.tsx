@@ -57,8 +57,9 @@ function buildEdges(cards: Record<CardId, CardView>, subs: SubView[]): Edge[] {
     source: x.parent,
     sourceHandle: "tools",
     target: x.id,
-    type: "smoothstep",
-    style: { stroke: x.ok ? "#4b8f6a" : "#4a4a55", strokeWidth: 2, strokeDasharray: "2 7", strokeLinecap: "round" },
+    // Bezier toả ra từ 1 cổng: smoothstep với khoảng hở ngắn bị bẻ góc vòng vèo, nhìn rối.
+    type: "default",
+    style: { stroke: x.ok ? "#4b8f6a" : "#4a4a55", strokeWidth: 1.6, strokeDasharray: "3 6", strokeLinecap: "round" },
   }));
   return [...chain, ...dotted];
 }
