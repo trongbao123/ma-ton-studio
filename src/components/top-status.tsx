@@ -1,3 +1,4 @@
+import { ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { cookies, headers } from "next/headers";
 import { connection } from "next/server";
@@ -7,6 +8,9 @@ import { isAuthorized } from "@/lib/auth";
 import { LAMP_TEXT, lampOf, type Lamp as LampState, type SourceDay } from "@/lib/ai/sources";
 import { SESSION_COOKIE, verifySession } from "@/lib/session";
 import { topStatus } from "@/lib/usage-data";
+
+/** Trang kênh trên YouTube (đổi kênh thì đặt YOUTUBE_CHANNEL_URL). */
+const CHANNEL_URL = process.env.YOUTUBE_CHANNEL_URL ?? "https://www.youtube.com/@MaTonTruyen";
 
 /**
  * Thanh trên cùng: video đang render (bấm để mở) + đèn hạn mức từng AI (bấm sang trang Hạn mức) + kênh YouTube.
@@ -77,13 +81,17 @@ export async function TopStatus() {
           </span>
         ))}
       </Link>
-      <span
-        title={s.channel ? `Đã kết nối kênh ${s.channel}` : "Chưa kết nối YouTube"}
-        className="hidden shrink-0 items-center gap-1.5 rounded-full border border-border bg-card/70 px-3 py-1 text-xs md:flex"
+      <a
+        href={CHANNEL_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={s.channel ? `Mở kênh ${s.channel} trên YouTube` : "Mở kênh YouTube (chưa kết nối để tự đăng)"}
+        className="hidden shrink-0 items-center gap-1.5 rounded-full border border-border bg-card/70 px-3 py-1 text-xs hover:border-red-500/50 hover:text-white md:flex"
       >
         <BrandIcon id="youtube" size={14} />
         <span className={s.channel ? "" : "text-muted"}>{s.channel ?? "Chưa kết nối"}</span>
-      </span>
+        <ExternalLink size={11} className="text-muted" />
+      </a>
     </div>
   );
 }
