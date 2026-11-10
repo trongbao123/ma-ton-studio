@@ -1,6 +1,6 @@
 name: setup-ffmpeg
 description: >
-  ffmpeg + ffprobe dựng sẵn (static 7.0.2, johnvansickle.com), cache giữa các lượt chạy.
+  ffmpeg + ffprobe dựng sẵn (static 7.0.2, johnvansickle.com, x64 hoặc ARM64), cache giữa các lượt chạy.
   Thay `apt-get install ffmpeg` — mất 20 giây tới 6,5 phút tuỳ mirror apt — bằng ~5 giây.
   Bản tải về thiếu bộ lọc app cần thì tự quay về apt-get như cũ.
 runs:
@@ -10,13 +10,15 @@ runs:
       uses: actions/cache@v4
       with:
         path: ~/.ffmpeg
-        key: ffmpeg-static-7.0.2-amd64
+        key: ffmpeg-static-7.0.2-${{ runner.arch }}
     - if: steps.cache.outputs.cache-hit != 'true'
       shell: bash
       run: |
         mkdir -p ~/.ffmpeg
-        for u in https://johnvansickle.com/ffmpeg/releases/ffmpeg-7.0.2-amd64-static.tar.xz \
-                 https://johnvansickle.com/ffmpeg/old-releases/ffmpeg-7.0.2-amd64-static.tar.xz; do
+        # Máy GitHub là x64; máy Oracle Always Free là ARM64.
+        arch=amd64; [ "${{ runner.arch }}" = "ARM64" ] && arch=arm64
+        for u in https://johnvansickle.com/ffmpeg/releases/ffmpeg-7.0.2-$arch-static.tar.xz \
+                 https://johnvansickle.com/ffmpeg/old-releases/ffmpeg-7.0.2-$arch-static.tar.xz; do
           curl -fsSL --retry 3 "$u" | tar -xJ --strip-components=1 -C ~/.ffmpeg --wildcards '*/ffmpeg' '*/ffprobe' && break
         done
     - shell: bash

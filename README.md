@@ -62,3 +62,12 @@ Có `VIDIQ_API_KEY` thì trước khi viết tiêu đề/mô tả/tag, job rende
 3. Muốn hỏi vidIQ trực tiếp trong Claude Code: repo đã có `.mcp.json` — mở Claude Code trong thư mục này, đồng ý bật server `vidiq`, gõ `/mcp` để đăng nhập.
 
 vidIQ lỗi hoặc hết credit thì video vẫn ra bình thường, chỉ không có dữ liệu từ khóa.
+
+## Chạy pipeline trên máy ảo Oracle free (0 phút GitHub Actions)
+Repo private chỉ có ~2.000 phút Actions/tháng; 1 tập/ngày dùng ~1.800–2.100 phút. Chạy job trên máy riêng (self-hosted runner) thì không tính phút.
+
+1. [cloud.oracle.com](https://cloud.oracle.com) → tạo tài khoản Free Tier (cần thẻ để xác minh). Nên **Upgrade to Pay As You Go** (vẫn free trong hạn mức Always Free) — tài khoản free thuần có thể bị Oracle thu hồi máy "rảnh" (CPU thấp nhiều ngày).
+2. Compute → Instances → Create: image **Ubuntu 24.04**, shape **VM.Standard.A1.Flex** 4 OCPU / 24 GB (Always Free). Báo "Out of capacity" thì thử lại sau hoặc đổi Availability Domain.
+3. SSH vào máy, chép `scripts/oracle-runner.sh` lên rồi chạy với token (repo → Settings → Actions → Runners → New self-hosted runner):
+   `TOKEN=<token> bash oracle-runner.sh`
+4. Repo → Settings → Secrets and variables → Actions → **Variables** → `RUNNER_LABEL` = `oracle`. Xoá biến là quay về máy GitHub.

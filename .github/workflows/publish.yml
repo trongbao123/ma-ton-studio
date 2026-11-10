@@ -11,7 +11,8 @@ concurrency:
   group: publish-${{ inputs.video_id }}
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    # Biến repo RUNNER_LABEL = "oracle" → chạy trên máy Oracle free (scripts/oracle-runner.sh, 0 phút Actions); chưa đặt → máy GitHub.
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
