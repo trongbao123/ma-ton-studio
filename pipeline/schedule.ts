@@ -34,14 +34,35 @@ export async function rescheduleToPublishHour() {
     .select({ id: videos.id, at: videos.publishAt, yt: videos.youtubeVideoId, short: videos.youtubeShortId, meta: videos.meta })
     .from(videos)
     .where(and(isNotNull(videos.publishAt), gte(videos.publishAt, new Date())));
-  for (const r of rows.filter((x) => !x.meta?.compilation)) {
+  // Giữ thứ tự cũ, mỗi ngày 1 video: giờ mới đã qua thì giữ nguyên lịch cũ (không đẩy sang ngày đã có video).
+  const list = rows.filter((x) => !x.meta?.compilation).sort((a, b) => a.at!.getTime() - b.at!.getTime());
+  const used = new Set<string>();
+  for (const r of list) {
     const at = new Date(r.at!);
-    if (at.getUTCHours() === PUBLISH_HOUR_UTC) continue;
     at.setUTCHours(PUBLISH_HOUR_UTC, 0, 0, 0);
-    if (at.getTime() < Date.now() + 15 * 60_000) at.setUTCDate(at.getUTCDate() + 1);
+    const day = at.toISOString().slice(0, 10);
+    if (at.getTime() < Date.now() + 15 * 60_000 || used.has(day)) {
+      used.add(r.at!.toISOString().slice(0, 10));
+      continue;
+    }
+    used.add(day);
+    if (r.at!.getTime() === at.getTime()) continue;
     if (r.yt) await updateYoutubePublishAt(r.yt, at);
     if (r.short) await updateYoutubePublishAt(r.short, new Date(at.getTime() + 2 * 3600_000)).catch((e) => console.warn(`  Short #${r.id}:`, e instanceof Error ? e.message : e));
     await db().update(videos).set({ publishAt: at }).where(eq(videos.id, r.id));
     console.log(`  #${r.id} → ${at.toISOString()}`);
   }
+}
+
+/** Đặt lịch đăng cụ thể cho 1 video (DB + YouTube). Dùng sửa tay: CLI "setpublish:<id>:<ISO>". */
+export async function setPublishAt(videoId: number, at: Date) {
+  const { loadSecrets } = await import("@/lib/secrets");
+  const { updateYoutubePublishAt } = await import("@/lib/youtube");
+  const { eq } = await import("drizzle-orm");
+  await loadSecrets(true);
+  const [v] = await db().select().from(videos).where(eq(videos.id, videoId));
+  if (v.youtubeVideoId) await updateYoutubePublishAt(v.youtubeVideoId, at);
+  if (v.youtubeShortId) await updateYoutubePublishAt(v.youtubeShortId, new Date(at.getTime() + 2 * 3600_000)).catch(() => {});
+  await db().update(videos).set({ publishAt: at }).where(eq(videos.id, videoId));
+  console.log(`  #${videoId} → ${at.toISOString()}`);
 }
