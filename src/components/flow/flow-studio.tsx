@@ -200,8 +200,8 @@ function Studio({ data: initial, layout }: Props) {
     return () => removeEventListener("resize", onResize);
   }, [centerOn, selected]);
   // Hàng thẻ luôn thẳng: kéo thẻ chỉ trượt ngang, giữ nguyên y.
-  const onChange = (changes: NodeChange<Node>[]) =>
-    onNodesChange(changes.map((c) => (c.type === "position" && c.position ? { ...c, position: { x: c.position.x, y: ROW_Y } } : c)));
+  // Kéo thả tự do (node con đi theo thẻ cha); vị trí lưu khi thả chuột.
+  const onChange = (changes: NodeChange<Node>[]) => onNodesChange(changes);
   const v = data.video;
   const [label, tone] = STATUS_LABEL[v.status];
   // Chỉ tính trên client (cần giờ hiện tại) để HTML server và lần hydrate đầu giống nhau.

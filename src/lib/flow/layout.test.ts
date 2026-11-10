@@ -27,14 +27,9 @@ describe("mergeLayout", () => {
     expect(mergeLayout("x")).toEqual(DEFAULT_POSITIONS);
   });
 
-  it("lệch hàng (zigzag) hoặc chồng nhau → về mặc định", () => {
-    expect(mergeLayout({ ...full(), seo: { x: 2 * (CARD_WIDTH + 10), y: 90 } })).toEqual(DEFAULT_POSITIONS);
-    expect(mergeLayout({ ...full(), tts: { x: 2 * (CARD_WIDTH + 10) + 20, y: 5 } })).toEqual(DEFAULT_POSITIONS);
-  });
-
-  it("bố cục cũ thẻ hẹp (cách 216px) → về mặc định", () => {
-    const narrow = Object.fromEntries(CARD_ORDER.map((id, i) => [id, { x: i * 216, y: 0 }]));
-    expect(mergeLayout(narrow)).toEqual(DEFAULT_POSITIONS);
+  it("giữ vị trí kéo thả tự do (lệch hàng vẫn giữ)", () => {
+    const moved = { ...full(), seo: { x: 500, y: 90 } };
+    expect(mergeLayout(moved).seo).toEqual({ x: 500, y: 90 });
   });
 
   it("bỏ khoá lạ khi lưu", () => {

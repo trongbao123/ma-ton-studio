@@ -20,15 +20,12 @@ const isPos = (p: unknown): p is Pos =>
   typeof p === "object" && p !== null && Number.isFinite((p as Pos).x) && Number.isFinite((p as Pos).y);
 
 /**
- * Bố cục đã lưu chỉ dùng khi đủ MỌI thẻ, toạ độ hợp lệ, cùng một hàng ngang (cùng y) và không chồng nhau.
- * Thiếu/hỏng/lệch hàng/của mô hình cũ (thẻ hẹp hơn, zigzag, id trigger…) thì về mặc định cả bộ.
+ * Bố cục đã lưu (người dùng kéo thả tự do) dùng khi đủ MỌI thẻ và toạ độ hợp lệ.
+ * Thiếu/hỏng/của mô hình cũ (id trigger…) thì về mặc định cả bộ; "Sắp xếp lại" về hàng thẳng.
  */
 export function mergeLayout(saved: unknown): Record<CanvasNodeId, Pos> {
   const src = typeof saved === "object" && saved !== null ? (saved as Record<string, unknown>) : {};
   if (!MAIN_ORDER.every((id) => isPos(src[id]))) return DEFAULT_POSITIONS;
   const row = MAIN_ORDER.map((id) => src[id] as Pos);
-  const sameRow = row.every((p) => p.y === row[0].y);
-  const ordered = row.every((p, i) => i === 0 || p.x - row[i - 1].x >= CARD_WIDTH);
-  if (!sameRow || !ordered) return DEFAULT_POSITIONS;
   return Object.fromEntries(MAIN_ORDER.map((id, i) => [id, { x: row[i].x, y: row[i].y }])) as Record<CanvasNodeId, Pos>;
 }
