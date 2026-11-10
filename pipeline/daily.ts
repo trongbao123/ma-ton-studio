@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, lt, ne, sql } from "drizzle-orm";
+import { and, asc, eq, gte, lt, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { chapters, series, videos } from "@/db/schema";
 import { QuotaExhaustedError } from "@/lib/ai";
@@ -138,10 +138,14 @@ async function main() {
     if (!quotaLeft) break;
     console.log(`▶ ${s.title}`);
     try {
-      const writtenToday = await db()
-        .select({ id: chapters.id })
-        .from(chapters)
-        .where(and(eq(chapters.seriesId, s.id), ne(chapters.status, "outline"), gte(chapters.updatedAt, startOfTodayVN())));
+      // Đếm theo VIDEO chương tạo hôm nay (mỗi ngày 1 video) — đếm chapters.updatedAt sai vì sửa SEO/duyệt lại cũng làm đổi.
+      const writtenToday = (
+        await db()
+          .select({ id: videos.id, meta: videos.meta })
+          .from(videos)
+          .innerJoin(chapters, eq(chapters.id, videos.chapterId))
+          .where(and(eq(chapters.seriesId, s.id), gte(videos.createdAt, startOfTodayVN())))
+      ).filter((v) => !v.meta?.compilation);
       for (let done = writtenToday.length; done < s.chaptersPerDay; done++) {
         const pending = await db()
           .select({ id: chapters.id })
