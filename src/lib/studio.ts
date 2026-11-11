@@ -106,9 +106,10 @@ export function coverOf(assets: Record<string, number>): { file: string; version
   return scene ? { file: scene.f, version: assets[scene.f] } : null;
 }
 
-export async function videoCards(
-  opts: { limit?: number; offset?: number; statuses?: Video["status"][]; kind?: VideoKind; q?: string } = {},
-): Promise<VideoCard[]> {
+type VideoFilter = { statuses?: Video["status"][]; kind?: VideoKind; q?: string };
+
+/** Điều kiện lọc dùng chung cho danh sách và đếm tổng (phân trang). */
+function videoWhere(opts: VideoFilter) {
   const isEpisode = sql`${videos.meta}->'compilation'->>'episode' = 'true'`;
   const isInternal = sql`${series.episodeChapters} > 0 and ${videos.meta}->'compilation' is null and ${videos.youtubeVideoId} is null`;
   // Tìm theo tên chương / tên truyện / tiêu đề YouTube / số chương ("12" hoặc "chương 12").
@@ -124,6 +125,24 @@ export async function videoCards(
     opts.statuses ? inArray(videos.status, opts.statuses) : undefined,
     opts.kind === "episode" ? isEpisode : opts.kind === "internal" ? isInternal : undefined,
   );
+  return where;
+}
+
+/** Tổng số video khớp bộ lọc — để hiện số trang. */
+export async function videoCount(opts: VideoFilter = {}) {
+  const [r] = await db()
+    .select({ n: count() })
+    .from(videos)
+    .innerJoin(chapters, eq(chapters.id, videos.chapterId))
+    .innerJoin(series, eq(series.id, chapters.seriesId))
+    .where(videoWhere(opts));
+  return r?.n ?? 0;
+}
+
+export async function videoCards(
+  opts: { limit?: number; offset?: number; statuses?: Video["status"][]; kind?: VideoKind; q?: string } = {},
+): Promise<VideoCard[]> {
+  const where = videoWhere(opts);
   const rows = await db()
     .select({ v: videos, chapterNo: chapters.number, chapterTitle: chapters.title, seriesTitle: series.title, episodeChapters: series.episodeChapters })
     .from(videos)

@@ -5,7 +5,8 @@ import { Suspense } from "react";
 import { VideoTile } from "@/components/studio-cards";
 import { VideoSearch } from "@/components/video-search";
 import type { Video } from "@/db/schema";
-import { videoCards, type VideoKind } from "@/lib/studio";
+import { pageList } from "@/lib/paging";
+import { videoCards, videoCount, type VideoKind } from "@/lib/studio";
 import { readStatsSnapshot } from "@/lib/youtube-stats";
 
 const FILTERS: { id: string; label: string; statuses?: Video["status"][]; kind?: VideoKind }[] = [
@@ -86,13 +87,13 @@ async function Tabs({ searchParams }: { searchParams: PageProps<"/videos">["sear
 async function Grid({ searchParams }: { searchParams: PageProps<"/videos">["searchParams"] }) {
   await connection();
   const [f, { q, page }] = await Promise.all([current(searchParams), query(searchParams)]);
-  // Lấy dư 1 thẻ để biết còn trang sau không (khỏi đếm tổng).
-  const [rows, stats] = await Promise.all([
-    videoCards({ statuses: f.statuses, kind: f.kind, q, limit: PAGE_SIZE + 1, offset: (page - 1) * PAGE_SIZE }),
+  const filter = { statuses: f.statuses, kind: f.kind, q };
+  const [list, total, stats] = await Promise.all([
+    videoCards({ ...filter, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
+    videoCount(filter),
     readStatsSnapshot(),
   ]);
-  const hasNext = rows.length > PAGE_SIZE;
-  const list = rows.slice(0, PAGE_SIZE);
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   if (!list.length)
     return (
       <p className="rounded-xl border border-dashed border-border p-10 text-center text-muted">
@@ -109,25 +110,38 @@ async function Grid({ searchParams }: { searchParams: PageProps<"/videos">["sear
           </li>
         ))}
       </ul>
-      {(page > 1 || hasNext) && (
-        <nav className="flex items-center justify-center gap-3 pt-2 text-sm" aria-label="Phân trang">
-          {page > 1 ? (
-            <Link href={href(f.id, q, page - 1)} className="rounded-full border border-border px-4 py-1.5 hover:border-zinc-500">
-              ← Trang trước
-            </Link>
-          ) : (
-            <span className="rounded-full border border-border px-4 py-1.5 opacity-40">← Trang trước</span>
+      {pages > 1 && (
+        <nav className="flex flex-wrap items-center justify-center gap-1.5 pt-2 text-sm" aria-label="Phân trang">
+          <PageLink to={href(f.id, q, page - 1)} off={page <= 1}>
+            ←
+          </PageLink>
+          {pageList(page, pages).map((p, i) =>
+            p === null ? (
+              <span key={`gap${i}`} className="px-1 text-muted">
+                …
+              </span>
+            ) : (
+              <PageLink key={p} to={href(f.id, q, p)} on={p === page}>
+                {p}
+              </PageLink>
+            ),
           )}
-          <span className="tabular-nums text-muted">Trang {page}</span>
-          {hasNext ? (
-            <Link href={href(f.id, q, page + 1)} className="rounded-full border border-border px-4 py-1.5 hover:border-zinc-500">
-              Trang sau →
-            </Link>
-          ) : (
-            <span className="rounded-full border border-border px-4 py-1.5 opacity-40">Trang sau →</span>
-          )}
+          <PageLink to={href(f.id, q, page + 1)} off={page >= pages}>
+            →
+          </PageLink>
+          <span className="ml-2 text-xs text-muted">{total} video</span>
         </nav>
       )}
     </>
+  );
+}
+
+function PageLink({ to, on, off, children }: { to: string; on?: boolean; off?: boolean; children: React.ReactNode }) {
+  const cls = "grid h-9 min-w-9 place-items-center rounded-full border px-3 tabular-nums";
+  if (off) return <span className={`${cls} border-border opacity-30`}>{children}</span>;
+  return (
+    <Link href={to} aria-current={on ? "page" : undefined} className={`${cls} ${on ? "border-foreground/40 bg-white/[.08] font-semibold" : "border-border text-muted hover:border-zinc-500 hover:text-foreground"}`}>
+      {children}
+    </Link>
   );
 }
