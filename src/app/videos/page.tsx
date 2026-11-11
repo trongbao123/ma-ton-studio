@@ -37,7 +37,7 @@ export default function VideosPage({ searchParams }: PageProps<"/videos">) {
   );
 }
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 8;
 
 async function current(searchParams: PageProps<"/videos">["searchParams"]) {
   const f = (await searchParams).loc;
