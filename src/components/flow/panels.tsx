@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useLayoutEffect, useRef, useState, useTransition, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { AudioLines, Check, ChevronDown, Wand2 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -600,7 +600,7 @@ function VoicePicker({ value, onChange }: { value: string; onChange: (v: string)
 
 function Images({ data, tab }: PanelProps) {
   const [which, setWhich] = useState<"long" | "short">("long");
-  const [zoom, setZoom] = useState<{ src: string; scene?: Scene } | null>(null);
+  const [zoom, setZoom] = useState<{ items: { src: string; scene?: Scene }[]; start: number } | null>(null);
   if (tab === "log") return <StepLog data={data} id="images" />;
   const scenes = data.video.progress?.scenes;
   // Video render trước khi có tiến độ cảnh: vẫn hiện ảnh đã upload (long-img-N.jpg / short-img-N.jpg) nếu có.
@@ -669,7 +669,10 @@ function Images({ data, tab }: PanelProps) {
             {list.map((sc) => {
               const src = sc.file && data.video.files[sc.file];
               return src ? (
-                <button key={sc.i} type="button" onClick={() => setZoom({ src, scene: sc })} className={`relative cursor-zoom-in overflow-hidden rounded-lg ring-1 ring-white/10 ${ratio}`}>
+                <button key={sc.i} type="button" onClick={() => {
+                    const items = list.flatMap((x) => (x.file && data.video.files[x.file] ? [{ src: data.video.files[x.file], scene: x }] : []));
+                    setZoom({ items, start: Math.max(0, items.findIndex((x) => x.scene.i === sc.i)) });
+                  }} className={`relative cursor-zoom-in overflow-hidden rounded-lg ring-1 ring-white/10 ${ratio}`}>
                   {/* eslint-disable-next-line @next/next/no-img-element -- file từ GitHub Release qua redirect, không tối ưu được bằng next/image */}
                   <img src={src} alt="" loading="lazy" className="h-full w-full animate-[fadein_.4s] object-cover" />
                   <span className="absolute bottom-0.5 left-1 text-[10px] font-bold text-white [text-shadow:0_1px_3px_#000]">
@@ -692,7 +695,7 @@ function Images({ data, tab }: PanelProps) {
       </Sec>
       <Sec title="Thumbnail">
         {thumb ? (
-          <button type="button" onClick={() => setZoom({ src: thumb })} className="block w-full cursor-zoom-in overflow-hidden rounded-xl border border-border">
+          <button type="button" onClick={() => setZoom({ items: [{ src: thumb }], start: 0 })} className="block w-full cursor-zoom-in overflow-hidden rounded-xl border border-border">
             {/* eslint-disable-next-line @next/next/no-img-element -- như trên */}
             <img src={thumb} alt="Thumbnail" className="aspect-video w-full object-cover" />
           </button>
@@ -700,31 +703,63 @@ function Images({ data, tab }: PanelProps) {
           <Empty text="Chưa có thumbnail." />
         )}
       </Sec>
-      {zoom && <Lightbox src={zoom.src} scene={zoom.scene} onClose={() => setZoom(null)} />}
+      {zoom && <Lightbox items={zoom.items} start={zoom.start} onClose={() => setZoom(null)} />}
     </>
   );
 }
 
-function Lightbox({ src, scene, onClose }: { src: string; scene?: Scene; onClose: () => void }) {
+/** Xem ảnh to; có danh sách thì chuyển ảnh bằng nút ‹ ›, phím ←/→ hoặc vuốt. Esc / bấm nền để đóng. */
+function Lightbox({ items, start, onClose }: { items: { src: string; scene?: Scene }[]; start: number; onClose: () => void }) {
+  const [i, setI] = useState(start);
+  const n = items.length;
+  const go = useCallback((d: number) => setI((x) => (x + d + n) % n), [n]);
+  const touch = useRef<number | null>(null);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+      if (e.key === "ArrowRight") go(1);
+      if (e.key === "ArrowLeft") go(-1);
+    };
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, go]);
+  const { src, scene } = items[i];
+  const timed = scene && scene.end > scene.start;
+  const arrow = "absolute top-1/2 grid h-12 w-12 -translate-y-1/2 place-items-center rounded-full bg-white/10 text-2xl text-white backdrop-blur hover:bg-white/20";
   // Portal ra body: inspector có `translate` nên `fixed` bên trong bị giam trong khung inspector.
   return createPortal(
-    <div onClick={onClose} className="fixed inset-0 z-50 flex cursor-zoom-out flex-col items-center justify-center gap-3 bg-black/90 p-4">
+    <div
+      onClick={onClose}
+      onTouchStart={(e) => (touch.current = e.touches[0].clientX)}
+      onTouchEnd={(e) => {
+        if (touch.current == null) return;
+        const dx = e.changedTouches[0].clientX - touch.current;
+        if (Math.abs(dx) > 40) go(dx < 0 ? 1 : -1);
+        touch.current = null;
+      }}
+      className="fixed inset-0 z-50 flex cursor-zoom-out flex-col items-center justify-center gap-3 bg-black/90 p-4"
+    >
       {/* eslint-disable-next-line @next/next/no-img-element -- như trên */}
-      <img src={src} alt="" className="max-h-[75vh] max-w-full rounded-lg object-contain" />
-      {scene && (
-        <div className="max-w-2xl space-y-1 text-center text-xs text-zinc-300">
-          <p className="text-zinc-400">
-            Cảnh {scene.i + 1} · {clock(scene.start)}–{clock(scene.end)}
-          </p>
-          <p className="line-clamp-3 italic">“{scene.text}”</p>
-          <p className="line-clamp-2 font-mono text-[11px] text-zinc-500">{scene.prompt}</p>
-        </div>
+      <img key={src} src={src} alt="" className="max-h-[75vh] max-w-full animate-[fadein_.25s] rounded-lg object-contain" />
+      {n > 1 && (
+        <>
+          <button type="button" aria-label="Ảnh trước" onClick={(e) => (e.stopPropagation(), go(-1))} className={`${arrow} left-4`}>
+            ‹
+          </button>
+          <button type="button" aria-label="Ảnh sau" onClick={(e) => (e.stopPropagation(), go(1))} className={`${arrow} right-4`}>
+            ›
+          </button>
+        </>
       )}
+      <div className="max-w-2xl space-y-1 text-center text-xs text-zinc-300">
+        <p className="text-zinc-400">
+          {scene ? `Cảnh ${scene.i + 1}` : "Ảnh"}
+          {timed && ` · ${clock(scene.start)}–${clock(scene.end)}`}
+          {n > 1 && ` · ${i + 1}/${n}`}
+        </p>
+        {scene?.text && <p className="line-clamp-3 italic">“{scene.text}”</p>}
+        {scene?.prompt && <p className="line-clamp-2 font-mono text-[11px] text-zinc-500">{scene.prompt}</p>}
+      </div>
     </div>,
     document.body,
   );
