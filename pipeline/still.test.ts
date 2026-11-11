@@ -116,3 +116,32 @@ describe("stillSegmentArgs zoom", () => {
     expect(vf(stillSegmentArgs({ img: "a", out: "o", frames: 144, w: 1920, h: 1080 }))).not.toMatch(/zoompan/);
   });
 });
+
+describe("stillSegmentArgs + parallax", () => {
+  const files = { farFill: "a.ppm", farPatch: "b.pgm", midFill: "c.ppm", midPatch: "d.pgm", midAlpha: "e.pgm", nearAlpha: "f.pgm" };
+  const args = stillSegmentArgs({ img: "a.jpg", out: "o.mp4", frames: 192, w: 1920, h: 1080, logoCrop: "crop=iw:ih*0.93:0:0,", parallax: { files, motion: "truckLeft", motionFrames: 144 } });
+  const graph = args[args.indexOf("-filter_complex") + 1];
+  it("đủ 7 đầu vào (ảnh + 6 file), đúng số khung, map nhãn đã mờ vào/ra", () => {
+    expect(args.filter((a) => a === "-i")).toHaveLength(7);
+    expect(args[args.indexOf("-frames:v") + 1]).toBe("192");
+    expect(args[args.indexOf("-map") + 1]).toBe("[out]");
+    expect(graph).toContain("[v]fade=t=in:st=0:d=0.5,fade=t=out:st=7.500:d=0.5[out]");
+  });
+  it("chỉ motionFrames khung đầu qua đồ thị 3 lớp, phần còn lại nhân bản khung cuối để đoạn vẫn đủ 192 khung", () => {
+    expect(graph).toContain("min(on,144)");
+    expect(graph).toContain("d=144:");
+    expect(graph).toContain("tpad=stop_mode=clone:stop=48");
+  });
+  it("cùng thông số mã hoá h264 24fps như đoạn tĩnh nhưng không tune stillimage", () => {
+    expect(args).not.toContain("stillimage");
+    expect(args[args.indexOf("-r") + 1]).toBe("24");
+    expect(args[args.indexOf("-crf") + 1]).toBe("23");
+    expect(args[args.indexOf("-g") + 1]).toBe("120");
+  });
+  it("motionFrames lớn hơn đoạn thì kẹp bằng đoạn", () => {
+    const a = stillSegmentArgs({ img: "a", out: "o", frames: 100, w: 1920, h: 1080, parallax: { files, motion: "dollyIn", motionFrames: 999 } });
+    const g = a[a.indexOf("-filter_complex") + 1];
+    expect(g).toContain("min(on,100)");
+    expect(g).not.toContain("tpad");
+  });
+});

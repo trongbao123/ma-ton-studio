@@ -13,7 +13,7 @@ runs:
           local filters
           filters=$(ffmpeg -hide_banner -filters 2>/dev/null)
           # Dùng here-string thay pipe: grep -q thoát sớm làm echo dính SIGPIPE → pipefail báo lỗi trên runner GitHub.
-          for f in ass drawtext zoompan xfade loudnorm sidechaincompress ebur128 amix alimiter; do
+          for f in ass drawtext zoompan xfade loudnorm sidechaincompress ebur128 amix alimiter alphamerge tmix tpad; do
             grep -qE "^ [.A-Z|]+ $f " <<<"$filters" || { echo "ffmpeg thiếu bộ lọc $f"; return 1; }
           done
           local encoders
