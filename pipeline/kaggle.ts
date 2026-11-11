@@ -5,6 +5,7 @@ import path from "node:path";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { aiUsage } from "@/db/schema";
+import { WEB_URL } from "@/lib/notify";
 import { KAGGLE_GPU_USAGE_MODEL } from "@/lib/limits";
 export { fetchKaggleGpuQuota as gpuQuota } from "@/lib/kaggle-quota";
 import { buildManifest, datasetFiles, gpuMinutes, kaggleSlug, kernelFailureKind, kernelPhase, kernelPushBody, manifestJobs, parseClipLog, type ClipJob, type ClipResult, type KernelPhase } from "./i2v-plan";
@@ -166,21 +167,20 @@ function failureText(kind: ReturnType<typeof kernelFailureKind>, message: string
 
 /** Bước 1: upload dataset (ảnh + manifest) và push kernel. Không ném — lỗi trả { error }. */
 /**
- * Cấu hình để kernel POST tiến độ về app. Thiếu WEB_URL/I2V_PROGRESS_TOKEN thì trả undefined —
+ * Cấu hình để kernel POST tiến độ về app. Thiếu I2V_PROGRESS_TOKEN thì trả undefined —
  * kernel chạy y như cũ, chỉ là không có tiến độ trực tiếp (không phải lỗi).
  */
-function progressConfig(slug: string, videoId: number, total: number) {
+export function progressConfig(slug: string, videoId: number, total: number) {
   const token = process.env.I2V_PROGRESS_TOKEN?.trim();
-  const base = process.env.WEB_URL?.trim();
-  return token && base ? { url: `${base.replace(/\/$/, "")}/api/i2v/progress`, token, slug, videoId, total } : undefined;
+  // Dùng WEB_URL dùng chung (đã có mặc định): Actions KHÔNG đặt biến WEB_URL, đọc thẳng process.env thì
+  // tính năng im lặng không bao giờ chạy dù đã đặt token.
+  return token ? { url: `${WEB_URL.replace(/\/$/, "")}/api/i2v/progress`, token, slug, videoId, total } : undefined;
 }
 
 /** Hỏi app xem kernel đang tới đâu (kernel tự báo về). Lỗi/chưa có thì null — chỉ là thông tin phụ. */
 export async function fetchProgress(slug: string): Promise<I2vProgressState | null> {
-  const base = process.env.WEB_URL?.trim();
-  if (!base) return null;
   try {
-    const res = await fetch(`${base.replace(/\/$/, "")}/api/i2v/progress?slug=${encodeURIComponent(slug)}`, { signal: AbortSignal.timeout(10_000) });
+    const res = await fetch(`${WEB_URL.replace(/\/$/, "")}/api/i2v/progress?slug=${encodeURIComponent(slug)}`, { signal: AbortSignal.timeout(10_000) });
     return res.ok ? ((await res.json()) as I2vProgressState) : null;
   } catch {
     return null;
