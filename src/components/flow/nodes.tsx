@@ -167,7 +167,7 @@ export type SubNodeData = { view: SubView; row?: number; horizontal?: boolean };
 export function SubNode({ data }: NodeProps<Node<SubNodeData>>) {
   const { view } = data;
   const Icon = STEP_ICONS[view.icon];
-  const ring = `grid h-11 w-11 shrink-0 place-items-center rounded-full border-2 bg-[#23232b] ${view.ok ? "border-emerald-600/70" : "border-[#3d3d48]"}`;
+  const ring = `relative grid h-11 w-11 shrink-0 place-items-center rounded-full border-2 bg-[#23232b] ${view.ok ? "border-emerald-600/70" : "border-[#3d3d48]"}`;
   const icon = view.brand ? <BrandIcon id={view.brand} size={20} /> : Icon && <Icon size={18} strokeWidth={1.7} className="text-zinc-300" />;
   if (data.horizontal)
     // Chế độ ngang: vòng tròn + nhãn bên dưới, xếp hàng ngang dưới thẻ cha.
@@ -177,19 +177,22 @@ export function SubNode({ data }: NodeProps<Node<SubNodeData>>) {
         style={{ width: SUB_WIDTH_H, height: SUB_HEIGHT_H, animationDelay: `${(data.row ?? 0) * STAGGER_MS + SUB_DELAY_MS}ms` }}
         title={`${view.label}: ${view.value}`}
       >
-        <Handle type="target" position={Position.Top} className={handle} isConnectable={false} />
-        <span className={ring}>{icon}</span>
+        {/* Cổng nằm trong vòng tròn → dây luôn cắm đúng tâm mép trên vòng, không phụ thuộc bề rộng nhãn. */}
+        <span className={ring}>
+          <Handle type="target" position={Position.Top} className={handle} isConnectable={false} />
+          {icon}
+        </span>
         <b className="block w-full truncate text-xs font-semibold text-zinc-100">{view.label}</b>
         <span className="-mt-1 block w-full truncate text-[11px] text-zinc-400">{view.value}</span>
       </div>
     );
   return (
     <div
-      className={`sub-enter flex items-center gap-2.5 rounded-full border bg-[#1a1a21] py-1 pl-1.5 pr-3 ${view.ok ? "border-emerald-700/50" : "border-dashed border-[#3d3d48] opacity-50"}`}
+      className={`sub-enter relative flex items-center gap-2.5 rounded-full border bg-[#1a1a21] py-1 pl-1.5 pr-3 ${view.ok ? "border-emerald-700/50" : "border-dashed border-[#3d3d48] opacity-50"}`}
       style={{ width: SUB_WIDTH, height: SUB_HEIGHT, animationDelay: `${(data.row ?? 0) * STAGGER_MS + SUB_DELAY_MS}ms` }}
       title={`${view.label}: ${view.value}`}
     >
-      <Handle type="target" position={data.horizontal ? Position.Top : Position.Left} className={handle} isConnectable={false} />
+      <Handle type="target" position={Position.Left} className={handle} isConnectable={false} />
       <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-full border-2 bg-[#23232b] ${view.ok ? "border-emerald-600/70" : "border-[#3d3d48]"}`}>
         {view.brand ? <BrandIcon id={view.brand} size={20} /> : Icon && <Icon size={18} strokeWidth={1.7} className="text-zinc-300" />}
       </span>

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildFlow, type FlowData } from "./model";
-import { buildSubs, SUB_HEIGHT, SUB_GAP, SUB_INSET, subOffset } from "./subnodes";
+import { CARD_GAP, CARD_WIDTH, COL_PITCH, ROW_PITCH, STACK_PITCH } from "./layout";
+import { buildSubs, SUB_GAP, SUB_HEIGHT, SUB_HEIGHT_H, SUB_INSET, SUB_WIDTH, SUB_WIDTH_H, subOffset } from "./subnodes";
 
 function data(extra: Partial<FlowData> = {}, meta: Partial<NonNullable<FlowData["video"]["meta"]>> = {}): FlowData {
   return {
@@ -42,7 +43,7 @@ describe("buildSubs", () => {
     expect(s["chapter-model"]).toMatchObject({ parent: "chapter", ok: true });
     expect(s["chapter-model"].value).toContain("haiku");
     expect(s["seo-vidiq"]).toMatchObject({ value: "95đ", ok: true });
-    expect(s["images-model"]).toBeUndefined();
+    expect(s["images-model"]).toMatchObject({ parent: "images", value: "gpt-image (gói Plus)", ok: true });
     expect(s["video-music"]).toMatchObject({ value: "Dark Fog", ok: true });
     expect(s["youtube-slot"]).toMatchObject({ value: "19:00 12/11", ok: true });
   });
@@ -60,7 +61,73 @@ describe("buildSubs", () => {
 
   it("bản gộp: bỏ node con của Viết chương", () => {
     const d = data({}, { compilation: { seriesId: 1, from: 1, to: 3, videoIds: [1, 2, 3] } });
-    expect(subsOf(d).map((s) => s.parent)).toEqual(["seo", "seo", "video", "youtube", "youtube"]);
+    expect(subsOf(d).map((s) => s.parent)).toEqual(["trends", "trends", "seo", "seo", "thumbnail", "video", "video", "short", "short", "youtube", "youtube", "youtube"]);
+  });
+
+  it("Xu hướng: vidIQ theo thời điểm quét, Chat model là AI đầu chuỗi meta", () => {
+    const meta = [{ provider: "claude-cli" as const, model: "gpt-6-luna" }];
+    const d = data({ ai: { ...data().ai, text: { story: [], meta, scenes: [] } }, trends: { scannedAt: "2026-11-10T02:00:00.000Z", fresh: true, summary: "", hotTopics: [], titlePatterns: [], risingKeywords: [] } });
+    const s = byId(d);
+    expect(s["trends-vidiq"]).toMatchObject({ value: "09:00 10/11", ok: true });
+    expect(s["trends-model"]).toMatchObject({ value: "gpt-6-luna", ok: true });
+    expect(byId(data())["trends-vidiq"]).toMatchObject({ value: "—", ok: false });
+    expect(byId(data())["trends-model"]).toMatchObject({ value: "—", ok: false });
+  });
+
+  it("Giọng đọc: TTS model (mặc định Gemini TTS, hoặc model đã ghi) và giọng của bộ truyện", () => {
+    expect(byId(data())["tts-model"].value).toBe("Gemini TTS");
+    expect(byId(data())["tts-voice"]).toMatchObject({ value: "Rites", ok: true });
+    const tracked = data();
+    tracked.video.progress = { steps: { tts: { state: "done", model: "gemini-3.8-flash-tts", log: [] } } };
+    expect(byId(tracked)["tts-model"].value).toBe("gemini-3.8-flash-tts");
+    expect(byId(data({ series: { ...data().series, ttsVoice: "" } }))["tts-voice"]).toMatchObject({ value: "—", ok: false });
+  });
+
+  it("Ảnh cảnh / Thumbnail / Short dùng model vẽ thật; Prompt cảnh theo chuỗi scenes", () => {
+    const d = data({ ai: { ...data().ai, text: { story: [], meta: [], scenes: [{ provider: "claude-cli", model: "haiku" }] } } });
+    const s = byId(d);
+    expect(s["thumbnail-model"].value).toBe("gpt-image (gói Plus)");
+    expect(s["short-model"].value).toBe("gpt-image (gói Plus)");
+    expect(s["images-prompt"]).toMatchObject({ value: "haiku", ok: true });
+    expect(byId(data())["images-prompt"]).toMatchObject({ value: "—", ok: false });
+    expect(byId(data({ ai: { ...data().ai, image: { model: "flux-1-schnell", source: "configured" } } }))["images-model"].ok).toBe(false);
+  });
+
+  it("Short tắt thì không có node con Short; Danh sách phát theo app_settings", () => {
+    expect(subsOf(data({ series: { ...data().series, makeShort: false } })).some((s) => s.parent === "short")).toBe(false);
+    expect(byId(data())["youtube-playlist"]).toMatchObject({ value: "—", ok: false });
+    expect(byId(data({ youtube: { connected: true, channel: null, playlistId: "PL1" } }))["youtube-playlist"]).toMatchObject({ value: "Có", ok: true });
+  });
+
+  it("mọi node con có id duy nhất, thẻ cha nào cũng không quá 4 node con", () => {
+    const subs = subsOf(data());
+    expect(new Set(subs.map((s) => s.id)).size).toBe(subs.length);
+    const perParent = Object.values(Object.groupBy(subs, (s) => s.parent)).map((x) => x?.length ?? 0);
+    expect(Math.max(...perParent)).toBeLessThanOrEqual(4);
+  });
+});
+
+describe("bố cục mặc định không đè nhau", () => {
+  const maxSubs = Math.max(...Object.values(Object.groupBy(subsOf(data()), (s) => s.parent)).map((x) => x?.length ?? 0));
+
+  it("ngang: hàng node con vừa khoảng cách giữa hai cột thẻ", () => {
+    const rowWidth = maxSubs * SUB_WIDTH_H + (maxSubs - 1) * 10;
+    expect(rowWidth).toBeLessThanOrEqual(COL_PITCH - 20);
+    expect(subOffset(0, CARD_WIDTH, true, maxSubs).x).toBeGreaterThanOrEqual(-(COL_PITCH - CARD_WIDTH) / 2);
+  });
+
+  it("ngang: nhánh xếp chồng chừa chỗ cho hàng node con dưới thẻ", () => {
+    const bottom = subOffset(0, CARD_WIDTH, true, 2).y + SUB_HEIGHT_H;
+    expect(STACK_PITCH).toBeGreaterThan(bottom);
+  });
+
+  it("dọc: cột node con của thẻ nhánh lọt giữa hai thẻ nhánh cạnh nhau", () => {
+    expect(SUB_INSET + SUB_WIDTH).toBeLessThan(CARD_GAP);
+  });
+
+  it("dọc: cột node con không cao hơn một hàng thẻ", () => {
+    const column = 8 + maxSubs * SUB_HEIGHT + (maxSubs - 1) * SUB_GAP;
+    expect(column).toBeLessThan(ROW_PITCH + 40);
   });
 });
 

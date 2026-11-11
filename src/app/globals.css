@@ -118,7 +118,8 @@ body {
     to { opacity: 1; transform: none; }
   }
   @keyframes sub-in {
-    from { opacity: 0; transform: translateX(-36px) scale(0.92); }
+    /* Chỉ mờ → rõ: transform làm React Flow đo sai vị trí cổng nối lúc node vừa mount → dây cắm lệch. */
+    from { opacity: 0; }
     to { opacity: 1; transform: none; }
   }
   @keyframes node-glow {

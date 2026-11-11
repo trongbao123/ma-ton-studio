@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CARD_GAP, CARD_WIDTH, DEFAULT_POSITIONS, mergeLayout, ROW_OF, ROW_PITCH, TREE_ROWS } from "./layout";
+import { CARD_GAP, CARD_WIDTH, DEFAULT_POSITIONS, mergeLayout, pickSubPositions, subKey, ROW_OF, ROW_PITCH, TREE_ROWS } from "./layout";
 import { CARD_ORDER } from "./model";
 
 const full = () => Object.fromEntries(CARD_ORDER.map((id, i) => [id, { x: i * 10, y: 5 + i }]));
@@ -78,5 +78,13 @@ describe("bố cục ngang", () => {
   it("bố cục ngang hỏng thì về mặc định NGANG, không về dọc", async () => {
     const { DEFAULT_POSITIONS_H } = await import("./layout");
     expect(mergeLayout(null, "h")).toEqual(DEFAULT_POSITIONS_H);
+  });
+});
+
+describe("vị trí node con", () => {
+  it("giữ khoá sub:* hợp lệ, bỏ khoá lạ và toạ độ hỏng", () => {
+    const saved = { ...full(), "sub:seo-model": { x: 5, y: 9 }, "sub:bad": { x: "a", y: 1 }, lạ: { x: 1, y: 1 } };
+    expect(pickSubPositions(saved)).toEqual({ [subKey("seo-model")]: { x: 5, y: 9 } });
+    expect(pickSubPositions(null)).toEqual({});
   });
 });

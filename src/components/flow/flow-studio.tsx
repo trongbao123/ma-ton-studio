@@ -22,7 +22,14 @@ const FlowCanvas = dynamic(() => import("./flow-canvas"), {
   ),
 });
 
-type Props = { data: FlowData; layout: Record<CanvasNodeId, Pos>; layoutH: Record<CanvasNodeId, Pos> };
+type Props = {
+  data: FlowData;
+  layout: Record<CanvasNodeId, Pos>;
+  layoutH: Record<CanvasNodeId, Pos>;
+  /** Vị trí node con đã lưu (khoá `sub:<id>`), theo từng hướng. */
+  subLayout: Record<string, Pos>;
+  subLayoutH: Record<string, Pos>;
+};
 
 export function FlowStudio(props: Props) {
   return <Studio {...props} />;
@@ -183,7 +190,7 @@ function useLiveFlow(initial: FlowData) {
   return { data, live };
 }
 
-function Studio({ data: initial, layout, layoutH }: Props) {
+function Studio({ data: initial, layout, layoutH, subLayout, subLayoutH }: Props) {
   const { data, live } = useLiveFlow(initial);
   const { cards, issues: baseIssues } = useMemo(() => buildFlow(data), [data]);
   const subs = useMemo(() => buildSubs(data, cards), [data, cards]);
@@ -321,6 +328,7 @@ function Studio({ data: initial, layout, layoutH }: Props) {
             cards={cards}
             subs={subs}
             layout={horizontal ? layoutH : layout}
+            subLayout={horizontal ? subLayoutH : subLayout}
             orientation={orientation}
             selected={selected}
             panelOpen={panelOpen}

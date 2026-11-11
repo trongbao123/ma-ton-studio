@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { SERIES_TAG, TRENDS_TAG } from "@/lib/cache-tags";
 import { appSettings, chapters, series, videos } from "@/db/schema";
-import { layoutKey, mergeLayout, type Orientation, type Pos } from "@/lib/flow/layout";
+import { layoutKey, mergeLayout, pickSubPositions, type Orientation, type Pos } from "@/lib/flow/layout";
 import { draftBible, planChapters, writeChapterStep, type WriteMode } from "@/lib/story/service";
 import { dispatchPublish, dispatchRender, dispatchTrends, queueVideo } from "@/lib/story/videos";
 import { saveYoutubeAuth, updateYoutubeSnippet } from "@/lib/youtube";
@@ -154,7 +154,8 @@ export async function scanTrendsAction(): Promise<ActionState> {
 export async function saveFlowLayoutAction(positions: Record<string, Pos>, orientation: Orientation = "v"): Promise<ActionState> {
   return attempt(async () => {
     const o: Orientation = orientation === "h" ? "h" : "v";
-    const value = mergeLayout(positions, o);
+    // Thẻ chính (đủ bộ mới nhận) + vị trí node con `sub:*` lưu chung một bản.
+    const value = { ...mergeLayout(positions, o), ...pickSubPositions(positions) };
     await db()
       .insert(appSettings)
       .values({ key: layoutKey(o), value })

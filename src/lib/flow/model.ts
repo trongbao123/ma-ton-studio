@@ -86,7 +86,7 @@ export type FlowData = {
   chapter: { id: number; number: number; title: string; words: number; content: string; outline: string; approvedAt: string };
   series: { id: number; title: string; bibleExcerpt: string; voiceStyle: string; ttsVoice: string; makeShort: boolean; autoPublish: boolean };
   prevSummary: string | null;
-  youtube: { connected: boolean; channel: string | null };
+  youtube: { connected: boolean; channel: string | null; /** Danh sách phát YouTube của bộ truyện (app_settings yt_playlists); chưa tạo = null. */ playlistId?: string | null };
   /** Kết quả quét xu hướng gần nhất (app_settings "trends"); null = chưa quét. */
   trends: TrendsView | null;
   /** Bản gộp có chứa video chương này (nếu có). */

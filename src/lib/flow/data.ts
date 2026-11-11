@@ -2,7 +2,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { aiUsage, appSettings, chapters, series, videos } from "@/db/schema";
-import { LAYOUT_KEY, LAYOUT_KEY_H, mergeLayout } from "./layout";
+import { LAYOUT_KEY, LAYOUT_KEY_H, mergeLayout, pickSubPositions, type Pos } from "./layout";
 import { configuredImageModel, containingCompilation, pickImageModel, type CompilationRef } from "./derive";
 import { IMAGE_ROUTING_KEY, normalizeImageRouting, normalizeRouting, ROUTING_KEY } from "@/lib/ai/routing";
 import { assetUrl } from "@/lib/asset-url";
@@ -29,6 +29,12 @@ function trendsView(t: TrendsData | null): TrendsView | null {
   };
 }
 
+/** Id danh sách phát của bộ truyện trong giá trị `yt_playlists`; chưa có → null. */
+function playlistOf(saved: unknown, seriesId: number): string | null {
+  const id = typeof saved === "object" && saved !== null ? (saved as Record<string, unknown>)[String(seriesId)] : null;
+  return typeof id === "string" && id ? id : null;
+}
+
 /** Truy vấn các bản gộp có chứa video chương này (lọc ở DB bằng jsonb). */
 const compilationRows = (videoId: number) =>
   db()
@@ -46,8 +52,11 @@ function compilationOf(videoId: number, rows: Awaited<ReturnType<typeof compilat
   return containingCompilation(videoId, refs);
 }
 
+/** app_settings lưu id danh sách phát YouTube theo bộ truyện: { [seriesId]: playlistId } (pipeline/playlist.ts ghi). */
+const PLAYLISTS_KEY = "yt_playlists";
+
 /** Mọi khoá app_settings màn flow cần — đọc MỘT lần thay vì 7 truy vấn riêng. */
-const SETTING_KEYS = [SECRETS_KEY, YT_KEY, ROUTING_KEY, IMAGE_ROUTING_KEY, CLI_STATUS_KEY, TRENDS_KEY, LAYOUT_KEY, LAYOUT_KEY_H];
+const SETTING_KEYS = [SECRETS_KEY, YT_KEY, ROUTING_KEY, IMAGE_ROUTING_KEY, CLI_STATUS_KEY, TRENDS_KEY, LAYOUT_KEY, LAYOUT_KEY_H, PLAYLISTS_KEY];
 
 /**
  * Dữ liệu màn flow + bố cục đã lưu. Đúng 2 vòng tới DB: (1) video + chương + truyện + tóm tắt chương trước;
@@ -55,7 +64,13 @@ const SETTING_KEYS = [SECRETS_KEY, YT_KEY, ROUTING_KEY, IMAGE_ROUTING_KEY, CLI_S
  */
 export async function loadFlowPage(
   videoId: number,
-): Promise<{ data: FlowData; layout: ReturnType<typeof mergeLayout>; layoutH: ReturnType<typeof mergeLayout> } | null> {
+): Promise<{
+  data: FlowData;
+  layout: ReturnType<typeof mergeLayout>;
+  layoutH: ReturnType<typeof mergeLayout>;
+  subLayout: Record<string, Pos>;
+  subLayoutH: Record<string, Pos>;
+} | null> {
   const prev = alias(chapters, "prev_chapter");
   const [row] = await db()
     .select({ v: videos, c: chapters, s: series, prevSummary: prev.summary })
@@ -123,7 +138,7 @@ export async function loadFlowPage(
       autoPublish: s.autoPublish,
     },
     prevSummary: row.prevSummary || null,
-    youtube: { connected: Boolean(yt), channel: yt?.channel ?? null },
+    youtube: { connected: Boolean(yt), channel: yt?.channel ?? null, playlistId: playlistOf(setting[PLAYLISTS_KEY], s.id) },
     trends: trendsView(trends),
     compiledInto,
     ai: {
@@ -132,7 +147,13 @@ export async function loadFlowPage(
       available: withCliStatus(availableProviders(), cli),
     },
   };
-  return { data, layout: mergeLayout(setting[LAYOUT_KEY]), layoutH: mergeLayout(setting[LAYOUT_KEY_H], "h") };
+  return {
+    data,
+    layout: mergeLayout(setting[LAYOUT_KEY]),
+    layoutH: mergeLayout(setting[LAYOUT_KEY_H], "h"),
+    subLayout: pickSubPositions(setting[LAYOUT_KEY]),
+    subLayoutH: pickSubPositions(setting[LAYOUT_KEY_H]),
+  };
 }
 
 /** Dữ liệu màn flow (không kèm bố cục) — cho API / luồng SSE. */

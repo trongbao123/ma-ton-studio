@@ -11,7 +11,8 @@ export const TREE_ROWS: CardId[][] = [["trends"], ["chapter"], ["seo"], ["tts", 
 
 /** Bề rộng thẻ, khoảng hở giữa các nhánh song song và bước cách giữa hai hàng (px trên canvas). */
 export const CARD_WIDTH = 248;
-export const CARD_GAP = 40;
+/** Dọc: khoảng hở rộng vì cột node con (pill) của thẻ nhánh nằm lọt giữa hai thẻ nhánh cạnh nhau. */
+export const CARD_GAP = 250;
 export const ROW_PITCH = 205;
 
 /** Chỉ số hàng của thẻ — dùng để xếp lần lượt hiệu ứng xuất hiện từ trên xuống. */
@@ -32,7 +33,8 @@ export type Orientation = "v" | "h";
 
 /** Bố cục ngang: mỗi hàng của cây dọc thành một cột; nhánh song song xếp chồng trong cột, canh giữa quanh y = 0. */
 export const COL_PITCH = CARD_WIDTH + 110;
-export const STACK_PITCH = 200;
+/** Đủ chỗ cho thẻ (~150) + hàng node con dưới thẻ (44 + 84) của nhánh xếp chồng. */
+export const STACK_PITCH = 300;
 
 function treePositionsH(): Record<CanvasNodeId, Pos> {
   const entries = TREE_ROWS.flatMap((col, c) => col.map((id, i) => [id, { x: c * COL_PITCH, y: (i - (col.length - 1) / 2) * STACK_PITCH }] as const));
@@ -58,4 +60,15 @@ export function mergeLayout(saved: unknown, o: Orientation = "v"): Record<Canvas
   const src = typeof saved === "object" && saved !== null ? (saved as Record<string, unknown>) : {};
   if (!MAIN_ORDER.every((id) => isPos(src[id]))) return defaultPositions(o);
   return Object.fromEntries(MAIN_ORDER.map((id) => [id, { x: (src[id] as Pos).x, y: (src[id] as Pos).y }])) as Record<CanvasNodeId, Pos>;
+}
+
+/** Tiền tố khoá vị trí node con trong layout đã lưu: `sub:<id>`; toạ độ tương đối so với thẻ cha. */
+export const SUB_KEY_PREFIX = "sub:";
+export const subKey = (id: string) => `${SUB_KEY_PREFIX}${id}`;
+
+/** Vị trí node con đã lưu (khoá `sub:*`, toạ độ hợp lệ); khoá lạ hoặc hỏng bị bỏ. */
+export function pickSubPositions(saved: unknown): Record<string, Pos> {
+  const src = typeof saved === "object" && saved !== null ? (saved as Record<string, unknown>) : {};
+  const entries = Object.entries(src).flatMap(([k, p]) => (k.startsWith(SUB_KEY_PREFIX) && isPos(p) ? [[k, { x: p.x, y: p.y }] as const] : []));
+  return Object.fromEntries(entries);
 }

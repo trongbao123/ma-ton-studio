@@ -5,6 +5,8 @@ import {
   BookOpenCheck,
   BrainCircuit,
   CalendarClock,
+  ListVideo,
+  Mic,
   Clapperboard,
   Film,
   Image as ImageIcon,
@@ -74,4 +76,6 @@ export const STEP_ICONS: Record<string, LucideIcon> = {
   vidiq: TrendingUp,
   music: Music,
   calendar: CalendarClock,
+  voice: Mic,
+  list: ListVideo,
 };

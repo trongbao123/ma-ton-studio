@@ -1,9 +1,9 @@
 import type { BrandId } from "@/components/brand-icons";
-import { describeRoute, firstUsableRoute, musicTitle } from "./derive";
+import { describeRoute, firstUsableRoute, imageBrand, musicTitle } from "./derive";
 import { formatTime, type CardId, type CardView, type FlowData } from "./model";
 
 /** Khóa icon nét (STEP_ICONS) cho node con không có logo hãng. */
-export type SubIcon = "model" | "bible" | "summary" | "vidiq" | "music" | "label" | "calendar";
+export type SubIcon = "model" | "bible" | "summary" | "vidiq" | "music" | "label" | "calendar" | "tts" | "images" | "video" | "voice" | "list";
 
 /** Node con xếp cột bên phải thẻ cha như cổng chat model / memory / tool của n8n: `value` là model hoặc giá trị thật. */
 export type SubView = {
@@ -21,7 +21,7 @@ export const SUB_WIDTH = 176;
 export const SUB_HEIGHT = 46;
 export const SUB_GAP = 14;
 /** Khoảng hở giữa mép phải thẻ cha và cột node con (px trên canvas). */
-export const SUB_INSET = 64;
+export const SUB_INSET = 48;
 const SUB_TOP = 8;
 
 /** Chiều cao ước của thẻ cha (thẻ tự co theo nội dung) — chỉ để đặt node con dưới thẻ ở chế độ ngang. */
@@ -48,13 +48,44 @@ export function subOffset(index: number, parentWidth: number, horizontal = false
 
 const orDash = (s: string | null | undefined) => (s && s.trim() ? s : "—");
 
+type ModelTag = { label: string; brand: BrandId | null };
+
+/** AI đầu chuỗi (đã cấu hình) của một việc chữ; chưa cấu hình → null. */
+function textModel(d: FlowData, task: "meta" | "scenes"): ModelTag | null {
+  const route = firstUsableRoute(d.ai.text?.[task] ?? [], d.ai.available ?? []);
+  return route ? describeRoute(route) : null;
+}
+
+const modelSub = (id: string, parent: CardId, label: string, tag: ModelTag | null): SubView => ({
+  id,
+  parent,
+  label,
+  value: orDash(tag?.label),
+  icon: "model",
+  brand: tag?.brand ?? null,
+  ok: Boolean(tag),
+});
+
+/** Model vẽ ảnh thật (hoặc dự kiến) — dùng chung cho Ảnh cảnh, Thumbnail và Short. */
+const drawSub = (id: string, parent: CardId, label: string, d: FlowData): SubView => {
+  const { model, source } = d.ai.image;
+  return { id, parent, label, value: orDash(model), icon: "images", brand: imageBrand(model), ok: Boolean(model) && source !== "configured" };
+};
+
 /**
- * Các node con của từng thẻ, suy từ dữ liệu thật. Bản gộp dùng lại chương nên không có node con ở Viết chương; Ảnh cảnh không có node con (model đã hiện ngay trên thẻ).
+ * Các node con của từng thẻ, suy từ dữ liệu thật; thiếu dữ liệu thì `ok=false` + "—", không bịa.
+ * Bản gộp dùng lại chương / giọng / ảnh nên không có node con ở Viết chương, Giọng đọc, Ảnh cảnh.
  */
 export function buildSubs(d: FlowData, cards: Record<CardId, CardView>): SubView[] {
   const reuse = Boolean(d.video.meta?.compilation);
   const m = d.video.meta;
   const subs: SubView[] = [];
+
+  const scannedAt = d.trends?.scannedAt;
+  subs.push(
+    { id: "trends-vidiq", parent: "trends", label: "vidIQ", value: scannedAt ? formatTime(scannedAt) : "—", icon: "vidiq", ok: Boolean(scannedAt) },
+    modelSub("trends-model", "trends", "Chat model", textModel(d, "meta")),
+  );
 
   if (!reuse) {
     const chat = cards.chapter.ai;
@@ -66,22 +97,40 @@ export function buildSubs(d: FlowData, cards: Record<CardId, CardView>): SubView
   }
 
   // Video cũ chưa ghi model thật → hiện AI đầu chuỗi đang cấu hình cho tiêu đề / mô tả.
-  const route = firstUsableRoute(d.ai.text?.meta ?? [], d.ai.available ?? []);
-  const agent = cards.seo.ai ?? (route ? describeRoute(route) : null);
   const titleScore = m?.seo?.titleScore;
   const keywords = m?.seo?.keywords?.length ?? 0;
   const vidiq = titleScore != null ? `${titleScore}đ` : keywords ? `${keywords} từ khóa` : "—";
   subs.push(
-    { id: "seo-model", parent: "seo", label: "Chat model", value: orDash(agent?.label), icon: "model", brand: agent?.brand ?? null, ok: Boolean(agent) },
+    modelSub("seo-model", "seo", "Chat model", cards.seo.ai ?? textModel(d, "meta")),
     { id: "seo-vidiq", parent: "seo", label: "vidIQ", value: vidiq, icon: "vidiq", ok: titleScore != null || keywords > 0 },
   );
 
+  if (!reuse) {
+    const voice = d.series.ttsVoice;
+    subs.push(
+      { id: "tts-model", parent: "tts", label: "TTS model", value: d.video.progress?.steps.tts?.model || "Gemini TTS", icon: "tts", brand: "gemini", ok: Boolean(d.video.durationSec) },
+      { id: "tts-voice", parent: "tts", label: "Giọng", value: orDash(voice), icon: "voice", ok: Boolean(voice) },
+      drawSub("images-model", "images", "AI vẽ ảnh", d),
+      modelSub("images-prompt", "images", "Prompt cảnh", textModel(d, "scenes")),
+    );
+  }
+  subs.push(drawSub("thumbnail-model", "thumbnail", "AI vẽ ảnh", d));
+
   const music = m ? musicTitle(m.description) : null;
-  subs.push({ id: "video-music", parent: "video", label: "Nhạc nền", value: orDash(music), icon: "music", ok: Boolean(music) });
+  subs.push(
+    { id: "video-music", parent: "video", label: "Nhạc nền", value: orDash(music), icon: "music", ok: Boolean(music) },
+    { id: "video-ffmpeg", parent: "video", label: "ffmpeg", value: "1080p", icon: "video", ok: true },
+  );
+
+  if (d.series.makeShort) {
+    const voice = d.series.ttsVoice;
+    subs.push({ id: "short-voice", parent: "short", label: "Giọng", value: orDash(voice), icon: "voice", ok: Boolean(voice) }, drawSub("short-model", "short", "AI vẽ", d));
+  }
 
   subs.push(
     { id: "youtube-label", parent: "youtube", label: "Nhãn AI", value: "Có", icon: "label", ok: true },
     { id: "youtube-slot", parent: "youtube", label: "Lịch đăng", value: d.video.publishAt ? formatTime(d.video.publishAt) : "—", icon: "calendar", ok: Boolean(d.video.publishAt) },
+    { id: "youtube-playlist", parent: "youtube", label: "Danh sách phát", value: d.youtube.playlistId ? "Có" : "—", icon: "list", ok: Boolean(d.youtube.playlistId) },
   );
   return subs;
 }
