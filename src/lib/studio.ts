@@ -1,6 +1,6 @@
 import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { chapters, series, videos, type Video } from "@/db/schema";
+import { chapters, series, videos, type Video, type VideoMeta } from "@/db/schema";
 import { TITLES, type NodeId } from "@/lib/flow/model";
 import type { VideoProgress } from "@/lib/flow/progress";
 
@@ -147,7 +147,19 @@ export async function videoCards(
 ): Promise<VideoCard[]> {
   const where = videoWhere(opts);
   const rows = await db()
-    .select({ v: videos, chapterNo: chapters.number, chapterTitle: chapters.title, seriesTitle: series.title, episodeChapters: series.episodeChapters })
+    .select({
+      id: videos.id, status: videos.status, uploadStatus: videos.uploadStatus, error: videos.error,
+      durationSec: videos.durationSec, publishAt: videos.publishAt, assets: videos.assets,
+      youtubeVideoId: videos.youtubeVideoId, youtubeShortId: videos.youtubeShortId,
+      // Chỉ lấy vài khoá của `meta` (cả blob có mô tả 5000 ký tự, tags, titleOptions… mà thẻ không dùng).
+      meta: sql<VideoCardMeta | null>`case when ${videos.meta} is null then null else jsonb_build_object(
+        'title', ${videos.meta}->'title', 'shortTitle', ${videos.meta}->'shortTitle',
+        'yt', ${videos.meta}->'yt', 'compilation', ${videos.meta}->'compilation', 'shortClip', ${videos.meta}->'shortClip') end`,
+      // `progress` là cột NẶNG NHẤT (cảnh, prompt, nhật ký, clip i2v) và chỉ dùng cho video đang render
+      // → chỉ kéo về đúng những dòng đó, còn lại trả null. Trước đây kéo cả blob cho mọi dòng của mọi trang.
+      progress: sql<VideoProgress | null>`case when ${videos.status} = 'rendering' then ${videos.progress} else null end`,
+      chapterNo: chapters.number, chapterTitle: chapters.title, seriesTitle: series.title, episodeChapters: series.episodeChapters,
+    })
     .from(videos)
     .innerJoin(chapters, eq(chapters.id, videos.chapterId))
     .innerJoin(series, eq(series.id, chapters.seriesId))
@@ -155,26 +167,45 @@ export async function videoCards(
     .orderBy(desc(videos.id))
     .limit(opts.limit ?? 60)
     .offset(opts.offset ?? 0);
-  return rows.map(({ v, episodeChapters, ...r }) => ({
+  return rows.map(toVideoCard);
+}
+
+/** Phần `meta` mà thẻ video thật sự dùng — xem jsonb_build_object trong videoCards. */
+export type VideoCardMeta = Pick<VideoMeta, "title" | "shortTitle" | "yt" | "compilation" | "shortClip">;
+
+export type VideoCardRow = {
+  id: number; status: Video["status"]; uploadStatus: Video["uploadStatus"]; error: string | null;
+  durationSec: number | null; publishAt: Date | null; assets: Record<string, number>;
+  youtubeVideoId: string | null; youtubeShortId: string | null;
+  meta: VideoCardMeta | null; progress: VideoProgress | null;
+  chapterNo: number; chapterTitle: string; seriesTitle: string; episodeChapters: number;
+};
+
+/** Dòng truy vấn → thẻ hiện trên trang. Thuần, để test được mà không cần DB. */
+export function toVideoCard({ episodeChapters, meta, progress, assets, ...v }: VideoCardRow): VideoCard {
+  const cover = coverOf(assets);
+  return {
     id: v.id,
     status: v.status,
     uploadStatus: v.uploadStatus,
     error: v.error,
     durationSec: v.durationSec,
     publishAt: v.publishAt?.toISOString() ?? null,
-    hasThumb: Boolean(coverOf(v.assets)),
-    thumbFile: coverOf(v.assets)?.file ?? "thumbnail.jpg",
-    thumbVersion: coverOf(v.assets)?.version ?? null,
-    ytThumb: v.meta?.yt?.thumb ?? null,
-    ytPrivacy: v.meta?.yt?.privacy ?? null,
+    hasThumb: Boolean(cover),
+    thumbFile: cover?.file ?? "thumbnail.jpg",
+    thumbVersion: cover?.version ?? null,
+    ytThumb: meta?.yt?.thumb ?? null,
+    ytPrivacy: meta?.yt?.privacy ?? null,
     youtubeVideoId: v.youtubeVideoId,
     youtubeShortId: v.youtubeShortId,
-    compilation: v.meta?.compilation ? { from: v.meta.compilation.from, to: v.meta.compilation.to, episodeNo: v.meta.compilation.episode ? (v.meta.compilation.episodeNo ?? null) : null } : null,
-    internal: episodeChapters > 0 && !v.meta?.compilation && !v.meta?.shortClip && !v.youtubeVideoId,
-    shortClip: v.meta?.shortClip ? { title: v.meta.shortTitle || v.meta.title, score: v.meta.shortClip.scoreTitle } : null,
-    ...r,
-    ...(v.status === "rendering" ? liveSummary(v.progress) : { live: null, pct: null }),
-  }));
+    compilation: meta?.compilation ? { from: meta.compilation.from, to: meta.compilation.to, episodeNo: meta.compilation.episode ? (meta.compilation.episodeNo ?? null) : null } : null,
+    internal: episodeChapters > 0 && !meta?.compilation && !meta?.shortClip && !v.youtubeVideoId,
+    shortClip: meta?.shortClip ? { title: meta.shortTitle || meta.title, score: meta.shortClip.scoreTitle } : null,
+    chapterNo: v.chapterNo,
+    chapterTitle: v.chapterTitle,
+    seriesTitle: v.seriesTitle,
+    ...(v.status === "rendering" ? liveSummary(progress) : { live: null, pct: null }),
+  };
 }
 
 /** Việc đang chờ người dùng: chương chờ duyệt, video lỗi/upload lỗi. */

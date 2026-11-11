@@ -9,6 +9,7 @@ import { quotaDay } from "@/lib/ai/usage";
 import { aiUsage } from "@/db/schema";
 import { loadSecrets } from "@/lib/secrets";
 import { ensureWebsub } from "@/lib/websub";
+import { commentOnPublished } from "./comment";
 import { compileSeries, compileState, seriesRows, withStaleAsFailed } from "./compile";
 import { chaptersToWrite, episodeBacklog, vnDay, writtenMarker } from "./episode-plan";
 import { renderVideo } from "./render";
@@ -142,6 +143,8 @@ async function main() {
     .catch((e) => console.warn("⚠ WebSub:", e instanceof Error ? e.message : e));
   const failures: string[] = [];
   await renderQueue(failures);
+  // Bình luận kêu gọi thích/chia sẻ/đăng ký cho video ĐÃ tới giờ phát (video lên lịch còn private thì YouTube không nhận bình luận).
+  await commentOnPublished().catch((e) => console.warn("⚠ Bình luận kêu gọi:", e instanceof Error ? e.message : e));
 
   let quotaLeft = true;
   for (const s of await db().select().from(series).where(eq(series.autopilot, true))) {

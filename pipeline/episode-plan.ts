@@ -41,10 +41,11 @@ export function chaptersToWrite(o: { chaptersPerDay: number; writtenToday: numbe
   return Math.max(0, Math.min(o.chaptersPerDay * CATCH_UP_FACTOR - o.writtenToday, room));
 }
 
-/** Đoạn mở đầu cao trào: ~6 giây đổi 1 ảnh, 4–8 ảnh. */
+/** Đoạn mở đầu cao trào: ~3,5 giây đổi 1 ảnh (dồn dập như Short — đây là đoạn quyết định người xem ở lại hay thoát), 8–14 ảnh. */
 export function coldOpenSceneCount(seconds: number) {
-  return Math.min(8, Math.max(4, Math.round(seconds / 6)));
+  return Math.min(14, Math.max(8, Math.round(seconds / COLD_OPEN_IMAGE_SECONDS)));
 }
+const COLD_OPEN_IMAGE_SECONDS = 3.5;
 
 /** Short: ~3,5 giây đổi 1 ảnh (người lướt Shorts bỏ đi nếu hình đứng yên), 5–30 ảnh. */
 export function shortSceneCount(seconds: number) {

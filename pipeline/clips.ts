@@ -35,7 +35,7 @@ const CONTENT_HEAD = 4000;
 const CONTENT_TAIL = 12000;
 
 const clipDraftSchema = z.object({
-  shortScript: z.string().describe("Lời đọc Short 45–70 giây (120–180 từ). Câu ĐẦU là hook cực mạnh (≤ 8 từ, đọc dưới 2 giây). Kể đúng diễn biến của chương, dừng ở cao trào, câu cuối mời nghe tập full. Không thêm chi tiết không có trong chương"),
+  shortScript: z.string().describe("Lời đọc Short 15–20 giây (45–60 từ). Câu ĐẦU là hook cực mạnh (≤ 8 từ, đọc dưới 2 giây). Kể đúng diễn biến của chương, dừng ở cao trào, câu cuối mời nghe tập full. Không thêm chi tiết không có trong chương"),
   hook: z.string().describe("Chữ hook hiện to trên Short, 2–4 từ IN HOA, cảm xúc mạnh"),
   titleOptions: z.array(z.string()).min(3).describe("3 tiêu đề YouTube khác nhau, mỗi cái ≤ 50 ký tự (chưa gồm #shorts): hook cảm xúc + 1 từ khóa người ta tìm thật (truyện tu tiên / truyện audio). Không spoil kết"),
   description: z.string().describe("2–3 câu mô tả Short bằng tiếng Việt, có từ khóa tìm kiếm (truyện tu tiên, truyện audio), tò mò, không spoil kết"),

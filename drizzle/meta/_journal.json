@@ -43,6 +43,13 @@
       "when": 1794303447924,
       "tag": "0005_episode_chapters",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794418036898,
+      "tag": "0006_cold_viper",
+      "breakpoints": true
     }
   ]
 }

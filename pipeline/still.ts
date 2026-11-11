@@ -11,6 +11,18 @@ export const STILL_FADE_SECONDS = 0.5;
 const ZOOM_FADE_SECONDS = 0.25;
 /** Phóng to tối đa trong 1 đoạn zoom (10%). */
 const ZOOM_AMOUNT = 0.1;
+/**
+ * Cảnh hành động — nhịp dựng kiểu phim, bù cho việc ảnh đứng yên:
+ * chớp trắng ở cú cắt, đẩy ống kính vào mạnh hơn, rung khung rồi tắt dần.
+ * Nhân vật không cử động được (đã đo: GPU free không làm nổi), nên cảm giác "đánh nhau" phải đến từ máy quay.
+ */
+const ACTION_ZOOM_AMOUNT = 0.22;
+/** Chớp trắng dài bao lâu ở đầu cảnh. */
+const ACTION_FLASH_SECONDS = 0.12;
+/** Rung trong ngần này giây rồi hết hẳn (rung suốt cảnh thì chóng mặt, không phải điện ảnh). */
+const ACTION_SHAKE_SECONDS = 0.55;
+/** Biên độ rung tính theo điểm ảnh của khung 1080p. */
+const ACTION_SHAKE_PX = 14;
 const STILL_CRF = "23";
 const STILL_PRESET = "veryfast";
 /** Khung hình khoá mỗi 5 giây — đủ cho YouTube và cho tua. */
@@ -22,6 +34,14 @@ export const VOICE_LUFS = -16;
 export const MUSIC_GAIN = 0.3;
 /** Nền "ma đạo" tự sinh vốn nhỏ hơn nhạc thật nên cho to hơn một chút. */
 export const AMBIENT_GAIN = 0.45;
+/**
+ * Tiếng hiệu ứng của clip động (sfx.ts): để nguyên mức đã cân ở sfx.ts (SFX_TRIM_DB đặt mỗi tiếng ở -21…-26 LUFS,
+ * tức 5–10 dB dưới giọng đọc -16 LUFS) nên ở đây không hạ thêm.
+ * KHÔNG sidechain theo giọng — hiệu ứng chỉ kêu 2–4 giây ở đúng mốc, hạ theo giọng thì mất hẳn tác dụng.
+ * ĐỪNG nâng quá 1: đo bằng `pnpm exec tsx scripts/sfx-measure.mjs --mix`, từ 1,5 trở lên đỉnh thật của cả tập
+ * vượt 0 dBFS (+1,6 dB ở 1,5; +2,4 dB ở 3) dù đã có alimiter=0.9 — hard limit sinh đỉnh giữa hai mẫu.
+ */
+export const SFX_GAIN = 1;
 const MUSIC_FADE_IN = 3;
 const MUSIC_FADE_OUT = 5;
 export const AUDIO_BITRATE = "192k";
@@ -47,7 +67,7 @@ const segmentEncodeArgs = (o: { out: string; fps: number; still: boolean }) => [
  * Ảnh → đoạn video tĩnh `frames` khung hình, 1920×1080 (scale/crop một lần), mờ vào/ra. `logoCrop` là chuỗi filter cắt logo (có dấu phẩy cuối) hoặc rỗng.
  * Có `parallax` thì dựng 3 lớp theo độ sâu trượt khác tốc độ (thay cho zoompan/ảnh tĩnh trong `parallax.motionFrames` khung đầu).
  */
-export function stillSegmentArgs(o: { img: string; out: string; frames: number; w: number; h: number; logoCrop?: string; fps?: number; zoom?: boolean; parallax?: StillParallax }) {
+export function stillSegmentArgs(o: { img: string; out: string; frames: number; w: number; h: number; logoCrop?: string; fps?: number; zoom?: boolean; action?: boolean; parallax?: StillParallax }) {
   const fps = o.fps ?? STILL_FPS;
   const seconds = o.frames / fps;
   const fade = Math.min(o.zoom ? ZOOM_FADE_SECONDS : STILL_FADE_SECONDS, seconds / 2);
@@ -59,20 +79,37 @@ export function stillSegmentArgs(o: { img: string; out: string; frames: number; 
       ...segmentEncodeArgs({ out: o.out, fps, still: false }),
     ];
   }
+  // `action`: cảnh đánh nhau — đẩy ống kính mạnh + rung tắt dần + chớp trắng ở cú cắt.
   // `zoom`: 2 phút đầu của chương — zoom chậm vào giữa ảnh (zoompan, dựng từ ảnh nền 2× để không giật điểm ảnh); phần sau vẫn ảnh tĩnh.
-  const motion = o.zoom
+  const zoomAmount = o.action ? ACTION_ZOOM_AMOUNT : ZOOM_AMOUNT;
+  // Cảnh hành động xuất khung RỘNG HƠN đích (dư ACTION_SHAKE_PX mỗi bên) để bước rung còn điểm ảnh thật mà dịch.
+  // Đừng thay bằng pad: pad chèn viền ĐEN, rung đẩy khung sang là lộ vệt đen ở mép (đã dính một lần, xem khung mẫu).
+  const outW = o.action ? o.w + ACTION_SHAKE_PX * 2 : o.w;
+  const outH = o.action ? o.h + ACTION_SHAKE_PX * 2 : o.h;
+  const motion =
+    o.action || o.zoom
+      ? [
+          `scale=${o.w * 2}:${o.h * 2}:flags=bicubic`,
+          `zoompan=z='1+${zoomAmount}*on/${o.frames}':x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2':d=${o.frames}:s=${outW}x${outH}:fps=${fps}`,
+          "format=yuv420p",
+        ]
+      : ["format=yuv420p", "loop=loop=-1:size=1:start=0"];
+  // Rung: cắt lệch tâm theo sin, biên độ tắt dần về 0 trong ACTION_SHAKE_SECONDS rồi đứng yên hẳn.
+  const decay = `max(0,1-t/${ACTION_SHAKE_SECONDS})`;
+  const shake = o.action
     ? [
-        `scale=${o.w * 2}:${o.h * 2}:flags=bicubic`,
-        `zoompan=z='1+${ZOOM_AMOUNT}*on/${o.frames}':x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2':d=${o.frames}:s=${o.w}x${o.h}:fps=${fps}`,
-        "format=yuv420p",
+        `crop=${o.w}:${o.h}:'${ACTION_SHAKE_PX}+if(lt(t,${ACTION_SHAKE_SECONDS}),${ACTION_SHAKE_PX}*${decay}*sin(t*47),0)':'${ACTION_SHAKE_PX}+if(lt(t,${ACTION_SHAKE_SECONDS}),${ACTION_SHAKE_PX}*${decay}*sin(t*61),0)'`,
       ]
-    : ["format=yuv420p", "loop=loop=-1:size=1:start=0"];
+    : [];
+  const flash = o.action ? [`fade=t=in:st=0:d=${ACTION_FLASH_SECONDS}:color=white`] : [];
   const vf = [
     `${o.logoCrop ?? ""}scale=${o.w}:${o.h}:force_original_aspect_ratio=increase:flags=bicubic`,
     `crop=${o.w}:${o.h}:(iw-ow)/2:(ih-oh)*0.3`,
     // Nhân khung đã scale/crop (1 khung) thay vì `-loop 1` bắt scale lại từng khung: đo local ≈ -18% thời gian đoạn, ra cùng file.
     ...motion,
-    ...fadeFilters(fade, seconds),
+    ...shake,
+    // Cảnh hành động: chớp trắng thay cho mờ vào từ đen; vẫn mờ ra ở cuối để nối đoạn như cũ.
+    ...(o.action ? [...flash, `fade=t=out:st=${(seconds - fade).toFixed(3)}:d=${fade}`] : fadeFilters(fade, seconds)),
   ].join(",");
   return [
     "-framerate", String(fps), "-i", o.img, "-frames:v", String(o.frames),
@@ -119,25 +156,28 @@ export function voiceGainDb(measuredLufs: number | null) {
 /**
  * Bộ lọc âm thanh: giọng về -16 LUFS; nhạc mờ vào/ra, tự hạ khi có giọng (sidechain); trộn rồi chặn đỉnh.
  * Có `voiceGain` (đã đo bằng ebur128, ~1 giây) thì chỉ nhân gain; không thì dùng loudnorm (đo local: 34 giây/40 phút giọng — đắt gấp 40 lần).
+ * `sfx`: có input thứ 4 là track hiệu ứng của clip động (sfx.ts) — hạ xuống SFX_GAIN rồi trộn thẳng, không sidechain.
  */
-export function episodeAudioGraph(o: { seconds: number; musicGain: number; voiceGain: number | null }) {
+export function episodeAudioGraph(o: { seconds: number; musicGain: number; voiceGain: number | null; sfx?: boolean }) {
   const fadeOutAt = Math.max(0, o.seconds - MUSIC_FADE_OUT).toFixed(2);
   const level = o.voiceGain == null ? `loudnorm=I=${VOICE_LUFS}:TP=-1.5:LRA=11` : `volume=${o.voiceGain.toFixed(2)}dB`;
   return [
     `[1:a]${level},aresample=${AUDIO_RATE},aformat=sample_fmts=fltp:channel_layouts=stereo,asplit=2[vo][sc]`,
     `[2:a]aresample=${AUDIO_RATE},aformat=sample_fmts=fltp:channel_layouts=stereo,volume=${o.musicGain},afade=t=in:st=0:d=${MUSIC_FADE_IN},afade=t=out:st=${fadeOutAt}:d=${MUSIC_FADE_OUT}[mu]`,
     "[mu][sc]sidechaincompress=threshold=0.04:ratio=3:attack=30:release=600:makeup=1[md]",
-    "[vo][md]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.9[a]",
+    ...(o.sfx ? [`[3:a]aresample=${AUDIO_RATE},aformat=sample_fmts=fltp:channel_layouts=stereo,volume=${SFX_GAIN}[sx]`] : []),
+    `[vo][md]${o.sfx ? "[sx]" : ""}amix=inputs=${o.sfx ? 3 : 2}:duration=first:normalize=0,alimiter=limit=0.9[a]`,
   ].join(";");
 }
 
 /** Bước cuối của chương tĩnh: nối các đoạn (concat copy) + trộn âm thanh trong MỘT lệnh, video `-c:v copy` (≈ 0 CPU video). */
-export function episodeMuxArgs(o: { list: string; narration: string; music: string; seconds: number; isAmbient: boolean; voiceGain: number | null; out: string }) {
+export function episodeMuxArgs(o: { list: string; narration: string; music: string; seconds: number; isAmbient: boolean; voiceGain: number | null; sfx?: string | null; out: string }) {
   return [
     "-f", "concat", "-safe", "0", "-i", o.list,
     "-i", o.narration,
     "-stream_loop", "-1", "-t", o.seconds.toFixed(2), "-i", o.music,
-    "-filter_complex", episodeAudioGraph({ seconds: o.seconds, musicGain: o.isAmbient ? AMBIENT_GAIN : MUSIC_GAIN, voiceGain: o.voiceGain }),
+    ...(o.sfx ? ["-i", o.sfx] : []),
+    "-filter_complex", episodeAudioGraph({ seconds: o.seconds, musicGain: o.isAmbient ? AMBIENT_GAIN : MUSIC_GAIN, voiceGain: o.voiceGain, sfx: Boolean(o.sfx) }),
     "-map", "0:v", "-map", "[a]",
     "-c:v", "copy", "-c:a", "aac", "-b:a", AUDIO_BITRATE, "-ar", AUDIO_RATE, "-ac", "2",
     "-shortest", "-movflags", "+faststart", o.out,

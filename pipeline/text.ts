@@ -1,3 +1,5 @@
+import { escText, filterPath } from "./ffmpeg";
+
 /** Tách văn bản thành câu, giữ dấu câu. Dùng cho chia đoạn TTS và phụ đề. */
 export function sentences(text: string): string[] {
   return text
@@ -116,5 +118,26 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
       })
       .join("\n") +
     "\n"
+  );
+}
+
+/** Cỡ chữ thẻ tên truyện: co theo dòng dài nhất để không tràn mép, không nhỏ quá 24. */
+export function titleCardFontSize(text: string, w: number) {
+  const longest = Math.max(1, ...text.split("\n").map((l) => [...l].length));
+  return Math.max(24, Math.min(Math.round(w / 22), Math.floor((w * 0.9) / (longest * 0.6))));
+}
+
+/**
+ * Thẻ tên truyện / số tập: hiện dần rồi tắt hẳn trong khoảng [start, start+seconds].
+ * `enable` kẹp đúng khoảng của thẻ — đặt ở CUỐI intro thì không được dính sang chương sau.
+ */
+export function titleCardFilter(o: { text: string; w: number; font: string; start: number; seconds?: number }) {
+  const d = o.seconds ?? 5;
+  const end = o.start + d;
+  const t = `(t-${o.start})`;
+  const alpha = `if(lt(${t},0.6),${t}/0.6,if(lt(${t},${d - 1}),1,max(0,(${d}-${t}))))`;
+  return (
+    `,drawtext=fontfile=${filterPath(o.font)}:text='${escText(o.text)}':fontsize=${titleCardFontSize(o.text, o.w)}:fontcolor=white:borderw=5:bordercolor=black@0.8` +
+    `:x=(w-tw)/2:y=(h-th)/2:alpha='${alpha}':enable='between(t,${o.start},${end})'`
   );
 }

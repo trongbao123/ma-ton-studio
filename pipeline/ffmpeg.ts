@@ -16,6 +16,20 @@ export async function ffmpeg(args: string[]) {
   }
 }
 
+/**
+ * Chạy ffmpeg chỉ để ĐỌC log (signalstats, ssim… — xuất ra `-f null`): trả stdout + stderr.
+ * Không ném: lệnh đo thất bại thì hàm đọc log trả null là đủ, không làm đổ việc đang chạy.
+ */
+export async function ffmpegLog(args: string[]): Promise<string> {
+  try {
+    const { stdout, stderr } = await run(FFMPEG, ["-hide_banner", "-nostats", ...args], { maxBuffer: 64 * 1024 * 1024 });
+    return `${stdout}\n${stderr}`;
+  } catch (e) {
+    const err = e as { stdout?: string; stderr?: string; message: string };
+    return `${err.stdout ?? ""}\n${err.stderr ?? err.message}`;
+  }
+}
+
 export async function duration(file: string): Promise<number> {
   const { stdout } = await run(FFPROBE, ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file]);
   return Number(stdout.trim());
@@ -43,6 +57,11 @@ export async function streamSignature(file: string): Promise<string> {
 /** Escape đường dẫn cho filter ffmpeg (dấu `:` và `\`). */
 export function filterPath(p: string) {
   return p.replace(/\\/g, "/").replace(/:/g, "\\:").replace(/'/g, "\\'");
+}
+
+/** Thoát chữ cho `drawtext`: nháy đơn đổi thành nháy cong (drawtext không thoát được nháy trong nháy). */
+export function escText(s: string) {
+  return s.replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "\u2019").replace(/%/g, "\\%");
 }
 
 /** Chạy tối đa `limit` việc song song. */

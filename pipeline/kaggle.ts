@@ -7,7 +7,9 @@ import { db } from "@/db";
 import { aiUsage } from "@/db/schema";
 import { KAGGLE_GPU_USAGE_MODEL } from "@/lib/limits";
 export { fetchKaggleGpuQuota as gpuQuota } from "@/lib/kaggle-quota";
-import { buildManifest, gpuMinutes, kaggleSlug, kernelFailureKind, kernelPhase, kernelPushBody, parseClipLog, type ClipJob, type ClipResult, type KernelPhase } from "./i2v-plan";
+import { buildManifest, datasetFiles, gpuMinutes, kaggleSlug, kernelFailureKind, kernelPhase, kernelPushBody, manifestJobs, parseClipLog, type ClipJob, type ClipResult, type KernelPhase } from "./i2v-plan";
+import type { ModelProbe as ModelSpec } from "./i2v-sweep";
+import { progressLine, type I2vProgressState } from "./i2v-progress";
 
 const API = "https://www.kaggle.com/api/v1";
 /** Tối đa chờ kernel (đẩy → xong), theo yêu cầu ≈ 60 phút. */
@@ -163,7 +165,29 @@ function failureText(kind: ReturnType<typeof kernelFailureKind>, message: string
 }
 
 /** Bước 1: upload dataset (ảnh + manifest) và push kernel. Không ném — lỗi trả { error }. */
-export async function startI2v(o: { videoId: number; dir: string; jobs: (ClipJob & { file: string })[]; events?: I2vEvents }): Promise<{ session: I2vSession } | { error: string }> {
+/**
+ * Cấu hình để kernel POST tiến độ về app. Thiếu WEB_URL/I2V_PROGRESS_TOKEN thì trả undefined —
+ * kernel chạy y như cũ, chỉ là không có tiến độ trực tiếp (không phải lỗi).
+ */
+function progressConfig(slug: string, videoId: number, total: number) {
+  const token = process.env.I2V_PROGRESS_TOKEN?.trim();
+  const base = process.env.WEB_URL?.trim();
+  return token && base ? { url: `${base.replace(/\/$/, "")}/api/i2v/progress`, token, slug, videoId, total } : undefined;
+}
+
+/** Hỏi app xem kernel đang tới đâu (kernel tự báo về). Lỗi/chưa có thì null — chỉ là thông tin phụ. */
+export async function fetchProgress(slug: string): Promise<I2vProgressState | null> {
+  const base = process.env.WEB_URL?.trim();
+  if (!base) return null;
+  try {
+    const res = await fetch(`${base.replace(/\/$/, "")}/api/i2v/progress?slug=${encodeURIComponent(slug)}`, { signal: AbortSignal.timeout(10_000) });
+    return res.ok ? ((await res.json()) as I2vProgressState) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function startI2v(o: { videoId: number; dir: string; jobs: (ClipJob & { file: string })[]; model?: ModelSpec; events?: I2vEvents }): Promise<{ session: I2vSession } | { error: string }> {
   const auth = kaggleAuth();
   if (!auth) return { error: "Thiếu KAGGLE_API_TOKEN / KAGGLE_USERNAME" };
   const stamp = Date.now();
@@ -172,11 +196,11 @@ export async function startI2v(o: { videoId: number; dir: string; jobs: (ClipJob
   try {
     o.events?.stage?.("upload", `${o.jobs.length} ảnh`);
     const manifestFile = path.join(o.dir, `i2v-manifest-${stamp}.json`);
-    await writeFile(manifestFile, JSON.stringify(buildManifest(o.jobs.map(({ id, image, prompt }) => ({ id, image, prompt })))));
+    await writeFile(manifestFile, JSON.stringify(buildManifest(manifestJobs(o.jobs), 42, o.model, progressConfig(kernelSlug, o.videoId, o.jobs.length))));
     await createDataset(auth, {
       slug: datasetSlug,
       title: datasetSlug,
-      files: [{ name: "manifest.json", path: manifestFile }, ...o.jobs.map((j) => ({ name: j.image, path: j.file }))],
+      files: datasetFiles({ name: "manifest.json", path: manifestFile }, o.jobs),
     });
     const kernelUrl = await pushKernel(auth, { slug: kernelSlug, title: kernelSlug, datasetSlug });
     o.events?.stage?.("queued", kernelUrl);
@@ -200,12 +224,22 @@ export async function finishI2v(o: { session: I2vSession; dir: string; deadline:
     let phase: KernelPhase = "queued";
     let message = "";
     let lastPhase: KernelPhase | null = null;
+    let lastLive: string | null = null;
     while (Date.now() < o.deadline) {
       ({ phase, message } = await kernelState(auth, session.kernelSlug).catch(() => ({ phase: "queued" as KernelPhase, message: "" })));
       if (phase !== lastPhase && (phase === "queued" || phase === "running")) ev?.stage?.(phase, phase);
       lastPhase = phase;
       if (phase === "done" || phase === "failed") break;
       if (phase === "running" && ev?.partial) await kernelOutput(auth, session.kernelSlug).then((out) => ev.partial?.(parseClipLog(out.log)), () => {});
+      // Log Kaggle rỗng cho tới khi kernel xong, nên tiến độ trong lúc chạy chỉ có từ đường kernel tự báo về.
+      if (phase === "running") {
+        const live = await fetchProgress(session.kernelSlug);
+        const line = live ? progressLine(live) : null;
+        if (line && line !== lastLive) {
+          lastLive = line;
+          ev?.log?.(line);
+        }
+      }
       await sleep(POLL_MS);
     }
     const gpuSeconds = Math.round((Date.now() - session.startedAt) / 1000);
@@ -252,7 +286,7 @@ async function modelOf(out: KernelOutput): Promise<string | null> {
 }
 
 /** Đẩy + chờ + tải trong một lần (CLI kaggle-test). */
-export async function runI2v(o: { videoId: number; dir: string; jobs: (ClipJob & { file: string })[]; events?: I2vEvents }): Promise<I2vOutcome> {
+export async function runI2v(o: { videoId: number; dir: string; jobs: (ClipJob & { file: string })[]; model?: ModelSpec; events?: I2vEvents }): Promise<I2vOutcome> {
   const started = await startI2v(o);
   if ("error" in started) return empty(started.error);
   return finishI2v({ session: started.session, dir: o.dir, deadline: started.session.startedAt + KERNEL_TIMEOUT_MINUTES * 60_000, events: o.events });

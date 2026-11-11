@@ -8,10 +8,11 @@ import { chapters, series, videos, type Chapter, type Series, type VideoMeta } f
 import { QuotaExhaustedError, textProvider } from "@/lib/ai";
 import { escapeHtml, notify, WEB_URL } from "@/lib/notify";
 import { drawImage, imagesReady } from "./images";
-import { duration, ffmpeg, filterPath, measureLufs, once, pool } from "./ffmpeg";
+import { duration, escText, ffmpeg, filterPath, measureLufs, once, pool } from "./ffmpeg";
 import { Tracker } from "./progress";
 import { buildClipSegment, newI2vRun, type I2vRun } from "./i2v";
-import { episodeMuxArgs, STILL_FPS, stillFrames, stillSegmentArgs, voiceGainDb } from "./still";
+import { sfxEvents, sfxImpactEvents, sfxTrackArgs } from "./sfx";
+import { episodeMuxArgs, SFX_GAIN, STILL_FPS, stillFrames, stillSegmentArgs, voiceGainDb } from "./still";
 import { cleanupParallax, prepareParallax } from "./parallax";
 import { PARALLAX_BUDGET, parallaxFilterGraph, parallaxInputArgs, parallaxMotionFor, parallaxWorkDir, planParallax, type ParallaxFiles } from "./parallax-plan";
 import { freshInsights, loadTrends, seoHints } from "@/lib/trends";
@@ -25,14 +26,14 @@ import { AI_NOTE, optimizeMeta } from "@/lib/seo-optimize";
 import { autoPublishEligible, publishToYoutube } from "./youtube";
 
 type ScenePrompt = Awaited<ReturnType<typeof scenePrompts>>[number];
-import { cuesForChunk, packChunks, sentences, toAss, type Cue } from "./text";
+import { cuesForChunk, packChunks, sentences, titleCardFilter, toAss, type Cue } from "./text";
 import { speak } from "./tts";
 
 // Đường dẫn tương đối (ffmpeg chạy ở gốc repo): đường dẫn tuyệt đối trên Windows có "C:" làm vỡ cú pháp filter của drawtext.
 const FONT_DIR = "pipeline/fonts";
-const FONT = `${FONT_DIR}/BeVietnamPro-Bold.ttf`;
+export const FONT = `${FONT_DIR}/BeVietnamPro-Bold.ttf`;
 /** Máy local thiếu libass/drawtext thì đặt BURN_TEXT=0 để test phần còn lại. */
-const BURN_TEXT = process.env.BURN_TEXT !== "0";
+export const BURN_TEXT = process.env.BURN_TEXT !== "0";
 const FPS = 30;
 /** Parallax 2.5D mặc định TẮT (bản zoompan 2× bị giật); bật bằng PARALLAX=1 khi đã có đường dựng sub-pixel mượt. */
 const PARALLAX_ENABLED = process.env.PARALLAX === "1";
@@ -91,15 +92,6 @@ export function splitScenes(cues: Cue[], n: number, total: number) {
 /** Lời đọc (các cue chạm khoảng [start, end]) — prompt cảnh bám đúng câu đang đọc. */
 export function cueTextBetween(cues: Cue[], start: number, end: number) {
   return cues.filter((c) => c.start < end && c.end > start).map((c) => c.text).join(" ");
-}
-
-/**
- * Cỡ chữ title card vừa khung: mặc định w/22, dòng dài thì thu nhỏ để chiếm ≤ 90% chiều ngang
- * (chữ Việt có dấu rộng ~0.6 cỡ chữ). Trước đây tên chương dài bị cắt mất hai đầu ngay 5 giây đầu video.
- */
-export function titleCardFontSize(text: string, w: number) {
-  const longest = Math.max(1, ...text.split("\n").map((l) => [...l].length));
-  return Math.max(24, Math.min(Math.round(w / 22), Math.floor((w * 0.9) / (longest * 0.6))));
 }
 
 const FADE = 0.8;
@@ -189,6 +181,10 @@ export async function crossfadeGroup(clips: { file: string; seconds: number; fad
 export async function buildVideo(opts: {
   dir: string; name: string; narration: Narration; music?: string | null; prompts: ScenePrompt[]; scenes: { start: number; end: number }[];
   w: number; h: number; imgW: number; imgH: number; fontSize: number; marginV: number; titleCard?: string;
+  /** Giây bắt đầu hiện thẻ tên truyện (mặc định 0 = đầu video; intro đặt ở cuối để mở vào chương 1). */
+  titleCardStart?: number;
+  /** Track tiếng hiệu ứng dài bằng video (sfx.ts) — intro dùng để đập theo nhịp cắt. */
+  sfx?: string | null;
   /** Short: chữ lớn 2 giây đầu để giữ người lướt; thanh tiến độ mảnh trên đỉnh. */
   hook?: string; progressBar?: boolean;
   /** Mặc định NORMAL. */
@@ -274,18 +270,22 @@ export async function buildVideo(opts: {
   const grade = q.vignette ? "eq=contrast=1.05:saturation=1.08,vignette=PI/6" : "eq=contrast=1.05:saturation=1.08";
   const text = BURN_TEXT
     ? `,ass=${filterPath(ass)}:fontsdir=${filterPath(FONT_DIR)}` +
-      (opts.titleCard
-        ? `,drawtext=fontfile=${filterPath(FONT)}:text='${escText(opts.titleCard)}':fontsize=${titleCardFontSize(opts.titleCard, w)}:fontcolor=white:borderw=5:bordercolor=black@0.8:x=(w-tw)/2:y=(h-th)/2:alpha='if(lt(t,0.6),t/0.6,if(lt(t,4),1,max(0,(5-t))))':enable='lt(t,5)'`
-        : "") +
+      (opts.titleCard ? titleCardFilter({ text: opts.titleCard, w, font: FONT, start: opts.titleCardStart ?? 0 }) : "") +
       (opts.hook ? hookText(opts.hook, w) : "")
     : "";
   // Thanh tiến độ vàng mảnh trên đỉnh Short: người xem thấy còn bao lâu nên ít lướt qua.
   const bar = opts.progressBar ? `,drawbox=x=0:y=0:w='iw*t/${narration.seconds.toFixed(2)}':h=12:color=0xFFD23F@0.95:t=fill` : "";
-  on?.log?.("Trộn giọng đọc, nhạc nền, phụ đề");
+  on?.log?.(`Trộn giọng đọc, nhạc nền${opts.sfx ? ", tiếng hiệu ứng" : ""}, phụ đề`);
   const music = opts.music ?? (await ambientBed(dir));
+  // Tiếng hiệu ứng (intro): input thứ 4, trộn thẳng ở SFX_GAIN như bên chương tĩnh.
   const audio = [
     "-stream_loop", "-1", "-i", music,
-    "-filter_complex", `[2:a]volume=${music.endsWith("ambient.wav") ? 0.4 : 0.28}[m];[1:a][m]amix=inputs=2:duration=first:normalize=0[a]`,
+    ...(opts.sfx ? ["-i", opts.sfx] : []),
+    "-filter_complex",
+    `[2:a]volume=${music.endsWith("ambient.wav") ? 0.4 : 0.28}[m];` +
+      (opts.sfx
+        ? `[3:a]volume=${SFX_GAIN}[sx];[1:a][m][sx]amix=inputs=3:duration=first:normalize=0[a]`
+        : `[1:a][m]amix=inputs=2:duration=first:normalize=0[a]`),
     "-map", "0:v", "-map", "[a]",
   ];
   await once(out, (tmp) =>
@@ -347,7 +347,8 @@ export async function buildStillVideo(opts: {
     await drawScene(i);
     const file = path.join(dir, `${name}-seg-${String(i).padStart(3, "0")}.mp4`);
     const frames = stillFrames(sc.start, sc.end);
-    const segment = { img, frames, w, h, logoCrop: LOGO_CROP, zoom: sc.zoom };
+    // Cảnh đánh nhau: chớp trắng + đẩy ống kính + rung tắt dần (still.ts). Ảnh vẫn tĩnh nhưng máy quay có nhịp.
+    const segment = { img, frames, w, h, logoCrop: LOGO_CROP, zoom: sc.zoom, action: prompts[i].action };
     await once(file, async (tmp) => {
       const workDir = parallaxWorkDir(img);
       const files = parallaxPlan[i].seconds > 0 ? await prepareParallax({ img, workDir, w, h, logoCrop: LOGO_CROP }) : null;
@@ -367,6 +368,7 @@ export async function buildStillVideo(opts: {
     on?.shot?.();
     return file;
   });
+  let sfx: string | null = null;
   if (i2v) {
     // Kaggle chạy song song với dựng các đoạn tĩnh ở trên; giờ chờ nốt (có hạn) rồi thay đoạn của cảnh có clip.
     on?.log?.("Chờ clip động từ Kaggle");
@@ -379,13 +381,29 @@ export async function buildStillVideo(opts: {
     });
     await on?.clips?.(clips, failure);
   }
-  on?.log?.("Nối đoạn + trộn giọng, nhạc nền (video copy)");
+  // Tiếng hiệu ứng: cú "ầm" vào đúng lúc mở cảnh đánh nhau (khớp chớp trắng + rung khung) + hiệu ứng của clip động.
+  // Chạy cả khi KHÔNG có clip động — cảnh hành động lúc nào cũng có. Lỗi thì bỏ, tập vẫn có giọng + nhạc như cũ.
+  const events = [
+    ...sfxImpactEvents(scenes.map((sc, i) => ({ ...sc, action: prompts[i].action })), narration.seconds),
+    ...(i2v ? sfxEvents(i2v.clips, scenes, narration.seconds) : []),
+  ].sort((a, b) => a.at - b.at);
+  if (events.length) {
+    const file = path.join(dir, `${name}-sfx.wav`);
+    try {
+      await once(file, (tmp) => ffmpeg(sfxTrackArgs(events, narration.seconds, tmp)));
+      sfx = file;
+      on?.log?.(`Tiếng hiệu ứng: ${events.length} tiếng`);
+    } catch (e) {
+      on?.log?.(`⚠ Không dựng được tiếng hiệu ứng: ${e instanceof Error ? e.message.slice(0, 200) : e}`);
+    }
+  }
+  on?.log?.(`Nối đoạn + trộn giọng, nhạc nền${sfx ? ", tiếng hiệu ứng" : ""} (video copy)`);
   const list = path.join(dir, `${name}-segments.txt`);
   await writeFile(list, files.map((f) => `file '${f}'`).join("\n"));
   const music = opts.music ?? (await ambientBed(dir));
   const voiceGain = voiceGainDb(await measureLufs(narration.audio));
   await once(out, (tmp) =>
-    ffmpeg(episodeMuxArgs({ list, narration: narration.audio, music, seconds: narration.seconds, isAmbient: music.endsWith("ambient.wav"), voiceGain, out: tmp })),
+    ffmpeg(episodeMuxArgs({ list, narration: narration.audio, music, seconds: narration.seconds, isAmbient: music.endsWith("ambient.wav"), voiceGain, sfx, out: tmp })),
   );
   return { out };
 }
@@ -414,10 +432,6 @@ function hookText(hook: string, w: number) {
         `,drawtext=fontfile=${filterPath(FONT)}:text='${escText(line)}':fontsize=${size}:fontcolor=#FFD23F:borderw=${Math.round(size / 11)}:bordercolor=black:x=(w-tw)/2:y=${top}+${i * lineH}:alpha='if(lt(t,0.25),t/0.25,if(lt(t,1.9),1,max(0,(2.3-t)/0.4)))':enable='lt(t,2.3)'`,
     )
     .join("");
-}
-
-function escText(s: string) {
-  return s.replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "\u2019").replace(/%/g, "\\%");
 }
 
 /**
@@ -872,6 +886,10 @@ if (process.argv[1]?.endsWith("render.ts")) {
       return import("./clips").then((x) => x.makeSceneClips({ max: n, ignoreDailyCap: true }));
     }
     if (arg === "kaggle-test") return import("./i2v").then((x) => x.kaggleTest(process.argv[3] ?? "/tmp/i2v-in"));
+    // i2v-sweep = dò tham số clip động trong 1 lượt Kaggle rồi in bảng YDIF/SSIM (xem i2v-sweep.ts).
+    if (arg === "i2v-sweep") return import("./i2v").then((x) => x.i2vSweep(process.argv[3] ?? "/tmp/i2v-in"));
+    // i2v-model <ten> [dir] = tham do 1 model khac tren T4 (VRAM, giay/clip, YDIF/SSIM) truoc khi tich hop.
+    if (arg === "i2v-model") return import("./i2v").then((x) => x.i2vModelProbe(process.argv[3] ?? "cogvideox5b", process.argv[4] ?? "/tmp/i2v-in"));
     if (arg === "shorts") return import("./short-backfill").then((x) => x.backfillEpisodeShorts());
     if (arg.startsWith("redo:")) {
       // redo:<id>[:<ISO lịch>][:full]

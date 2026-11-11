@@ -9,8 +9,15 @@ const HEAD_CLIP_SHARE = 3;
 /** Clip 121 khung (8k+1 theo yêu cầu LTX-Video) ở 24 fps ≈ 5,04 giây. */
 // 97 frame ≈ 4s: khung đầu khóa cứng + khung cuối khóa nhẹ (CLIP_END_STRENGTH) giữ mặt; 73 frame + khóa cứng 2 đầu thì gần như đứng yên.
 export const CLIP_FRAMES = 97;
-/** Độ khóa ảnh gốc ở khung cuối: 1 = đứng yên, 0 = không khóa (trôi mặt/tư thế). */
-export const CLIP_END_STRENGTH = 0.5;
+/**
+ * Độ khóa ảnh gốc ở khung cuối: 1 = đứng yên, 0 = không khóa.
+ * 0,3 đo được từ `i2v-sweep` (Kaggle T4, LTX 2B distilled, ảnh cận mặt có hào quang):
+ *   khóa 0,5 → YDIF 2,01 · SSIM 0,816   |   khóa 0,3 → YDIF 2,75 · SSIM 0,802   |   khóa 0 → YDIF 7,60 · SSIM 0,599
+ * tức 0,3 cho thêm ~37% chuyển động mà gần như không trôi thêm.
+ * ĐỪNG hạ về 0: YDIF cao lúc đó là đo sự TRÔI, không phải diễn xuất — ngay giữa clip model đã bỏ cảnh
+ * (mất hào quang, mất mắt phát sáng, trời thành nắng nhạt), xem khung ở HANDOFF.
+ */
+export const CLIP_END_STRENGTH = 0.3;
 export const CLIP_SECONDS = CLIP_FRAMES / STILL_FPS;
 /** Kích thước LTX-Video phải chia hết cho 32; 768×448 gần 16:9 nhất — khi ghép sẽ scale/crop lên 1080p. */
 export const CLIP_WIDTH = 768;
@@ -46,12 +53,64 @@ export function pickClipScenes(scenes: SceneSpan[], limits: { min: number; max: 
   return [...chosen].sort((a, b) => a - b);
 }
 
-/** Một việc của kernel: ảnh trong dataset + prompt chuyển động tiếng Anh. */
-export type ClipJob = { id: number; image: string; prompt: string };
+/**
+ * Negative chung gửi kèm manifest (run.py chỉ dùng bản của mình khi manifest thiếu khoá này) — để chỗ duy nhất sửa là đây.
+ * "changing pose" nằm đây là lý do nhân vật đứng im; ô `action` của i2v-sweep.ts bỏ đúng từ đó ra để thử.
+ */
+export const MOTION_NEGATIVE =
+  "worst quality, inconsistent motion, blurry, jittery, distorted, morphing, deformed face, changing face, changing pose, new objects, extra people, photorealistic, live action, camera movement, zoom, shaky camera, static, frozen, still image, watermark, text";
 
-/** Nội dung `manifest.json` trong dataset — run.py đọc đúng các khoá này. */
-export function buildManifest(clips: ClipJob[], seed = 42) {
-  return { width: CLIP_WIDTH, height: CLIP_HEIGHT, frames: CLIP_FRAMES, fps: STILL_FPS, seed, endStrength: CLIP_END_STRENGTH, clips };
+/**
+ * Một việc của kernel: ảnh trong dataset + prompt chuyển động tiếng Anh.
+ * `endStrength` / `frames` / `negative` chỉ dùng khi dò tham số (i2v-sweep) — bỏ trống thì lấy mức chung của manifest.
+ */
+export type ClipJob = { id: number; image: string; prompt: string; endStrength?: number; frames?: number; negative?: string };
+
+export type DatasetFile = { name: string; path: string };
+
+/**
+ * File gửi lên dataset Kaggle: manifest trước, rồi mỗi tên ảnh ĐÚNG MỘT LẦN.
+ * Các ô dò tham số dùng chung một ảnh — gửi trùng thì Kaggle từ chối cả dataset ("Path must be unique").
+ */
+export function datasetFiles(manifest: DatasetFile, jobs: (ClipJob & { file: string })[]): DatasetFile[] {
+  const byName = new Map<string, DatasetFile>();
+  for (const j of jobs) if (!byName.has(j.image)) byName.set(j.image, { name: j.image, path: j.file });
+  return [manifest, ...byName.values()];
+}
+
+/** Việc ghi vào manifest: bỏ đường dẫn máy local (kernel không thấy được), GIỮ mọi tham số ghi đè của ô dò. */
+export function manifestJobs(jobs: (ClipJob & { file: string })[]): ClipJob[] {
+  return jobs.map((j) => {
+    const job = { ...j } as ClipJob & { file?: string };
+    delete job.file;
+    return job;
+  });
+}
+
+/**
+ * Nội dung `manifest.json` trong dataset — run.py đọc đúng các khoá này.
+ * `model` (chỉ dùng khi thăm dò, CLI `i2v-model`): có thì run.py CHỈ thử model đó, không rơi về danh sách mặc định,
+ * và kích thước/số khung lấy theo model vì mỗi model một ràng buộc (CogVideoX cố định 720×480, 49 khung).
+ */
+export function buildManifest(
+  clips: ClipJob[],
+  seed = 42,
+  model?: { width: number; height: number; frames: number; fps: number },
+  /** Chỗ kernel POST tiến độ về. Token nằm trong dataset Kaggle nên chỉ gửi khi thật sự cần. */
+  progress?: { url: string; token: string; slug: string; videoId: number },
+) {
+  return {
+    width: model?.width ?? CLIP_WIDTH,
+    height: model?.height ?? CLIP_HEIGHT,
+    frames: model?.frames ?? CLIP_FRAMES,
+    fps: model?.fps ?? STILL_FPS,
+    seed,
+    endStrength: CLIP_END_STRENGTH,
+    negative: MOTION_NEGATIVE,
+    ...(model ? { model } : {}),
+    ...(progress ? { progress } : {}),
+    clips,
+  };
 }
 
 /** Đuôi prompt chuyển động: chuyển động mượt, nhân vật không biến dạng, máy quay không rung. */
