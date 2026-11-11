@@ -11,7 +11,7 @@ import { drawImage, imagesReady } from "./images";
 import { duration, escText, ffmpeg, filterPath, measureLufs, once, pool } from "./ffmpeg";
 import { Tracker } from "./progress";
 import { buildClipSegment, newI2vRun, type I2vRun } from "./i2v";
-import { sfxEvents, sfxTrackArgs } from "./sfx";
+import { sfxEvents, sfxImpactEvents, sfxTrackArgs } from "./sfx";
 import { episodeMuxArgs, SFX_GAIN, STILL_FPS, stillFrames, stillSegmentArgs, voiceGainDb } from "./still";
 import { cleanupParallax, prepareParallax } from "./parallax";
 import { PARALLAX_BUDGET, parallaxFilterGraph, parallaxInputArgs, parallaxMotionFor, parallaxWorkDir, planParallax, type ParallaxFiles } from "./parallax-plan";
@@ -347,7 +347,8 @@ export async function buildStillVideo(opts: {
     await drawScene(i);
     const file = path.join(dir, `${name}-seg-${String(i).padStart(3, "0")}.mp4`);
     const frames = stillFrames(sc.start, sc.end);
-    const segment = { img, frames, w, h, logoCrop: LOGO_CROP, zoom: sc.zoom };
+    // Cảnh đánh nhau: chớp trắng + đẩy ống kính + rung tắt dần (still.ts). Ảnh vẫn tĩnh nhưng máy quay có nhịp.
+    const segment = { img, frames, w, h, logoCrop: LOGO_CROP, zoom: sc.zoom, action: prompts[i].action };
     await once(file, async (tmp) => {
       const workDir = parallaxWorkDir(img);
       const files = parallaxPlan[i].seconds > 0 ? await prepareParallax({ img, workDir, w, h, logoCrop: LOGO_CROP }) : null;
@@ -379,17 +380,21 @@ export async function buildStillVideo(opts: {
       files[scene] = seg;
     });
     await on?.clips?.(clips, failure);
-    // Tiếng hiệu ứng ("ầm ầm") đúng mốc từng clip, tổng hợp bằng lavfi. Lỗi thì bỏ, tập vẫn có giọng + nhạc như cũ.
-    const events = sfxEvents(i2v.clips, scenes, narration.seconds);
-    if (events.length) {
-      const file = path.join(dir, `${name}-sfx.wav`);
-      try {
-        await once(file, (tmp) => ffmpeg(sfxTrackArgs(events, narration.seconds, tmp)));
-        sfx = file;
-        on?.log?.(`Tiếng hiệu ứng: ${events.length} tiếng cho ${clips.size} clip`);
-      } catch (e) {
-        on?.log?.(`⚠ Không dựng được tiếng hiệu ứng: ${e instanceof Error ? e.message.slice(0, 200) : e}`);
-      }
+  }
+  // Tiếng hiệu ứng: cú "ầm" vào đúng lúc mở cảnh đánh nhau (khớp chớp trắng + rung khung) + hiệu ứng của clip động.
+  // Chạy cả khi KHÔNG có clip động — cảnh hành động lúc nào cũng có. Lỗi thì bỏ, tập vẫn có giọng + nhạc như cũ.
+  const events = [
+    ...sfxImpactEvents(scenes.map((sc, i) => ({ ...sc, action: prompts[i].action })), narration.seconds),
+    ...(i2v ? sfxEvents(i2v.clips, scenes, narration.seconds) : []),
+  ].sort((a, b) => a.at - b.at);
+  if (events.length) {
+    const file = path.join(dir, `${name}-sfx.wav`);
+    try {
+      await once(file, (tmp) => ffmpeg(sfxTrackArgs(events, narration.seconds, tmp)));
+      sfx = file;
+      on?.log?.(`Tiếng hiệu ứng: ${events.length} tiếng`);
+    } catch (e) {
+      on?.log?.(`⚠ Không dựng được tiếng hiệu ứng: ${e instanceof Error ? e.message.slice(0, 200) : e}`);
     }
   }
   on?.log?.(`Nối đoạn + trộn giọng, nhạc nền${sfx ? ", tiếng hiệu ứng" : ""} (video copy)`);

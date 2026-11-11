@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CLIP_FRAMES } from "./i2v-plan";
-import { SFX_KINDS, SFX_SECONDS, SFX_TRIM_DB, sfxCutEvents, sfxEvents, sfxKinds, sfxSource, sfxTrackArgs } from "./sfx";
+import { SFX_KINDS, SFX_SECONDS, SFX_TRIM_DB, sfxCutEvents, sfxEvents, sfxImpactEvents, sfxKinds, sfxSource, sfxTrackArgs } from "./sfx";
 import { SFX_GAIN, STILL_FPS } from "./still";
 
 /** Cảnh dài 60 giây liên tiếp như chương thật (1 ảnh/60 giây). */
@@ -163,5 +163,29 @@ describe("SFX_GAIN", () => {
   it("không vượt 1 — trên mức đó cả tập bị vỡ đỉnh", () => {
     expect(SFX_GAIN).toBeGreaterThan(0);
     expect(SFX_GAIN).toBeLessThanOrEqual(1);
+  });
+});
+
+describe("sfxImpactEvents (tiếng va chạm cho cảnh đánh nhau)", () => {
+  const scenes = [
+    { start: 0, end: 60 },
+    { start: 60, end: 120, action: true },
+    { start: 120, end: 180 },
+    { start: 180, end: 240, action: true },
+  ];
+
+  it("chỉ cảnh có cờ action mới có tiếng, đúng lúc vào cảnh", () => {
+    const got = sfxImpactEvents(scenes, 300);
+    expect(got).toHaveLength(2);
+    expect(got.map((e) => e.at)).toEqual([60, 180]);
+  });
+  it("là tiếng đập mạnh, không phải tiếng gió", () => {
+    expect(sfxImpactEvents(scenes, 300).every((e) => e.kind === "boom" || e.kind === "thunder")).toBe(true);
+  });
+  it("không có cảnh action thì im", () => {
+    expect(sfxImpactEvents([{ start: 0, end: 60 }], 300)).toEqual([]);
+  });
+  it("bỏ mốc ngoài chương", () => {
+    expect(sfxImpactEvents(scenes, 100).map((e) => e.at)).toEqual([60]);
   });
 });

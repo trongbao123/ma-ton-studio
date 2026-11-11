@@ -11,6 +11,18 @@ export const STILL_FADE_SECONDS = 0.5;
 const ZOOM_FADE_SECONDS = 0.25;
 /** Phóng to tối đa trong 1 đoạn zoom (10%). */
 const ZOOM_AMOUNT = 0.1;
+/**
+ * Cảnh hành động — nhịp dựng kiểu phim, bù cho việc ảnh đứng yên:
+ * chớp trắng ở cú cắt, đẩy ống kính vào mạnh hơn, rung khung rồi tắt dần.
+ * Nhân vật không cử động được (đã đo: GPU free không làm nổi), nên cảm giác "đánh nhau" phải đến từ máy quay.
+ */
+const ACTION_ZOOM_AMOUNT = 0.22;
+/** Chớp trắng dài bao lâu ở đầu cảnh. */
+const ACTION_FLASH_SECONDS = 0.12;
+/** Rung trong ngần này giây rồi hết hẳn (rung suốt cảnh thì chóng mặt, không phải điện ảnh). */
+const ACTION_SHAKE_SECONDS = 0.55;
+/** Biên độ rung tính theo điểm ảnh của khung 1080p. */
+const ACTION_SHAKE_PX = 14;
 const STILL_CRF = "23";
 const STILL_PRESET = "veryfast";
 /** Khung hình khoá mỗi 5 giây — đủ cho YouTube và cho tua. */
@@ -55,7 +67,7 @@ const segmentEncodeArgs = (o: { out: string; fps: number; still: boolean }) => [
  * Ảnh → đoạn video tĩnh `frames` khung hình, 1920×1080 (scale/crop một lần), mờ vào/ra. `logoCrop` là chuỗi filter cắt logo (có dấu phẩy cuối) hoặc rỗng.
  * Có `parallax` thì dựng 3 lớp theo độ sâu trượt khác tốc độ (thay cho zoompan/ảnh tĩnh trong `parallax.motionFrames` khung đầu).
  */
-export function stillSegmentArgs(o: { img: string; out: string; frames: number; w: number; h: number; logoCrop?: string; fps?: number; zoom?: boolean; parallax?: StillParallax }) {
+export function stillSegmentArgs(o: { img: string; out: string; frames: number; w: number; h: number; logoCrop?: string; fps?: number; zoom?: boolean; action?: boolean; parallax?: StillParallax }) {
   const fps = o.fps ?? STILL_FPS;
   const seconds = o.frames / fps;
   const fade = Math.min(o.zoom ? ZOOM_FADE_SECONDS : STILL_FADE_SECONDS, seconds / 2);
@@ -67,20 +79,37 @@ export function stillSegmentArgs(o: { img: string; out: string; frames: number; 
       ...segmentEncodeArgs({ out: o.out, fps, still: false }),
     ];
   }
+  // `action`: cảnh đánh nhau — đẩy ống kính mạnh + rung tắt dần + chớp trắng ở cú cắt.
   // `zoom`: 2 phút đầu của chương — zoom chậm vào giữa ảnh (zoompan, dựng từ ảnh nền 2× để không giật điểm ảnh); phần sau vẫn ảnh tĩnh.
-  const motion = o.zoom
+  const zoomAmount = o.action ? ACTION_ZOOM_AMOUNT : ZOOM_AMOUNT;
+  // Cảnh hành động xuất khung RỘNG HƠN đích (dư ACTION_SHAKE_PX mỗi bên) để bước rung còn điểm ảnh thật mà dịch.
+  // Đừng thay bằng pad: pad chèn viền ĐEN, rung đẩy khung sang là lộ vệt đen ở mép (đã dính một lần, xem khung mẫu).
+  const outW = o.action ? o.w + ACTION_SHAKE_PX * 2 : o.w;
+  const outH = o.action ? o.h + ACTION_SHAKE_PX * 2 : o.h;
+  const motion =
+    o.action || o.zoom
+      ? [
+          `scale=${o.w * 2}:${o.h * 2}:flags=bicubic`,
+          `zoompan=z='1+${zoomAmount}*on/${o.frames}':x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2':d=${o.frames}:s=${outW}x${outH}:fps=${fps}`,
+          "format=yuv420p",
+        ]
+      : ["format=yuv420p", "loop=loop=-1:size=1:start=0"];
+  // Rung: cắt lệch tâm theo sin, biên độ tắt dần về 0 trong ACTION_SHAKE_SECONDS rồi đứng yên hẳn.
+  const decay = `max(0,1-t/${ACTION_SHAKE_SECONDS})`;
+  const shake = o.action
     ? [
-        `scale=${o.w * 2}:${o.h * 2}:flags=bicubic`,
-        `zoompan=z='1+${ZOOM_AMOUNT}*on/${o.frames}':x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2':d=${o.frames}:s=${o.w}x${o.h}:fps=${fps}`,
-        "format=yuv420p",
+        `crop=${o.w}:${o.h}:'${ACTION_SHAKE_PX}+if(lt(t,${ACTION_SHAKE_SECONDS}),${ACTION_SHAKE_PX}*${decay}*sin(t*47),0)':'${ACTION_SHAKE_PX}+if(lt(t,${ACTION_SHAKE_SECONDS}),${ACTION_SHAKE_PX}*${decay}*sin(t*61),0)'`,
       ]
-    : ["format=yuv420p", "loop=loop=-1:size=1:start=0"];
+    : [];
+  const flash = o.action ? [`fade=t=in:st=0:d=${ACTION_FLASH_SECONDS}:color=white`] : [];
   const vf = [
     `${o.logoCrop ?? ""}scale=${o.w}:${o.h}:force_original_aspect_ratio=increase:flags=bicubic`,
     `crop=${o.w}:${o.h}:(iw-ow)/2:(ih-oh)*0.3`,
     // Nhân khung đã scale/crop (1 khung) thay vì `-loop 1` bắt scale lại từng khung: đo local ≈ -18% thời gian đoạn, ra cùng file.
     ...motion,
-    ...fadeFilters(fade, seconds),
+    ...shake,
+    // Cảnh hành động: chớp trắng thay cho mờ vào từ đen; vẫn mờ ra ở cuối để nối đoạn như cũ.
+    ...(o.action ? [...flash, `fade=t=out:st=${(seconds - fade).toFixed(3)}:d=${fade}`] : fadeFilters(fade, seconds)),
   ].join(",");
   return [
     "-framerate", String(fps), "-i", o.img, "-frames:v", String(o.frames),

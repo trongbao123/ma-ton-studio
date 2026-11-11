@@ -61,6 +61,18 @@ export function sfxEvents(
  */
 export const SFX_TRIM_DB: Record<SfxKind, number> = { thunder: 1.5, boom: 7.9, energy: 4.2, whoosh: -1.5, rumble: -1 };
 
+/**
+ * Tiếng va chạm vào đúng lúc mở cảnh ĐÁNH NHAU (cờ `action`), khớp với chớp trắng + rung khung của
+ * stillSegmentArgs. Nhân vật trong ảnh đứng yên, nên cú "ầm" đúng nhịp là thứ tạo cảm giác va chạm.
+ */
+export function sfxImpactEvents(scenes: readonly { start: number; end: number; action?: boolean }[], seconds: number): SfxEvent[] {
+  return scenes
+    .map((sc, i) => ({ sc, i }))
+    .filter(({ sc }) => sc.action)
+    .map(({ sc, i }) => ({ kind: (i % 2 ? "thunder" : "boom") as SfxKind, at: sc.start }))
+    .filter((e) => e.at < seconds);
+}
+
 /** Vòng loại tiếng cho nhịp cắt của intro: đập mạnh xen tiếng gió, không lặp 2 cú giống nhau liền nhau. */
 const CUT_CYCLE: SfxKind[] = ["boom", "whoosh", "thunder", "energy"];
 

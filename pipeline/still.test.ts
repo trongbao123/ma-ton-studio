@@ -166,3 +166,53 @@ describe("stillSegmentArgs + parallax", () => {
     expect(g).not.toContain("tpad");
   });
 });
+
+describe("stillSegmentArgs · cảnh hành động", () => {
+  const base = { img: "a.jpg", out: "o.mp4", frames: 24 * 8, w: 1920, h: 1080 };
+  const vfOf = (o: Parameters<typeof stillSegmentArgs>[0]) => {
+    const a = stillSegmentArgs(o);
+    const i = a.indexOf("-vf");
+    return i >= 0 ? a[i + 1] : a[a.indexOf("-filter_complex") + 1];
+  };
+
+  it("chớp trắng ở cú cắt — fade vào TỪ MÀU TRẮNG, không phải từ đen như cảnh thường", () => {
+    expect(vfOf({ ...base, action: true })).toContain("color=white");
+    expect(vfOf(base)).not.toContain("color=white");
+  });
+
+  it("đẩy ống kính vào nhanh hơn hẳn cảnh thường", () => {
+    const act = vfOf({ ...base, action: true });
+    const calm = vfOf({ ...base, zoom: true });
+    const amount = (s: string) => Number(s.match(/z='1\+([\d.]+)\*on/)?.[1] ?? 0);
+    expect(amount(act)).toBeGreaterThan(amount(calm));
+  });
+
+  it("rung KHÔNG được lộ viền đen — phải cắt từ khung rộng hơn, không phải chèn pad đen rồi dịch", () => {
+    const vf = vfOf({ ...base, action: true });
+    expect(vf).not.toContain("pad=");
+    // zoompan phải xuất khung RỘNG HƠN đích để còn dư điểm ảnh mà dịch.
+    const s = vf.match(/zoompan=[^,]*:s=(\d+)x(\d+)/);
+    expect(s, "thiếu s= trong zoompan").toBeTruthy();
+    expect(Number(s![1])).toBeGreaterThan(base.w);
+    expect(Number(s![2])).toBeGreaterThan(base.h);
+  });
+
+  it("rung khung lúc va chạm rồi đứng yên, không rung suốt cảnh", () => {
+    const vf = vfOf({ ...base, action: true });
+    expect(vf).toMatch(/crop=/);
+    // Biên độ rung tắt dần theo t: phải có điều kiện thời gian, không rung đều mãi.
+    expect(vf).toMatch(/lt\(t,[\d.]+\)/);
+  });
+
+  it("vẫn ra đúng số khung và vẫn mờ ra ở cuối để nối đoạn", () => {
+    const a = stillSegmentArgs({ ...base, action: true });
+    expect(a[a.indexOf("-frames:v") + 1]).toBe(String(base.frames));
+    expect(vfOf({ ...base, action: true })).toContain("fade=t=out");
+  });
+
+  it("cảnh thường không đổi gì — không rung, không chớp", () => {
+    const vf = vfOf(base);
+    expect(vf).not.toContain("color=white");
+    expect(vf).not.toMatch(/sin\(/);
+  });
+});
