@@ -12,10 +12,13 @@ runs:
           command -v ffmpeg >/dev/null && command -v ffprobe >/dev/null || return 1
           local filters
           filters=$(ffmpeg -hide_banner -filters 2>/dev/null)
+          # Dùng here-string thay pipe: grep -q thoát sớm làm echo dính SIGPIPE → pipefail báo lỗi trên runner GitHub.
           for f in ass drawtext zoompan xfade loudnorm sidechaincompress ebur128 amix alimiter; do
-            echo "$filters" | grep -qE "^ [.A-Z|]+ $f " || { echo "ffmpeg thiếu bộ lọc $f"; return 1; }
+            grep -qE "^ [.A-Z|]+ $f " <<<"$filters" || { echo "ffmpeg thiếu bộ lọc $f"; return 1; }
           done
-          ffmpeg -hide_banner -encoders 2>/dev/null | grep -q libx264 || { echo "ffmpeg thiếu libx264"; return 1; }
+          local encoders
+          encoders=$(ffmpeg -hide_banner -encoders 2>/dev/null)
+          grep -q libx264 <<<"$encoders" || { echo "ffmpeg thiếu libx264"; return 1; }
         }
         if check; then
           echo "Dùng ffmpeg có sẵn: $(ffmpeg -hide_banner -version | head -1)"
