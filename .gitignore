@@ -47,3 +47,4 @@ AUTO_HANDOFF.md
 
 .vercel
 .env*
+.cache/

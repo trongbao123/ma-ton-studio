@@ -11,7 +11,9 @@ import { drawImage, imagesReady } from "./images";
 import { duration, ffmpeg, filterPath, measureLufs, once, pool } from "./ffmpeg";
 import { Tracker } from "./progress";
 import { buildClipSegment, newI2vRun, type I2vRun } from "./i2v";
-import { episodeMuxArgs, stillFrames, stillSegmentArgs, voiceGainDb } from "./still";
+import { episodeMuxArgs, STILL_FPS, stillFrames, stillSegmentArgs, voiceGainDb } from "./still";
+import { cleanupParallax, prepareParallax } from "./parallax";
+import { PARALLAX_BUDGET, parallaxFilterGraph, parallaxInputArgs, parallaxMotionFor, parallaxWorkDir, planParallax, type ParallaxFiles } from "./parallax-plan";
 import { freshInsights, loadTrends, seoHints } from "@/lib/trends";
 import { characterLookFor, metaRequest, scenePrompts, scenesRequest, videoMeta } from "./prompts";
 import { imageCount, planChapterScenes, shortSceneCount } from "./episode-plan";
@@ -32,6 +34,8 @@ const FONT = `${FONT_DIR}/BeVietnamPro-Bold.ttf`;
 /** Máy local thiếu libass/drawtext thì đặt BURN_TEXT=0 để test phần còn lại. */
 const BURN_TEXT = process.env.BURN_TEXT !== "0";
 const FPS = 30;
+/** Tắt parallax 2.5D (đặt PARALLAX=0): dựng như trước khi có tính năng. */
+const PARALLAX_ENABLED = process.env.PARALLAX !== "0";
 
 /** Mức chất lượng dựng của video chương thường và Short (chương nội bộ của chế độ tập dùng `buildStillVideo`, xem still.ts). */
 export type Quality = { scale: number; sharpen: boolean; fps: number; vignette: boolean; crf: number; tag: string };
@@ -134,9 +138,26 @@ const ZOOM = 0.06;
  * zoompan làm tròn toạ độ theo pixel nguồn, nguồn 4K thì mỗi bước chỉ còn ½ pixel ở 1080p → hết rung.
  * Cắt 7% đáy để bỏ logo Pollinations.
  */
-export async function shot(img: string, out: string, seconds: number, w: number, h: number, motion: Motion, q: Quality = NORMAL) {
+export async function shot(img: string, out: string, seconds: number, w: number, h: number, motion: Motion, q: Quality = NORMAL, parallax?: { files: ParallaxFiles; index: number }) {
   const frames = Math.max(1, Math.round(seconds * q.fps));
   const up = q.scale;
+  // Parallax 2.5D (3 lớp theo độ sâu) thay cho zoompan; lỗi dựng đồ thị → rơi về zoompan bên dưới.
+  if (parallax) {
+    const graph = parallaxFilterGraph({
+      w, h, frames, motionFrames: frames, fps: q.fps, motion: parallaxMotionFor(parallax.index), logoCrop: LOGO_CROP,
+      canvasExtra: q.sharpen ? "unsharp=5:5:1.0" : undefined,
+    });
+    try {
+      await ffmpeg([
+        "-i", img, ...parallaxInputArgs(parallax.files), "-frames:v", String(frames),
+        "-filter_complex", graph, "-map", "[v]",
+        "-c:v", "libx264", "-preset", "superfast", "-crf", "18", "-r", String(q.fps), out,
+      ]);
+      return;
+    } catch (e) {
+      console.warn("⚠ Parallax lỗi, dùng zoompan:", e instanceof Error ? e.message.slice(0, 200) : e);
+    }
+  }
   const { z, x, y } = motionExpr(motion, frames);
   await ffmpeg([
     "-loop", "1", "-i", img, "-t", seconds.toFixed(3),
@@ -183,7 +204,7 @@ export async function buildVideo(opts: {
     const n = Math.max(1, Math.round((sc.end - sc.start) / (action ? ACTION_SHOT_SECONDS : SHOT_SECONDS)));
     const len = (sc.end - sc.start) / n;
     return Array.from({ length: n }, (_, k) => ({
-      image: i, seconds: len, action,
+      image: i, k, seconds: len, action,
       motion: MOTIONS[(i * 2 + k) % MOTIONS.length],
       fade: FADE,
       fx: "fade",
@@ -205,19 +226,28 @@ export async function buildVideo(opts: {
   // Dọn file dựng kiểu cũ (trước khi có shot2/group2/silent2) để cache .render không phình.
   const old = new RegExp(`^${name}-(shot-\\d+|group-\\d+|silent)\\.mp4$`);
   for (const f of await readdir(dir).catch(() => [] as string[])) if (old.test(f)) await rm(path.join(dir, f), { force: true });
+  // Parallax: mỗi ảnh chuẩn bị mặt nạ 1 lần dù nhiều shot dùng chung; null (lỗi/tắt) → shot dùng zoompan.
+  const prepared = new Map<number, Promise<ParallaxFiles | null>>();
+  const parallaxFor = (i: number, img: string) => {
+    if (!PARALLAX_ENABLED) return Promise.resolve(null);
+    if (!prepared.has(i)) prepared.set(i, prepareParallax({ img, workDir: parallaxWorkDir(img), w, h, logoCrop: LOGO_CROP }));
+    return prepared.get(i)!;
+  };
   const files = await pool(shots, 4, async (sh, j) => {
     const img = path.join(dir, `${name}-img-${sh.image}.jpg`);
     await draw(sh.image, img);
+    const px = await parallaxFor(sh.image, img);
     // Cảnh nào sẽ crossfade với cảnh sau thì kéo dài thêm FADE để tổng thời lượng vẫn khớp giọng đọc.
     const fadesNext = j % GROUP !== GROUP - 1 && j !== shots.length - 1;
     const seconds = sh.seconds + (fadesNext ? shots[j + 1].fade : 0);
     // "shot2": đổi tên khi đổi cách mã hoá để không trộn file cũ; once() → job bị huỷ chạy lại thì bỏ qua cảnh đã dựng.
     const file = path.join(dir, `${name}-shot${q.tag}-${String(j).padStart(3, "0")}.mp4`);
-    await once(file, (tmp) => shot(img, tmp, seconds, w, h, sh.motion, q));
+    await once(file, (tmp) => shot(img, tmp, seconds, w, h, sh.motion, q, px ? { files: px, index: sh.image + sh.k } : undefined));
     if (j % 10 === 0) console.log(`  ${name} cảnh ${j + 1}/${shots.length}`);
     on?.shot?.();
     return { file, seconds, fade: sh.fade, fx: sh.fx };
   });
+  await Promise.all([...new Set(shots.map((sh) => sh.image))].map((i) => cleanupParallax(parallaxWorkDir(path.join(dir, `${name}-img-${i}.jpg`)))));
   on?.log?.("Ghép các cảnh (crossfade)");
 
   const groups: string[] = [];
@@ -310,11 +340,30 @@ export async function buildStillVideo(opts: {
     await pool(i2v.picks, 3, drawScene);
     i2v.begin(imgOf);
   }
+  // Ảnh nào áp parallax và bao nhiêu giây: 2 phút đầu đủ đoạn; phần sau theo ngân sách (cảnh action trước, rồi vài giây đầu mỗi ảnh).
+  const parallaxPlan = PARALLAX_ENABLED ? planParallax(scenes.map((sc, i) => ({ ...sc, action: prompts[i].action })), PARALLAX_BUDGET) : scenes.map(() => ({ seconds: 0 }));
   const files = await pool(scenes, 3, async (sc, i) => {
     const img = imgOf(i);
     await drawScene(i);
     const file = path.join(dir, `${name}-seg-${String(i).padStart(3, "0")}.mp4`);
-    await once(file, (tmp) => ffmpeg(stillSegmentArgs({ img, out: tmp, frames: stillFrames(sc.start, sc.end), w, h, logoCrop: LOGO_CROP, zoom: sc.zoom })));
+    const frames = stillFrames(sc.start, sc.end);
+    const segment = { img, frames, w, h, logoCrop: LOGO_CROP, zoom: sc.zoom };
+    await once(file, async (tmp) => {
+      const workDir = parallaxWorkDir(img);
+      const files = parallaxPlan[i].seconds > 0 ? await prepareParallax({ img, workDir, w, h, logoCrop: LOGO_CROP }) : null;
+      try {
+        if (files) {
+          const parallax = { files, motion: parallaxMotionFor(i), motionFrames: Math.round(parallaxPlan[i].seconds * STILL_FPS) };
+          // Lỗi ffmpeg ở đồ thị parallax cũng không làm hỏng render: dựng lại bằng zoompan/tĩnh như cũ.
+          await ffmpeg(stillSegmentArgs({ ...segment, out: tmp, parallax })).catch((e) => {
+            console.warn(`⚠ Parallax ảnh ${i} lỗi, dùng dựng cũ:`, e instanceof Error ? e.message.slice(0, 200) : e);
+            return ffmpeg(stillSegmentArgs({ ...segment, out: tmp }));
+          });
+        } else await ffmpeg(stillSegmentArgs({ ...segment, out: tmp }));
+      } finally {
+        if (files) await cleanupParallax(workDir);
+      }
+    });
     on?.shot?.();
     return file;
   });

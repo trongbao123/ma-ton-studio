@@ -20,6 +20,11 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 24, cache: pnpm }
       - uses: ./.github/actions/setup-ffmpeg
+      # Mô hình độ sâu cho parallax 2.5D (Depth Anything V2 Small int8, ~27MB): tải 1 lần rồi cache; thiếu/lỗi thì dựng zoompan như cũ.
+      - uses: actions/cache@v4
+        with:
+          path: .cache/depth
+          key: depth-anything-v2-small-int8
       - run: pnpm install --frozen-lockfile
       # AI dùng gói Pro/Plus (Claude Code, Codex, Gemini CLI) — không tốn credit API; đăng nhập dán ở Cài đặt AI.
       # Cài lỗi thì vẫn chạy tiếp bằng API như cũ.
