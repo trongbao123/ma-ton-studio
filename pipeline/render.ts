@@ -34,8 +34,8 @@ const FONT = `${FONT_DIR}/BeVietnamPro-Bold.ttf`;
 /** Máy local thiếu libass/drawtext thì đặt BURN_TEXT=0 để test phần còn lại. */
 const BURN_TEXT = process.env.BURN_TEXT !== "0";
 const FPS = 30;
-/** Tắt parallax 2.5D (đặt PARALLAX=0): dựng như trước khi có tính năng. */
-const PARALLAX_ENABLED = process.env.PARALLAX !== "0";
+/** Parallax 2.5D mặc định TẮT (bản zoompan 2× bị giật); bật bằng PARALLAX=1 khi đã có đường dựng sub-pixel mượt. */
+const PARALLAX_ENABLED = process.env.PARALLAX === "1";
 
 /** Mức chất lượng dựng của video chương thường và Short (chương nội bộ của chế độ tập dùng `buildStillVideo`, xem still.ts). */
 export type Quality = { scale: number; sharpen: boolean; fps: number; vignette: boolean; crf: number; tag: string };
