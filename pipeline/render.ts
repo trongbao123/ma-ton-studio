@@ -783,6 +783,10 @@ if (process.argv[1]?.endsWith("render.ts")) {
       const iso = rest.replace(/:?full$/, "");
       return import("./redo-episode").then((x) => x.redoEpisode(Number(id), iso ? new Date(iso) : undefined, full));
     }
+    if (arg.startsWith("promote:")) {
+      const [, ep, ids] = arg.split(":");
+      return import("./promote").then((x) => x.promoteEpisode(Number(ep), ids.split(",").map(Number)));
+    }
     if (arg.startsWith("thumbs:")) return import("./rethumb").then((x) => x.rethumb(Number(arg.slice(7))));
     if (arg === "trends") return import("./trends").then((x) => x.scanTrends());
     if (arg.startsWith("compile:")) return import("./compile").then((x) => x.compileSeries(Number(arg.slice(8))));

@@ -69,6 +69,7 @@ export const YT_COSTS = {
   videoUpdate: 50,
   playlistItemInsert: 50,
   playlistInsert: 50,
+  commentInsert: 50,
   playlistItemsList: 1,
   videosList: 1,
 } as const;
