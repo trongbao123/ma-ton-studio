@@ -72,7 +72,7 @@ describe("splitClipSegment / clipSegmentArgs", () => {
   it("đoạn ngắn hơn clip: chỉ phát clip, cắt theo đoạn", () => {
     expect(splitClipSegment(60, CLIP_FRAMES)).toEqual({ clipFrames: 60, stillFrames: 0, crossfadeFrames: 0 });
   });
-  it("đoạn dài hơn clip: clip rồi mờ chéo 1 giây sang ảnh tĩnh, tổng khớp đoạn", () => {
+  it("đoạn dài hơn clip: ảnh tĩnh rồi mờ chéo 1 giây sang clip ở cuối, tổng khớp đoạn", () => {
     const s = splitClipSegment(720, CLIP_FRAMES);
     expect(s.clipFrames).toBe(CLIP_FRAMES);
     expect(s.crossfadeFrames).toBe(24);
@@ -84,7 +84,8 @@ describe("splitClipSegment / clipSegmentArgs", () => {
     const g = a[a.indexOf("-filter_complex") + 1];
     expect(g).toContain("flags=lanczos");
     expect(g).toContain("xfade=transition=fade:duration=1.000");
-    expect(g).toContain("offset=2.042");
+    expect(g).toContain("[s][c]xfade");
+    expect(g).toContain("offset=26.958");
     expect(a[a.indexOf("-frames:v") + 1]).toBe("720");
     expect(a[a.indexOf("-video_track_timescale") + 1]).toBe("12288");
     expect(a.filter((x) => x === "-i")).toHaveLength(2);

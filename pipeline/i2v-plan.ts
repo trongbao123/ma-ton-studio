@@ -115,9 +115,9 @@ export const gpuMinutes = (seconds: number) => (seconds > 0 ? Math.max(1, Math.c
 export type ClipSegmentSplit = { clipFrames: number; stillFrames: number; crossfadeFrames: number };
 
 /**
- * Chia 1 đoạn `sceneFrames` khung: phát clip (tối đa `clipFrames`); đoạn dài hơn thì mờ chéo `crossfade` sang ảnh tĩnh
- * của chính ảnh đó cho phần còn lại. Đoạn ngắn hơn/bằng clip thì chỉ phát clip (cắt), không có phần tĩnh.
- * `stillFrames` đã gồm phần chồng mờ chéo.
+ * Chia 1 đoạn `sceneFrames` khung: ảnh tĩnh trước, mờ chéo `crossfade` sang clip, clip (tối đa `clipFrames`) chạy tới hết đoạn.
+ * Clip đặt CUỐI đoạn vì khung đầu clip ≈ ảnh gốc (nối liền), còn cuối clip trôi khỏi ảnh nhất thì bị mờ ra đen sang cảnh sau che.
+ * Đoạn ngắn hơn/bằng clip thì chỉ phát clip (cắt), không có phần tĩnh. `stillFrames` đã gồm phần chồng mờ chéo.
  */
 export function splitClipSegment(sceneFrames: number, clipFrames: number, fps = STILL_FPS, crossfade = CLIP_CROSSFADE_SECONDS): ClipSegmentSplit {
   if (sceneFrames <= clipFrames) return { clipFrames: sceneFrames, stillFrames: 0, crossfadeFrames: 0 };
@@ -126,7 +126,7 @@ export function splitClipSegment(sceneFrames: number, clipFrames: number, fps = 
 }
 
 /**
- * Đoạn video 1080p có clip động: clip → upscale lanczos; đoạn dài hơn clip thì mờ chéo sang ảnh tĩnh của chính ảnh đó;
+ * Đoạn video 1080p có clip động: đoạn dài hơn clip thì ảnh tĩnh trước rồi mờ chéo sang clip (upscale lanczos) ở cuối đoạn;
  * mờ vào/ra như đoạn tĩnh. Cùng thông số h264/24fps/timescale với `stillSegmentArgs` để nối concat copy.
  */
 export function clipSegmentArgs(o: { clip: string; img: string; out: string; frames: number; w: number; h: number; logoCrop?: string; fps?: number; clipFrames?: number }) {
@@ -145,9 +145,11 @@ export function clipSegmentArgs(o: { clip: string; img: string; out: string; fra
     return ["-i", o.clip, "-filter_complex", `${clipChain},${tail}[v]`, "-map", "[v]", "-frames:v", String(o.frames), ...encode];
   }
   const xf = split.crossfadeFrames / fps;
-  const offset = (split.clipFrames - split.crossfadeFrames) / fps;
-  const still = `[1:v]${o.logoCrop ?? ""}scale=${o.w}:${o.h}:force_original_aspect_ratio=increase:flags=bicubic,crop=${o.w}:${o.h}:(iw-ow)/2:(ih-oh)*0.3,setsar=1,format=yuv420p,fps=${fps}`;
-  const graph = `${clipChain}[c];${still}[s];[c][s]xfade=transition=fade:duration=${xf.toFixed(3)}:offset=${offset.toFixed(3)},${tail}[v]`;
+  const offset = (split.stillFrames - split.crossfadeFrames) / fps;
+  // Ảnh tĩnh cắt ĐÚNG khung clip (giữa ảnh, tỉ lệ CLIP_WIDTH:CLIP_HEIGHT như prepareClipImage) rồi phóng như clip → mờ chéo không xê dịch.
+  const aspect = `crop='min(iw,ih*${CLIP_WIDTH}/${CLIP_HEIGHT})':'min(ih,iw*${CLIP_HEIGHT}/${CLIP_WIDTH})'`;
+  const still = `[1:v]${o.logoCrop ?? ""}${aspect},${fit},fps=${fps},trim=end_frame=${split.stillFrames},setpts=PTS-STARTPTS`;
+  const graph = `${clipChain}[c];${still}[s];[s][c]xfade=transition=fade:duration=${xf.toFixed(3)}:offset=${offset.toFixed(3)},${tail}[v]`;
   return [
     "-i", o.clip,
     "-loop", "1", "-framerate", String(fps), "-t", (split.stillFrames / fps + 1).toFixed(3), "-i", o.img,

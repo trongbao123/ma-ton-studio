@@ -26,6 +26,8 @@ MODELS = [
         "file": "ltxv-2b-0.9.8-distilled.safetensors",
         "steps": 8,
         "guidance": 1.0,
+        # Lịch bước distilled theo docs diffusers (LTX 0.9.8 distilled).
+        "timesteps": [1000, 993, 987, 981, 975, 909, 725, 0.03],
     },
     {
         "name": "LTX-Video 0.9.5",
@@ -72,7 +74,8 @@ def check_env():
 
 
 def load_pipe(torch, spec):
-    from diffusers import LTXImageToVideoPipeline
+    # Condition pipeline (0.9.5+): khóa ảnh ở nhiều khung → ghim cả khung đầu lẫn cuối, nhân vật không trôi.
+    from diffusers import LTXConditionPipeline as Pipe
 
     dtype = torch.float16  # T4 không có bfloat16 phần cứng
     if spec["file"]:
@@ -86,9 +89,9 @@ def load_pipe(torch, spec):
         base = spec.get("textRepo", "Lightricks/LTX-Video")
         text_encoder = T5EncoderModel.from_pretrained(base, subfolder="text_encoder", torch_dtype=dtype)
         tokenizer = T5TokenizerFast.from_pretrained(base, subfolder="tokenizer")
-        pipe = LTXImageToVideoPipeline.from_single_file(path, text_encoder=text_encoder, tokenizer=tokenizer, torch_dtype=dtype)
+        pipe = Pipe.from_single_file(path, text_encoder=text_encoder, tokenizer=tokenizer, torch_dtype=dtype)
     else:
-        pipe = LTXImageToVideoPipeline.from_pretrained(spec["repo"], torch_dtype=dtype)
+        pipe = Pipe.from_pretrained(spec["repo"], torch_dtype=dtype)
     # T5-XXL + transformer không vừa 15 GiB cùng lúc: mỗi mô-đun lên GPU khi dùng rồi về CPU.
     pipe.enable_model_cpu_offload()
     pipe.vae.enable_tiling()
@@ -140,18 +143,24 @@ def main():
         try:
             img = Image.open(os.path.join(root, job["image"])).convert("RGB").resize((w, h), Image.LANCZOS)
             gen = torch.Generator("cuda").manual_seed(seed + job["id"])
+            from diffusers.pipelines.ltx.pipeline_ltx_condition import LTXVideoCondition
+
+            # Cùng 1 ảnh ở khung đầu và khung cuối: clip phải quay về đúng ảnh gốc → không trôi mặt/tư thế, nối liền ảnh tĩnh.
+            steps = {"timesteps": spec_used["timesteps"]} if spec_used.get("timesteps") else {"num_inference_steps": spec_used["steps"]}
             out = pipe(
-                image=img,
+                conditions=[LTXVideoCondition(image=img, frame_index=0), LTXVideoCondition(image=img, frame_index=frames - 1)],
                 prompt=job["prompt"],
                 negative_prompt=NEGATIVE,
                 width=w,
                 height=h,
                 num_frames=frames,
-                num_inference_steps=spec_used["steps"],
                 guidance_scale=spec_used["guidance"],
+                guidance_rescale=0.7,
                 decode_timestep=0.05,
                 decode_noise_scale=0.025,
+                image_cond_noise_scale=0.0,
                 generator=gen,
+                **steps,
             ).frames[0]
             if usable(out):
                 write_mp4(out, os.path.join(OUT, f"clip-{job['id']}.mp4"), fps)
