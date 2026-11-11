@@ -152,11 +152,35 @@ async function syncSnippets(infos: Record<string, YtInfo>): Promise<number> {
     const long = longId && infos[longId] ? { id: longId, info: infos[longId] } : null;
     const patch = youtubePatch({ meta: r.meta, publishAt: r.publishAt, youtubeVideoId: r.long }, long, r.short ? (infos[r.short] ?? null) : null);
     if (!patch) continue;
+    // Tiêu đề bị đổi tay trên YouTube (Studio / vidIQ extension) → chấm lại bằng vidIQ để web hiện đúng điểm thật thay vì "—".
+    const nm = patch.meta;
+    if (nm && nm.title !== r.meta.title) {
+      const score = await rescoreTitle(nm.title);
+      if (score != null) {
+        const options = [{ title: nm.title, score }, ...(nm.seo?.titleOptions ?? []).filter((x) => x.title !== nm.title)];
+        patch.meta = { ...nm, seo: { ...nm.seo, titleScore: score, titleOptions: options } };
+      }
+    }
     await db().update(videos).set({ ...patch, updatedAt: new Date() }).where(eq(videos.id, r.id));
     changed++;
   }
   if (changed) await saveSnapshot(META_SYNC_KEY, { at: Date.now() });
   return changed;
+}
+
+/** Điểm vidIQ cho 1 tiêu đề (~5 credit). Không có key / lỗi → null. */
+async function rescoreTitle(title: string): Promise<number | null> {
+  try {
+    const { loadSecrets } = await import("@/lib/secrets");
+    await loadSecrets();
+    if (!process.env.VIDIQ_API_KEY) return null;
+    const { scoreTitles, closeVidiq } = await import("../../pipeline/vidiq");
+    const [score] = (await scoreTitles([title])) ?? [null];
+    await closeVidiq().catch(() => {});
+    return score ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /** Kéo ngay bản trên YouTube của các id này về DB (vd trước Magic fill). Lỗi / chưa kết nối → bỏ qua. */
