@@ -58,17 +58,25 @@ ${scenes.map((t, i) => `${i + 1}. ${t.slice(0, 600)}`).join("\n\n")}`,
 }
 
 /** Một prompt ảnh (tiếng Anh) cho mỗi phân cảnh, theo đúng thứ tự. */
+/** Mỗi lượt AI viết tối đa ngần này prompt — nhiều hơn AI hay trả thiếu, ảnh bị lặp lại lệch cốt truyện. */
+const SCENE_BATCH = 20;
+
 export async function scenePrompts(characterLook: string, scenes: string[]) {
-  const { scenes: out } = await textProvider().generateJson({
-    ...scenesRequest(characterLook, scenes),
-    schema: z.object({ scenes: z.array(z.object({ prompt: z.string(), action: z.boolean() })) }),
-    temperature: 0.7,
-    tier: "cheap",
-    task: "scenes",
-  });
-  const pick = (i: number) => out[i] ?? out[i % Math.max(out.length, 1)];
+  const out: { prompt: string; action: boolean }[] = [];
+  for (let i = 0; i < scenes.length; i += SCENE_BATCH) {
+    const part = scenes.slice(i, i + SCENE_BATCH);
+    const { scenes: got } = await textProvider().generateJson({
+      ...scenesRequest(characterLook, part),
+      schema: z.object({ scenes: z.array(z.object({ prompt: z.string(), action: z.boolean() })) }),
+      temperature: 0.7,
+      tier: "cheap",
+      task: "scenes",
+    });
+    // Thiếu prompt cho cảnh nào thì dùng chính đoạn truyện của cảnh đó (đúng nội dung) thay vì lặp prompt cảnh khác.
+    part.forEach((text, k) => out.push(got[k] ?? { prompt: `${characterLook}. Scene: ${text.slice(0, 300)}`, action: false }));
+  }
   return scenes.map((_, i) => {
-    const sc = pick(i);
+    const sc = out[i];
     return {
       prompt: `${sc?.prompt ?? characterLook}, ${sc?.action ? "dynamic action shot, motion, glowing spiritual energy, sparks, " : ""}${ART_STYLE}`,
       action: Boolean(sc?.action),

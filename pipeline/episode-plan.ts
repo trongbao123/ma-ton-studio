@@ -11,9 +11,11 @@ export const EPISODE_BUFFER = 4;
 /** Kho chưa đủ thì được viết tới gấp mấy lần chỉ tiêu ngày để bù (6 chương/ngày ≈ 136 ảnh, vừa quota ảnh free). */
 export const CATCH_UP_FACTOR = 2;
 /** Ảnh tối đa mỗi video chương: 3 chương/ngày × 30 ≈ 90 ảnh, vừa quota ảnh free. */
-export const EPISODE_MAX_IMAGES = 30;
-/** Video chương nội bộ: 1 ảnh ~60 giây. */
-const EPISODE_IMAGE_SECONDS = 60;
+export const EPISODE_MAX_IMAGES = 80;
+/** Chương thường (đăng lẻ) giữ trần cũ. */
+const DEFAULT_MAX_IMAGES = 30;
+/** Video chương nội bộ: 1 ảnh ~30 giây (ảnh đổi theo diễn biến truyện). */
+const EPISODE_IMAGE_SECONDS = 30;
 /** Video chương thường: 1 ảnh ~25 giây, tối đa 30. */
 const DEFAULT_IMAGE_SECONDS = 25;
 const MIN_IMAGES = 6;
@@ -43,10 +45,10 @@ export function coldOpenSceneCount(seconds: number) {
   return Math.min(6, Math.max(3, Math.round(seconds / 7)));
 }
 
-/** Số ảnh cho video chương: nội bộ (tập) 1 ảnh/60 giây, tối đa 30; thường 1 ảnh/25 giây, tối đa 30. Luôn ≥ 6. */
+/** Số ảnh cho video chương: nội bộ (tập) 1 ảnh/30 giây, tối đa 80; thường 1 ảnh/25 giây, tối đa 30. Luôn ≥ 6. */
 export function imageCount(seconds: number, episode: boolean) {
   const per = episode ? EPISODE_IMAGE_SECONDS : DEFAULT_IMAGE_SECONDS;
-  return Math.min(EPISODE_MAX_IMAGES, Math.max(MIN_IMAGES, Math.round(seconds / per)));
+  return Math.min(episode ? EPISODE_MAX_IMAGES : DEFAULT_MAX_IMAGES, Math.max(MIN_IMAGES, Math.round(seconds / per)));
 }
 
 /**

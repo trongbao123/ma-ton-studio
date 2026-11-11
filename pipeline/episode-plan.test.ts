@@ -30,8 +30,9 @@ describe("chaptersToWrite", () => {
 });
 
 describe("imageCount", () => {
-  it("chương nội bộ 40 phút: chặn ở 30 ảnh", () => expect(imageCount(2400, true)).toBe(30));
-  it("chương nội bộ 20 phút: 1 ảnh/60 giây", () => expect(imageCount(1200, true)).toBe(20));
+  it("chương nội bộ 40 phút: 1 ảnh/30 giây = 80 ảnh", () => expect(imageCount(2400, true)).toBe(80));
+  it("chương nội bộ 20 phút: 40 ảnh", () => expect(imageCount(1200, true)).toBe(40));
+  it("chương nội bộ 60 phút: chặn ở 80 ảnh", () => expect(imageCount(3600, true)).toBe(80));
   it("tối thiểu 6 ảnh", () => expect(imageCount(60, true)).toBe(6));
   it("video thường vẫn 1 ảnh/25 giây", () => expect(imageCount(500, false)).toBe(20));
 });
