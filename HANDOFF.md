@@ -64,6 +64,21 @@ Chạy `i2v-sweep` thật (T4, LTX 2B distilled, ảnh `long-img-1.jpg` của vi
 3. **Nghe thử tiếng hiệu ứng bằng tai** — tôi mới cân bằng số đo (LUFS/đỉnh), chưa ai nghe. File mẫu: `pnpm exec tsx scripts/sfx-measure.mjs --mix` rồi mở `.cache/sfx-measure/mix-gain-1.wav`.
 4. **Đặt thẻ End Screen trong Studio** cho tập đầu tiên có màn kết, theo toạ độ `OUTRO_CARD_SLOTS`.
 
+## NGHI VẤN HẾT PHÚT ACTIONS — cần anh xác nhận
+
+Lượt daily theo lịch **13:17 UTC ngày 11/11 không hề chạy** (tới 17:54 UTC vẫn không có). Đã loại trừ:
+workflow vẫn `active` (không bị tắt vì repo ngủ), cron `17 1,13 * * *` đúng.
+
+Nghi vấn chính là **hết 2.000 phút/tháng của repo private**, vì hai lượt daily gần đây chạy tới kịch trần rồi bị huỷ:
+10/11 là 6h29m (389 phút) và 11/11 là 4h00m (240 phút) — **riêng hai lượt đó đã 629 phút**.
+Cả 2 runner tự host (`win-1`, `win-2`) đều **offline** và `RUNNER_LABEL` không đặt, nên mọi thứ đang chạy trên phút trả phí của GitHub.
+
+Kiểm tra: `gh auth refresh -h github.com -s user` rồi `gh api users/trongbao123/settings/billing/actions`,
+hoặc xem https://github.com/settings/billing
+
+Nếu đúng hết phút thì có 3 đường: bật lại runner tự host (0 phút), hạ `timeout-minutes: 240` để lượt hỏng không đốt 4 tiếng,
+hoặc tìm lý do lượt daily chạy tới 4–6 tiếng (render bù dồn).
+
 ## Vận hành
 - **Lượt daily 20:17 ngày 11/11 KHÔNG chạy** — tới 20:51 vẫn chưa thấy trên Actions (lượt cuối là `render` 19:23). Cả 2 runner tự host (`win-1`, `win-2`) đang offline nhưng `RUNNER_LABEL` không đặt nên lẽ ra chạy `ubuntu-latest`. Cần xem còn phút Actions của repo private không (`gh` hiện thiếu scope `user` để đọc billing).
 - Lượt daily 11/11 14:47 bị cancel ở mốc 240 phút do render bù 8 chương + 2 tập — tự lành (requeueStuck + short-backfill).
