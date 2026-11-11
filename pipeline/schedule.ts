@@ -32,7 +32,7 @@ export async function rescheduleToPublishHour() {
     .from(videos)
     .where(and(isNotNull(videos.publishAt), gte(videos.publishAt, new Date())));
   // Giữ thứ tự cũ, mỗi ngày 1 video: giờ mới đã qua thì giữ nguyên lịch cũ (không đẩy sang ngày đã có video).
-  const list = rows.filter((x) => !x.meta?.compilation).sort((a, b) => a.at!.getTime() - b.at!.getTime());
+  const list = rows.filter((x) => !x.meta?.compilation && !x.meta?.shortClip).sort((a, b) => a.at!.getTime() - b.at!.getTime());
   const used = new Set<string>();
   for (const r of list) {
     const at = new Date(r.at!);

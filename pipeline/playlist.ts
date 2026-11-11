@@ -8,6 +8,8 @@ import { accessToken, getYoutubeAuth, noAngle } from "@/lib/youtube";
 import { recordYoutubeUnits } from "@/lib/yt-units";
 
 const KEY = "yt_playlists";
+/** Danh sách phát riêng cho Short cắt cảnh: { [seriesId]: playlistId }. */
+const SHORTS_KEY = "yt_short_playlists";
 const API = "https://www.googleapis.com/youtube/v3";
 
 async function token() {
@@ -44,8 +46,8 @@ async function playlistVideoIds(playlistId: string, tok: string) {
   return new Set((j.items ?? []).map((i) => i.contentDetails?.videoId).filter(Boolean) as string[]);
 }
 
-async function savedIds(): Promise<Record<string, string>> {
-  const [row] = await db().select({ value: appSettings.value }).from(appSettings).where(eq(appSettings.key, KEY));
+async function savedIds(key = KEY): Promise<Record<string, string>> {
+  const [row] = await db().select({ value: appSettings.value }).from(appSettings).where(eq(appSettings.key, key));
   return (row?.value as Record<string, string>) ?? {};
 }
 
@@ -73,6 +75,34 @@ export async function ensurePlaylist(seriesId: number, tok?: string) {
   const next = { ...ids, [String(seriesId)]: res.id as string };
   await db().insert(appSettings).values({ key: KEY, value: next }).onConflictDoUpdate({ target: appSettings.key, set: { value: next, updatedAt: new Date() } });
   return res.id as string;
+}
+
+/** Lấy hoặc tạo playlist công khai chứa Short cắt cảnh của bộ truyện. */
+export async function ensureShortsPlaylist(seriesId: number, tok?: string) {
+  const ids = await savedIds(SHORTS_KEY);
+  if (ids[String(seriesId)]) return ids[String(seriesId)];
+  const [s] = await db().select().from(series).where(eq(series.id, seriesId));
+  const t = tok ?? (await token());
+  const res = await yt("playlists?part=snippet,status", t, {
+    snippet: {
+      title: noAngle(`${s.title} | Short Truyện Audio Tu Tiên`).slice(0, 150),
+      description: noAngle(`Những đoạn kịch tính nhất của ${s.title}. Nghe trọn bộ ở danh sách phát đầy đủ trên kênh. #shorts #truyentutien #truyenaudio`).slice(0, 5000),
+      defaultLanguage: "vi",
+    },
+    status: { privacyStatus: "public" },
+  });
+  const next = { ...ids, [String(seriesId)]: res.id as string };
+  await db().insert(appSettings).values({ key: SHORTS_KEY, value: next }).onConflictDoUpdate({ target: appSettings.key, set: { value: next, updatedAt: new Date() } });
+  return res.id as string;
+}
+
+/** Thêm 1 Short vào playlist Short của bộ truyện. Lỗi chỉ báo cho người gọi, không ảnh hưởng video. */
+export async function addToShortsPlaylist(seriesId: number, youtubeId: string) {
+  const tok = await token();
+  const playlistId = await ensureShortsPlaylist(seriesId, tok);
+  if ((await playlistVideoIds(playlistId, tok)).has(youtubeId)) return playlistId;
+  await yt("playlistItems?part=snippet", tok, { snippet: { playlistId, resourceId: { kind: "youtube#video", videoId: youtubeId } } });
+  return playlistId;
 }
 
 /** Thêm 1 video YouTube vào playlist của bộ truyện. Lỗi chỉ báo cho người gọi, không ảnh hưởng video. */

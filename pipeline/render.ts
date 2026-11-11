@@ -764,7 +764,7 @@ export async function renderVideo(videoId: number) {
 }
 
 // CLI: tsx pipeline/render.ts <videoId>  |  "seo:<videoId>" = chỉ làm lại SEO + cập nhật YouTube (không render)
-// |  "compile:<seriesId>" = gộp các chương đã render thành video dài 1–2 giờ  |  "trends" = quét xu hướng YouTube (vidIQ + AI)  |  "shorts" = bù Short cho tập thiếu.
+// |  "compile:<seriesId>" = gộp các chương đã render thành video dài 1–2 giờ  |  "trends" = quét xu hướng YouTube (vidIQ + AI)  |  "shorts" = bù Short cho tập thiếu  |  "clips[:N]" = làm N Short cắt cảnh từ chương (mặc định 2).
 if (process.argv[1]?.endsWith("render.ts")) {
   const arg = process.argv[2] ?? "";
   const runJob = () => {
@@ -775,6 +775,11 @@ if (process.argv[1]?.endsWith("render.ts")) {
     }
     if (arg === "reschedule") return import("./schedule").then((x) => x.rescheduleToPublishHour());
     if (arg.startsWith("playlist:")) return import("./playlist").then((x) => x.backfillPlaylist(Number(arg.slice(9))));
+    if (arg.startsWith("clips")) {
+      // clips[:N] = làm ngay N Short cắt cảnh (mặc định 2), bỏ trần theo ngày.
+      const n = Number(arg.match(/^clips(?::(\d+))?$/)?.[1] ?? 2);
+      return import("./clips").then((x) => x.makeSceneClips({ max: n, ignoreDailyCap: true }));
+    }
     if (arg === "shorts") return import("./short-backfill").then((x) => x.backfillEpisodeShorts());
     if (arg.startsWith("redo:")) {
       // redo:<id>[:<ISO lịch>][:full]

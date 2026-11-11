@@ -9,7 +9,7 @@ import { AI_NOTE } from "@/lib/seo-optimize";
 import { formatTimestamp } from "./compile-plan";
 import type { Cue } from "./text";
 
-const CHANNEL_URL = process.env.YOUTUBE_CHANNEL_URL ?? "https://www.youtube.com/@MaTonTruyen";
+export const CHANNEL_URL = process.env.YOUTUBE_CHANNEL_URL ?? "https://www.youtube.com/@MaTonTruyen";
 
 export type Segment = { start: number; text: string };
 
@@ -88,7 +88,7 @@ export function splitBody(description: string) {
   return { body, credit };
 }
 
-const hashtagOf = (k: string) => `#${k.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/gi, "d").replace(/[^a-zA-Z0-9]/g, "")}`;
+export const hashtagOf = (k: string) => `#${k.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/gi, "d").replace(/[^a-zA-Z0-9]/g, "")}`;
 
 /** 3–5 hashtag: 3 cố định của kênh + 2 từ khóa tìm kiếm đầu. */
 export function hashtagsFor(keywords?: string[]) {

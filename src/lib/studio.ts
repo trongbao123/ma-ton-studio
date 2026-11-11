@@ -66,6 +66,8 @@ export type VideoCard = {
   compilation: { from: number; to: number; episodeNo: number | null } | null;
   /** Video chương nội bộ của chế độ tập (nguyên liệu ghép, không đăng lẻ). */
   internal: boolean;
+  /** Có = Short cắt cảnh từ một chương (row riêng): tiêu đề Short và điểm vidIQ của nó. */
+  shortClip: { title: string; score: number | null } | null;
   /** Bước đang chạy, vd "Vẽ ảnh cảnh 18/30" — chỉ có với pipeline ghi tiến độ. */
   live: string | null;
   /** 0–1, tiến độ cả video khi đang render. */
@@ -94,7 +96,7 @@ export function liveSummary(p: VideoProgress | null | undefined): { live: string
   return { live, pct };
 }
 
-export type VideoKind = "episode" | "internal";
+export type VideoKind = "episode" | "internal" | "short";
 
 /** Ảnh bìa thẻ: thumbnail; chương nội bộ không có thumbnail thì lấy ảnh cảnh đầu tiên đã vẽ (long-img-N.jpg nhỏ nhất). */
 export function coverOf(assets: Record<string, number>): { file: string; version: number } | null {
@@ -111,7 +113,8 @@ type VideoFilter = { statuses?: Video["status"][]; kind?: VideoKind; q?: string 
 /** Điều kiện lọc dùng chung cho danh sách và đếm tổng (phân trang). */
 function videoWhere(opts: VideoFilter) {
   const isEpisode = sql`${videos.meta}->'compilation'->>'episode' = 'true'`;
-  const isInternal = sql`${series.episodeChapters} > 0 and ${videos.meta}->'compilation' is null and ${videos.youtubeVideoId} is null`;
+  const isShortClip = sql`${videos.meta}->'shortClip' is not null`;
+  const isInternal = sql`${series.episodeChapters} > 0 and ${videos.meta}->'compilation' is null and ${videos.meta}->'shortClip' is null and ${videos.youtubeVideoId} is null`;
   // Tìm theo tên chương / tên truyện / tiêu đề YouTube / số chương ("12" hoặc "chương 12").
   const q = opts.q?.trim();
   const num = q?.match(/^(?:ch(?:ương|uong)?\s*)?(\d+)$/i)?.[1];
@@ -123,7 +126,7 @@ function videoWhere(opts: VideoFilter) {
   const where = and(
     search,
     opts.statuses ? inArray(videos.status, opts.statuses) : undefined,
-    opts.kind === "episode" ? isEpisode : opts.kind === "internal" ? isInternal : undefined,
+    opts.kind === "episode" ? isEpisode : opts.kind === "internal" ? isInternal : opts.kind === "short" ? isShortClip : undefined,
   );
   return where;
 }
@@ -167,7 +170,8 @@ export async function videoCards(
     youtubeVideoId: v.youtubeVideoId,
     youtubeShortId: v.youtubeShortId,
     compilation: v.meta?.compilation ? { from: v.meta.compilation.from, to: v.meta.compilation.to, episodeNo: v.meta.compilation.episode ? (v.meta.compilation.episodeNo ?? null) : null } : null,
-    internal: episodeChapters > 0 && !v.meta?.compilation && !v.youtubeVideoId,
+    internal: episodeChapters > 0 && !v.meta?.compilation && !v.meta?.shortClip && !v.youtubeVideoId,
+    shortClip: v.meta?.shortClip ? { title: v.meta.shortTitle || v.meta.title, score: v.meta.shortClip.scoreTitle } : null,
     ...r,
     ...(v.status === "rendering" ? liveSummary(v.progress) : { live: null, pct: null }),
   }));

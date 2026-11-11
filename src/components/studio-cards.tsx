@@ -106,7 +106,7 @@ export function VideoTile({ v, snapshot }: { v: VideoCard; snapshot?: YtStatsMap
           // eslint-disable-next-line @next/next/no-img-element -- ảnh YouTube (i.ytimg.com) hoặc GitHub Release qua redirect
           <img src={v.ytThumb ?? assetUrl(v.id, v.thumbFile, v.thumbVersion)} alt="" width={640} height={360} loading="lazy" decoding="async" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" />
         ) : (
-          <span className="absolute inset-0 grid place-items-center font-serif text-4xl font-extrabold text-white/15">{v.compilation ? (v.compilation.episodeNo ? `Tập ${v.compilation.episodeNo}` : `Chương ${v.compilation.from}–${v.compilation.to}`) : `Chương ${v.chapterNo}`}</span>
+          <span className="absolute inset-0 grid place-items-center font-serif text-4xl font-extrabold text-white/15">{v.shortClip ? "Short" : v.compilation ? (v.compilation.episodeNo ? `Tập ${v.compilation.episodeNo}` : `Chương ${v.compilation.from}–${v.compilation.to}`) : `Chương ${v.chapterNo}`}</span>
         )}
         {v.durationSec ? <span className="absolute bottom-2 right-2 rounded-md bg-black/80 px-1.5 py-0.5 text-[11px] font-semibold">{clock(v.durationSec)}</span> : null}
         {v.pct != null && (
@@ -119,10 +119,14 @@ export function VideoTile({ v, snapshot }: { v: VideoCard; snapshot?: YtStatsMap
         <p className="flex items-center gap-2 truncate text-xs text-muted">
           <span className="truncate">{v.seriesTitle}</span>
           {v.compilation?.episodeNo ? <span className="shrink-0 rounded bg-gold/20 px-1.5 py-0.5 font-semibold text-gold">Tập</span> : null}
+          {v.shortClip ? <span className="shrink-0 rounded bg-seal/25 px-1.5 py-0.5 font-semibold text-foreground">Short</span> : null}
+          {v.shortClip?.score != null ? <span className="shrink-0 rounded bg-white/10 px-1.5 py-0.5 tabular-nums">SEO {v.shortClip.score}</span> : null}
           {v.internal ? <span className="shrink-0 rounded bg-white/10 px-1.5 py-0.5">Chương (nội bộ)</span> : null}
         </p>
         <p className="line-clamp-2 text-[15px] font-semibold leading-snug group-hover:text-white">
-          {v.compilation
+          {v.shortClip
+            ? v.shortClip.title
+            : v.compilation
             ? v.compilation.episodeNo
               ? `Tập ${v.compilation.episodeNo} (Chương ${v.compilation.from}–${v.compilation.to})`
               : `Bản gộp chương ${v.compilation.from}–${v.compilation.to}`

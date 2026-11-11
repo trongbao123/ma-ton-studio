@@ -88,8 +88,8 @@ export function pickPublishSlot(taken: Date[], hourUtc: number, now = new Date()
   return slot;
 }
 
-/** Video có tính vào lịch ngày không: video chương thường và tập có; bản gộp 5 chương cũ có khung riêng nên không. */
-export const occupiesDailySlot = (meta: VideoMeta | null) => !meta?.compilation || Boolean(meta.compilation.episode);
+/** Video có tính vào lịch ngày không: video chương thường và tập có; bản gộp 5 chương cũ và Short cắt cảnh có khung riêng nên không. */
+export const occupiesDailySlot = (meta: VideoMeta | null) => !meta?.shortClip && (!meta?.compilation || Boolean(meta.compilation.episode));
 
 type BacklogRow = {
   id: number;

@@ -100,7 +100,9 @@ export async function keywordResearch(seeds: string[]): Promise<{ text: string; 
 }
 
 /** Điểm 0–100 cho từng tiêu đề (cùng thứ tự). Tool chấm 1 tiêu đề/lượt thì gọi lần lượt. null nếu không chấm được. */
-export async function scoreTitles(titles: string[]): Promise<(number | null)[] | null> {
+export type TitleKind = "long" | "short";
+
+export async function scoreTitles(titles: string[], type: TitleKind = "long"): Promise<(number | null)[] | null> {
   const s = await connect();
   if (!s || process.env.VIDIQ_SCORE_TITLES === "0") return null;
   const tool = pick(s.tools, (n) => n.includes("title") && (n.includes("score") || n.includes("rate") || n.includes("grade")));
@@ -114,7 +116,7 @@ export async function scoreTitles(titles: string[]): Promise<(number | null)[] |
   for (const t of titles) {
     try {
       // vidiq_score_title bắt buộc `type` (long/short) — thiếu là lỗi validate, trước đây vì vậy luôn trả null.
-      const res = await s.client.callTool({ name: tool.name, arguments: { ...argsFor(tool, t, ["title", "titles", "text", "query"]), type: "long" } });
+      const res = await s.client.callTool({ name: tool.name, arguments: { ...argsFor(tool, t, ["title", "titles", "text", "query"]), type } });
       out.push((res as { isError?: boolean }).isError ? null : score(textOf(res)));
     } catch (e) {
       console.warn("⚠ vidIQ chấm tiêu đề lỗi:", e instanceof Error ? e.message : e);
@@ -154,7 +156,7 @@ export function parseScoredTitles(text: string): { title: string; score: number 
 export async function generateTitles(
   title: string,
   description: string,
-  more: { previous?: string[]; threshold?: number } = {},
+  more: { previous?: string[]; threshold?: number; type?: TitleKind } = {},
 ): Promise<{ title: string; score: number | null }[]> {
   const s = await connect();
   if (!s || process.env.VIDIQ_SCORE_TITLES === "0") return [];
@@ -164,7 +166,7 @@ export async function generateTitles(
     const props = tool.inputSchema?.properties ?? {};
     const args: Record<string, unknown> = { title, description: description.slice(0, 2000) };
     if ("numTitles" in props) args.numTitles = 5;
-    if ("type" in props) args.type = "long";
+    if ("type" in props) args.type = more.type ?? "long";
     if ("language" in props) args.language = "vi";
     if ("regionCode" in props) args.regionCode = "VN";
     // Vòng sau: báo vidIQ các tiêu đề đã thử để nó nghĩ hướng khác, và chỉ trả tiêu đề đạt ngưỡng điểm.
@@ -216,12 +218,13 @@ export async function pickBestTitle(
   target = 90,
   rounds = 3,
   keywords: string[] = [],
+  type: TitleKind = "long",
 ): Promise<{ best: ScoredTitle; all: ScoredTitle[] } | null> {
-  const scores = await scoreTitles(options);
+  const scores = await scoreTitles(options, type);
   const all: ScoredTitle[] = options.map((t, i) => ({ title: t, score: scores?.[i] ?? null }));
   const top = () => chooseTitle(all, keywords);
   for (let i = 0; i < rounds && (top().score ?? 0) < target; i++) {
-    const ideas = await generateTitles(top().title, description, i ? { previous: all.map((x) => x.title), threshold: target } : {});
+    const ideas = await generateTitles(top().title, description, i ? { previous: all.map((x) => x.title), threshold: target, type } : { type });
     const fresh = ideas.filter((x) => !all.some((y) => y.title === x.title));
     if (!fresh.length) break;
     all.push(...fresh);

@@ -12,6 +12,7 @@ import { readStatsSnapshot } from "@/lib/youtube-stats";
 const FILTERS: { id: string; label: string; statuses?: Video["status"][]; kind?: VideoKind }[] = [
   { id: "all", label: "Tất cả" },
   { id: "episode", label: "Tập", kind: "episode" },
+  { id: "short", label: "Short", kind: "short" },
   { id: "internal", label: "Chương (nội bộ)", kind: "internal" },
   { id: "running", label: "Đang làm", statuses: ["queued", "rendering"] },
   { id: "ready", label: "Chờ đăng", statuses: ["ready"] },

@@ -404,14 +404,16 @@ function buildIssues(d: FlowData): Issue[] {
   const out: Issue[] = [];
   const quota = quotaCard(v);
   const finished = v.status === "ready" || v.status === "published";
+  // Short cắt cảnh: chỉ có tiêu đề/mô tả Short + file Short — không có nhạc nền trong mô tả dài, SEO video dài hay thẻ giọng/ảnh riêng để cảnh báo.
+  const isClip = Boolean(m?.shortClip);
   if (v.status === "failed") out.push({ tone: "error", text: `Render lỗi: ${v.error ?? "không rõ nguyên nhân"}`, card: "video" });
   if (v.uploadStatus === "failed") out.push({ tone: "error", text: `Upload YouTube lỗi: ${v.uploadError ?? "không rõ nguyên nhân"}`, card: "youtube" });
   if (quota) out.push({ tone: "warn", text: `Chờ quota ${quota === "images" ? "ảnh" : "AI"}: ${v.error}`, card: quota });
   else if (v.status === "queued" && v.error) out.push({ tone: "info", text: `Đang chờ: ${v.error}`, card: "video" });
-  if (finished && m && !musicTitle(m.description)) out.push({ tone: "warn", text: "Chưa có nhạc nền", card: "video" });
+  if (finished && m && !isClip && !musicTitle(m.description)) out.push({ tone: "warn", text: "Chưa có nhạc nền", card: "video" });
   const pendingShort = backfillStatusText(v);
   if (finished && d.series.makeShort && !v.files["short.mp4"]) out.push({ tone: "warn", text: pendingShort ? `Short: ${pendingShort.text}` : "Không có Short", card: "short" });
-  if (m) {
+  if (m && !isClip) {
     const total = totalScore(scoreMeta(m, d.series.title));
     if (total < SEO_TARGET) out.push({ tone: "warn", text: `Điểm SEO ${total} chưa đạt ${SEO_TARGET} — dùng Magic fill`, card: "seo" });
   }

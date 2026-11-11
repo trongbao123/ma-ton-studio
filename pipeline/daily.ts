@@ -219,6 +219,8 @@ async function main() {
   await dispatchCompilations().catch((e) => failures.push(`bản gộp: ${e instanceof Error ? e.message : e}`));
   // Tập đã lên mà thiếu Short (lúc dựng hết quota/lỗi) thì bù ở đây; lỗi không làm hỏng job.
   await import("./short-backfill").then((x) => x.backfillEpisodeShorts()).catch((e) => console.warn("⚠ Bù Short lỗi:", e instanceof Error ? e.message : e));
+  // Short cắt cảnh (tối đa 2/ngày) chỉ làm sau khi đã ưu tiên render chương cho tập kế tiếp; hết quota thì dừng, lượt sau làm tiếp.
+  if (quotaLeft) await import("./clips").then((x) => x.makeSceneClips({ afterRenders: true })).catch((e) => console.warn("⚠ Short cắt cảnh lỗi:", e instanceof Error ? e.message : e));
   if (failures.length) {
     await notify(`❌ <b>Job tự động có lỗi</b>\n${escapeHtml(failures.join("\n").slice(0, 800))}`);
     console.error("Lỗi:\n" + failures.join("\n"));
