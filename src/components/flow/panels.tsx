@@ -603,7 +603,14 @@ function Images({ data, tab }: PanelProps) {
   const [zoom, setZoom] = useState<{ src: string; scene?: Scene } | null>(null);
   if (tab === "log") return <StepLog data={data} id="images" />;
   const scenes = data.video.progress?.scenes;
-  const list = scenes?.[which] ?? [];
+  // Video render trước khi có tiến độ cảnh: vẫn hiện ảnh đã upload (long-img-N.jpg / short-img-N.jpg) nếu có.
+  const fromFiles = (prefix: "long" | "short"): Scene[] =>
+    Object.keys(data.video.files)
+      .map((f) => ({ f, m: f.match(new RegExp(`^${prefix}-img-(\\d+)\\.jpg$`)) }))
+      .filter((x) => x.m)
+      .map((x) => ({ i: Number(x.m![1]), start: 0, end: 0, text: "", prompt: "", action: false, file: x.f }))
+      .sort((a, b) => a.i - b.i);
+  const list = scenes?.[which]?.length ? scenes[which] : fromFiles(which);
   const switcher = scenes?.short.length ? (
     <div className="flex rounded-lg border border-border p-0.5 text-[11px]">
       {(["long", "short"] as const).map((w) => (

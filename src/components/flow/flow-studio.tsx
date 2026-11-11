@@ -206,7 +206,7 @@ function Studio({ data: initial, layout, layoutH }: Props) {
   // Thu gọn bảng chi tiết / nhật ký để canvas rộng hơn; nhớ theo trình duyệt.
   const [panelOpen, setPanelOpen] = usePref("flow:panel", true);
   // Sơ đồ ngang (trái → phải) hay dọc; nhớ theo trình duyệt, mỗi hướng có bố cục kéo thả riêng.
-  const [horizontal, setHorizontal] = usePref("flow:horizontal", false);
+  const [horizontal, setHorizontal] = usePref("flow:horizontal-v2", false);
   const orientation: Orientation = horizontal ? "h" : "v";
   const [logOpen, setLogOpen] = usePref("flow:log", true);
   const [logH, setLogH] = useLogHeight();

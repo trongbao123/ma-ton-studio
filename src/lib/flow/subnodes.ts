@@ -19,7 +19,7 @@ export type SubView = {
 
 export const SUB_WIDTH = 176;
 export const SUB_HEIGHT = 46;
-export const SUB_GAP = 6;
+export const SUB_GAP = 14;
 /** Khoảng hở giữa mép phải thẻ cha và cột node con (px trên canvas). */
 export const SUB_INSET = 64;
 const SUB_TOP = 8;
