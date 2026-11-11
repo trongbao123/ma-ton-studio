@@ -54,7 +54,7 @@ export async function uploadVideo(token: string, u: Upload) {
   return body.id;
 }
 
-async function setThumbnail(token: string, videoId: string, file: string) {
+export async function setThumbnail(token: string, videoId: string, file: string) {
   const res = await fetch(`https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=${videoId}`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "image/jpeg" },
@@ -68,7 +68,7 @@ async function setThumbnail(token: string, videoId: string, file: string) {
  * Chấm từng phương án thumbnail bằng vidIQ (cần video đã có trên YouTube + URL ảnh truy cập được từ ngoài: link ký sẵn ~5 phút của release asset)
  * rồi chọn điểm cao nhất. Không chấm được / lỗi → phương án (a). Không bao giờ ném lỗi.
  */
-async function chooseThumbnail(videoId: number, ytId: string, title: string, thumbs: { id: ThumbId; file: string }[], track: Tracker) {
+export async function chooseThumbnail(videoId: number, ytId: string, title: string, thumbs: { id: ThumbId; file: string }[], track: Tracker) {
   const scores: ThumbScores = {};
   for (const t of thumbs) {
     try {

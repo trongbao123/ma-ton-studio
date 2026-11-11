@@ -776,6 +776,7 @@ if (process.argv[1]?.endsWith("render.ts")) {
     if (arg === "reschedule") return import("./schedule").then((x) => x.rescheduleToPublishHour());
     if (arg.startsWith("playlist:")) return import("./playlist").then((x) => x.backfillPlaylist(Number(arg.slice(9))));
     if (arg === "shorts") return import("./short-backfill").then((x) => x.backfillEpisodeShorts());
+    if (arg.startsWith("thumbs:")) return import("./rethumb").then((x) => x.rethumb(Number(arg.slice(7))));
     if (arg === "trends") return import("./trends").then((x) => x.scanTrends());
     if (arg.startsWith("compile:")) return import("./compile").then((x) => x.compileSeries(Number(arg.slice(8))));
     return renderVideo(Number(arg));
