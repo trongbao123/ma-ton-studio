@@ -7,8 +7,10 @@ export const CLIPS_PER_CHAPTER = { min: 5, max: 7 } as const;
 /** Trong số clip của chương, tối đa ngần này lấy từ 2 phút đầu (zoom) để mở đầu tập có chuyển động. */
 const HEAD_CLIP_SHARE = 3;
 /** Clip 121 khung (8k+1 theo yêu cầu LTX-Video) ở 24 fps ≈ 5,04 giây. */
-// 73 frame ≈ 3s: LTX 2B distilled trôi khỏi ảnh gốc (mặt, tư thế, đồ vật) từ khoảng giây 3 → mờ chéo về ảnh tĩnh bị "nhảy".
-export const CLIP_FRAMES = 73;
+// 97 frame ≈ 4s: khung đầu khóa cứng + khung cuối khóa nhẹ (CLIP_END_STRENGTH) giữ mặt; 73 frame + khóa cứng 2 đầu thì gần như đứng yên.
+export const CLIP_FRAMES = 97;
+/** Độ khóa ảnh gốc ở khung cuối: 1 = đứng yên, 0 = không khóa (trôi mặt/tư thế). */
+export const CLIP_END_STRENGTH = 0.5;
 export const CLIP_SECONDS = CLIP_FRAMES / STILL_FPS;
 /** Kích thước LTX-Video phải chia hết cho 32; 768×448 gần 16:9 nhất — khi ghép sẽ scale/crop lên 1080p. */
 export const CLIP_WIDTH = 768;
@@ -49,11 +51,11 @@ export type ClipJob = { id: number; image: string; prompt: string };
 
 /** Nội dung `manifest.json` trong dataset — run.py đọc đúng các khoá này. */
 export function buildManifest(clips: ClipJob[], seed = 42) {
-  return { width: CLIP_WIDTH, height: CLIP_HEIGHT, frames: CLIP_FRAMES, fps: STILL_FPS, seed, clips };
+  return { width: CLIP_WIDTH, height: CLIP_HEIGHT, frames: CLIP_FRAMES, fps: STILL_FPS, seed, endStrength: CLIP_END_STRENGTH, clips };
 }
 
 /** Đuôi prompt chuyển động: chuyển động mượt, nhân vật không biến dạng, máy quay không rung. */
-export const MOTION_SUFFIX = "subtle ambient motion only, static camera, the character keeps the same pose, face and outfit, no new objects, same 3D donghua art style";
+export const MOTION_SUFFIX = "dynamic epic xianxia visual effects, strong continuous motion, wind whipping hair and robes, glowing particles and sparks flying, static camera, the character keeps the same face and outfit, same 3D donghua art style";
 
 export const motionPrompt = (motion: string) => `${motion.trim().replace(/[.\s]+$/, "")}, ${MOTION_SUFFIX}`;
 

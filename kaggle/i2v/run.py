@@ -37,7 +37,7 @@ MODELS = [
         "guidance": 3.0,
     },
 ]
-NEGATIVE = "worst quality, inconsistent motion, blurry, jittery, distorted, morphing, deformed face, changing face, changing pose, new objects, extra people, photorealistic, live action, camera movement, zoom, shaky camera, watermark, text"
+NEGATIVE = "worst quality, inconsistent motion, blurry, jittery, distorted, morphing, deformed face, changing face, changing pose, new objects, extra people, photorealistic, live action, camera movement, zoom, shaky camera, static, frozen, still image, watermark, text"
 
 
 def log(msg):
@@ -145,10 +145,11 @@ def main():
             gen = torch.Generator("cuda").manual_seed(seed + job["id"])
             from diffusers.pipelines.ltx.pipeline_ltx_condition import LTXVideoCondition
 
-            # Cùng 1 ảnh ở khung đầu và khung cuối: clip phải quay về đúng ảnh gốc → không trôi mặt/tư thế, nối liền ảnh tĩnh.
+            # Khung đầu khóa cứng ảnh gốc (nối liền ảnh tĩnh); khung cuối khóa nhẹ `endStrength` → giữ mặt mà vẫn động (1.0 = đứng yên).
+            end = float(manifest.get("endStrength", 0))
             steps = {"timesteps": spec_used["timesteps"]} if spec_used.get("timesteps") else {"num_inference_steps": spec_used["steps"]}
             out = pipe(
-                conditions=[LTXVideoCondition(image=img, frame_index=0), LTXVideoCondition(image=img, frame_index=frames - 1)],
+                conditions=[LTXVideoCondition(image=img, frame_index=0), LTXVideoCondition(image=img, frame_index=frames - 1, strength=end)] if end > 0 else [LTXVideoCondition(image=img, frame_index=0)],
                 prompt=job["prompt"],
                 negative_prompt=NEGATIVE,
                 width=w,

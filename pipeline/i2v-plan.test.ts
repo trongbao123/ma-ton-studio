@@ -38,9 +38,10 @@ describe("kernel", () => {
   it("slug chỉ gồm a-z0-9-", () => {
     expect(kaggleSlug("data", 27, Date.now())).toMatch(/^mts-i2v-data-27-[a-z0-9]+$/);
   });
-  it("manifest 73 khung, kích thước chia hết cho 32", () => {
+  it("manifest 97 khung, kích thước chia hết cho 32", () => {
     const m = buildManifest([{ id: 1, image: "a.jpg", prompt: "p" }]);
-    expect(m.frames).toBe(73);
+    expect(m.frames).toBe(97);
+    expect(m.endStrength).toBe(0.5);
     expect(m.width % 32).toBe(0);
     expect(m.height % 32).toBe(0);
   });
@@ -85,7 +86,7 @@ describe("splitClipSegment / clipSegmentArgs", () => {
     expect(g).toContain("flags=lanczos");
     expect(g).toContain("xfade=transition=fade:duration=1.000");
     expect(g).toContain("[s][c]xfade");
-    expect(g).toContain("offset=26.958");
+    expect(g).toContain("offset=25.958");
     expect(a[a.indexOf("-frames:v") + 1]).toBe("720");
     expect(a[a.indexOf("-video_track_timescale") + 1]).toBe("12288");
     expect(a.filter((x) => x === "-i")).toHaveLength(2);

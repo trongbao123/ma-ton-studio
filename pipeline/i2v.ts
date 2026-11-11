@@ -17,13 +17,13 @@ export async function prepareClipImage(src: string, out: string, logoCrop = ""):
 
 /** AI rẻ viết prompt chuyển động (tiếng Anh) cho từng cảnh từ prompt ảnh + đoạn truyện. Thiếu/lỗi thì dùng chuyển động chung an toàn. */
 export async function motionPrompts(scenes: { prompt: string; text: string }[]): Promise<string[]> {
-  const fallback = "hair and robe gently moving in the breeze, subtle breathing, candle and glow softly flickering";
+  const fallback = "spiritual energy aura bursting around the character, hair and robe whipping in a strong wind, glowing particles swirling";
   try {
     const { motions } = await textProvider().generateJson({
-      system: "You write short motion prompts for an image-to-video model (LTX-Video). Describe ONLY small ambient movement of what is already in the picture — the model distorts faces and invents objects when asked for actions or camera moves.",
+      system: "You write short motion prompts for an image-to-video model (LTX-Video). Describe dramatic xianxia visual effects and strong motion around the characters already in the picture — the model distorts faces and invents objects when asked for body actions or camera moves.",
       prompt:
-        "For each scene write ONE English motion prompt (10–20 words) of SUBTLE ambient motion only: hair/robe swaying, breathing, blinking, mist, clouds, flames, glowing energy pulsing, water rippling. " +
-        "NO actions (no swinging, walking, turning, drawing weapons), NO camera moves, no new objects. Return one item per scene in order.\n\n" +
+        "For each scene write ONE English motion prompt (12–25 words) of DRAMATIC, clearly visible motion fitting the story: qi aura erupting, lightning crackling, energy shockwave rippling, flames roaring, sparks and debris flying, storm clouds churning, strong wind whipping hair and robes, glowing eyes, small head turn. " +
+        "Characters keep their pose (no walking, fighting, swinging weapons), NO camera moves, no new characters. Return one item per scene in order.\n\n" +
         scenes.map((s, i) => `${i + 1}. IMAGE: ${s.prompt.slice(0, 300)}\n   STORY: ${s.text.slice(0, 400)}`).join("\n\n"),
       schema: z.object({ motions: z.array(z.string()) }),
       temperature: 0.6,
@@ -193,8 +193,8 @@ export async function kaggleTest(dir = "/tmp/i2v-in", logoCrop = ""): Promise<vo
   const work = path.join(dir, "kaggle-test");
   await mkdir(work, { recursive: true });
   const motions = [
-    "hair and robe gently swaying, purple aura softly pulsing, candle flame flickering",
-    "mist and clouds slowly drifting, robe gently fluttering, faint glowing qi pulsing around the character",
+    "purple demonic aura erupting and swirling around him, hair and robe whipping in a strong wind, candle flames roaring, sparks flying",
+    "golden lightning crackling across the sky, storm clouds churning, robe billowing in a violent wind, glowing qi shockwave rippling outward",
   ].map(motionPrompt);
   const jobs: (ClipJob & { file: string })[] = [];
   for (const [id, name] of images.entries()) {
