@@ -159,7 +159,11 @@ async function main() {
           chaptersPerDay: s.chaptersPerDay, writtenToday: mark?.calls ?? 0,
           stockChapters: upcoming.length * s.episodeChapters + loose.length, episodeChapters: s.episodeChapters,
         });
-        console.log(`  tập: ${upcoming.length} chờ đăng, ${loose.length} chương lẻ, đã viết hôm nay ${mark?.calls ?? 0}/${s.chaptersPerDay} → viết thêm ${want}`);
+        // Giọng đọc free (~10 lượt/model/ngày, chương 40 phút tốn ~10 lượt) là nút cổ chai: còn ≥ 1 tập chương chưa render thì
+        // thôi viết thêm — viết dồn chỉ tốn lượt Claude mà không ra video nhanh hơn.
+        const unrendered = loose.filter((v) => v.status === "queued" || v.status === "rendering").length;
+        if (unrendered >= s.episodeChapters) want = 0;
+        console.log(`  tập: ${upcoming.length} chờ đăng, ${loose.length} chương lẻ (${unrendered} chưa render), đã viết hôm nay ${mark?.calls ?? 0}/${s.chaptersPerDay} → viết thêm ${want}`);
       } else {
         const stock = (
           await db()

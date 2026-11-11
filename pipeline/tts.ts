@@ -49,7 +49,8 @@ export async function speak(text: string, outFile: string, voice = process.env.T
       await new Promise((r) => setTimeout(r, 10_000 * (attempt + 1)));
     }
   }
-  if (limited === MODELS.length) throw new QuotaExhaustedError(`Hết lượt giọng đọc free hôm nay. (${last})`);
+  // Có model chạm giới hạn ngày (các model còn lại lỗi khác) → vẫn coi là hết quota để video quay về hàng đợi, không báo "lỗi".
+  if (limited > 0) throw new QuotaExhaustedError(`Hết lượt giọng đọc free hôm nay. (${last})`);
   throw new Error(`TTS lỗi: ${last}`);
 }
 
