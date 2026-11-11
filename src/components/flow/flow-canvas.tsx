@@ -36,7 +36,7 @@ function buildNodes(cards: Record<CardId, CardView>, subs: SubView[], layout: Re
       id: view.id,
       type: "sub",
       parentId: view.parent,
-      position: subOffset(siblings.indexOf(view), CARD_WIDTH, horizontal),
+      position: subOffset(siblings.indexOf(view), CARD_WIDTH, horizontal, siblings.length),
       draggable: false,
       data: { view, row: ROW_OF[view.parent], horizontal },
     };

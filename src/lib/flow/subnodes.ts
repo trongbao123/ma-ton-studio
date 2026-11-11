@@ -29,12 +29,20 @@ const CARD_EST_HEIGHT = 150;
 /** Khoảng hở giữa mép dưới thẻ cha và cột node con (chế độ ngang). */
 const SUB_DROP = 44;
 
+/** Node con chế độ ngang: vòng tròn + nhãn bên dưới (kiểu n8n), xếp thành hàng ngang dưới thẻ cha. */
+export const SUB_WIDTH_H = 92;
+export const SUB_HEIGHT_H = 84;
+const SUB_GAP_H = 10;
+
 /**
- * Vị trí (tương đối so với thẻ cha) của node con thứ i. Dọc: cột bên phải thẻ cha.
- * Ngang: cột ngay dưới thẻ cha (bên phải là thẻ bước sau nên không đặt được).
+ * Vị trí (tương đối so với thẻ cha) của node con thứ i trong `count` node con. Dọc: cột bên phải thẻ cha.
+ * Ngang: một hàng ngang ngay dưới thẻ cha, canh giữa thẻ (kiểu n8n Model · Memory · Tool).
  */
-export function subOffset(index: number, parentWidth: number, horizontal = false): { x: number; y: number } {
-  if (horizontal) return { x: (parentWidth - SUB_WIDTH) / 2, y: CARD_EST_HEIGHT + SUB_DROP + index * (SUB_HEIGHT + SUB_GAP) };
+export function subOffset(index: number, parentWidth: number, horizontal = false, count = 1): { x: number; y: number } {
+  if (horizontal) {
+    const row = count * SUB_WIDTH_H + (count - 1) * SUB_GAP_H;
+    return { x: (parentWidth - row) / 2 + index * (SUB_WIDTH_H + SUB_GAP_H), y: CARD_EST_HEIGHT + SUB_DROP };
+  }
   return { x: parentWidth + SUB_INSET, y: SUB_TOP + index * (SUB_HEIGHT + SUB_GAP) };
 }
 

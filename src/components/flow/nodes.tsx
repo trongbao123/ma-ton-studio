@@ -7,7 +7,7 @@ import { YtStats } from "@/components/yt-stats";
 import { BrandIcon, STEP_ICONS, type BrandId } from "@/components/brand-icons";
 import { CARD_STATE_TEXT, type CardState, type CardView } from "@/lib/flow/model";
 import { CARD_WIDTH } from "@/lib/flow/layout";
-import { SUB_HEIGHT, SUB_WIDTH, type SubView } from "@/lib/flow/subnodes";
+import { SUB_HEIGHT, SUB_HEIGHT_H, SUB_WIDTH, SUB_WIDTH_H, type SubView } from "@/lib/flow/subnodes";
 
 /** Màu nét icon từng bước — dễ phân biệt khi nhìn lướt canvas. */
 const TINT: Record<string, string> = {
@@ -167,6 +167,22 @@ export type SubNodeData = { view: SubView; row?: number; horizontal?: boolean };
 export function SubNode({ data }: NodeProps<Node<SubNodeData>>) {
   const { view } = data;
   const Icon = STEP_ICONS[view.icon];
+  const ring = `grid h-11 w-11 shrink-0 place-items-center rounded-full border-2 bg-[#23232b] ${view.ok ? "border-emerald-600/70" : "border-[#3d3d48]"}`;
+  const icon = view.brand ? <BrandIcon id={view.brand} size={20} /> : Icon && <Icon size={18} strokeWidth={1.7} className="text-zinc-300" />;
+  if (data.horizontal)
+    // Chế độ ngang: vòng tròn + nhãn bên dưới, xếp hàng ngang dưới thẻ cha.
+    return (
+      <div
+        className={`sub-enter flex flex-col items-center gap-1 text-center ${view.ok ? "" : "opacity-50"}`}
+        style={{ width: SUB_WIDTH_H, height: SUB_HEIGHT_H, animationDelay: `${(data.row ?? 0) * STAGGER_MS + SUB_DELAY_MS}ms` }}
+        title={`${view.label}: ${view.value}`}
+      >
+        <Handle type="target" position={Position.Top} className={handle} isConnectable={false} />
+        <span className={ring}>{icon}</span>
+        <b className="block w-full truncate text-xs font-semibold text-zinc-100">{view.label}</b>
+        <span className="-mt-1 block w-full truncate text-[11px] text-zinc-400">{view.value}</span>
+      </div>
+    );
   return (
     <div
       className={`sub-enter flex items-center gap-2.5 rounded-full border bg-[#1a1a21] py-1 pl-1.5 pr-3 ${view.ok ? "border-emerald-700/50" : "border-dashed border-[#3d3d48] opacity-50"}`}
