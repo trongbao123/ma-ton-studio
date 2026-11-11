@@ -1,9 +1,9 @@
-import { Search } from "lucide-react";
 import Link from "next/link";
 import { LiveRefresh } from "@/components/live-refresh";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { VideoTile } from "@/components/studio-cards";
+import { VideoSearch } from "@/components/video-search";
 import type { Video } from "@/db/schema";
 import { videoCards, type VideoKind } from "@/lib/studio";
 import { readStatsSnapshot } from "@/lib/youtube-stats";
@@ -26,7 +26,7 @@ export default function VideosPage({ searchParams }: PageProps<"/videos">) {
         <Suspense fallback={<div className="h-9" />}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <Tabs searchParams={searchParams} />
-            <SearchBox searchParams={searchParams} />
+            <VideoSearch />
           </div>
         </Suspense>
       </header>
@@ -37,7 +37,7 @@ export default function VideosPage({ searchParams }: PageProps<"/videos">) {
   );
 }
 
-const PAGE_SIZE = 24;
+const PAGE_SIZE = 10;
 
 async function current(searchParams: PageProps<"/videos">["searchParams"]) {
   const f = (await searchParams).loc;
@@ -61,23 +61,6 @@ function href(loc: string, q: string, page = 1) {
   if (page > 1) p.set("page", String(page));
   const s = p.toString();
   return s ? `/videos?${s}` : "/videos";
-}
-
-/** Ô tìm kiếm: form GET thường (không cần JS), giữ tab đang chọn. */
-async function SearchBox({ searchParams }: { searchParams: PageProps<"/videos">["searchParams"] }) {
-  const [on, { q }] = await Promise.all([current(searchParams), query(searchParams)]);
-  return (
-    <form action="/videos" className="relative w-full sm:w-72" role="search">
-      {on.id !== "all" && <input type="hidden" name="loc" value={on.id} />}
-      <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-      <input
-        name="q"
-        defaultValue={q}
-        placeholder="Tìm chương, tên truyện, số chương…"
-        className="w-full rounded-full border border-border bg-card py-2 pl-9 pr-4 text-sm outline-none placeholder:text-muted focus:border-zinc-500"
-      />
-    </form>
-  );
 }
 
 async function Tabs({ searchParams }: { searchParams: PageProps<"/videos">["searchParams"] }) {
