@@ -51,6 +51,8 @@ export type VideoCard = {
   durationSec: number | null;
   publishAt: string | null;
   hasThumb: boolean;
+  /** File làm bìa: thumbnail.jpg, hoặc ảnh cảnh đầu (chương nội bộ). */
+  thumbFile: string;
   /** Id asset của thumbnail (null = chưa có). */
   thumbVersion: number | null;
   /** Thumbnail đang dùng trên YouTube (đồng bộ về) — ưu tiên hơn ảnh app dựng, vì người dùng hay đổi tay. */
@@ -94,10 +96,31 @@ export function liveSummary(p: VideoProgress | null | undefined): { live: string
 
 export type VideoKind = "episode" | "internal";
 
-export async function videoCards(opts: { limit?: number; statuses?: Video["status"][]; kind?: VideoKind } = {}): Promise<VideoCard[]> {
+/** Ảnh bìa thẻ: thumbnail; chương nội bộ không có thumbnail thì lấy ảnh cảnh đầu tiên đã vẽ (long-img-N.jpg nhỏ nhất). */
+export function coverOf(assets: Record<string, number>): { file: string; version: number } | null {
+  if (assets["thumbnail.jpg"]) return { file: "thumbnail.jpg", version: assets["thumbnail.jpg"] };
+  const scene = Object.keys(assets)
+    .map((f) => ({ f, n: Number(f.match(/^long-img-(\d+)\.jpg$/)?.[1] ?? NaN) }))
+    .filter((x) => Number.isFinite(x.n))
+    .sort((a, b) => a.n - b.n)[0];
+  return scene ? { file: scene.f, version: assets[scene.f] } : null;
+}
+
+export async function videoCards(
+  opts: { limit?: number; offset?: number; statuses?: Video["status"][]; kind?: VideoKind; q?: string } = {},
+): Promise<VideoCard[]> {
   const isEpisode = sql`${videos.meta}->'compilation'->>'episode' = 'true'`;
   const isInternal = sql`${series.episodeChapters} > 0 and ${videos.meta}->'compilation' is null and ${videos.youtubeVideoId} is null`;
+  // Tìm theo tên chương / tên truyện / tiêu đề YouTube / số chương ("12" hoặc "chương 12").
+  const q = opts.q?.trim();
+  const num = q?.match(/^(?:ch(?:ương|uong)?\s*)?(\d+)$/i)?.[1];
+  const search = q
+    ? num
+      ? eq(chapters.number, Number(num))
+      : sql`(${chapters.title} ilike ${`%${q}%`} or ${series.title} ilike ${`%${q}%`} or ${videos.meta}->>'title' ilike ${`%${q}%`})`
+    : undefined;
   const where = and(
+    search,
     opts.statuses ? inArray(videos.status, opts.statuses) : undefined,
     opts.kind === "episode" ? isEpisode : opts.kind === "internal" ? isInternal : undefined,
   );
@@ -108,7 +131,8 @@ export async function videoCards(opts: { limit?: number; statuses?: Video["statu
     .innerJoin(series, eq(series.id, chapters.seriesId))
     .where(where)
     .orderBy(desc(videos.id))
-    .limit(opts.limit ?? 60);
+    .limit(opts.limit ?? 60)
+    .offset(opts.offset ?? 0);
   return rows.map(({ v, episodeChapters, ...r }) => ({
     id: v.id,
     status: v.status,
@@ -116,8 +140,9 @@ export async function videoCards(opts: { limit?: number; statuses?: Video["statu
     error: v.error,
     durationSec: v.durationSec,
     publishAt: v.publishAt?.toISOString() ?? null,
-    hasThumb: Boolean(v.assets["thumbnail.jpg"]),
-    thumbVersion: v.assets["thumbnail.jpg"] ?? null,
+    hasThumb: Boolean(coverOf(v.assets)),
+    thumbFile: coverOf(v.assets)?.file ?? "thumbnail.jpg",
+    thumbVersion: coverOf(v.assets)?.version ?? null,
     ytThumb: v.meta?.yt?.thumb ?? null,
     ytPrivacy: v.meta?.yt?.privacy ?? null,
     youtubeVideoId: v.youtubeVideoId,
