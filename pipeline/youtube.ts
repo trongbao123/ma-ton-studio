@@ -9,9 +9,8 @@ import { escapeHtml, notify, WEB_URL } from "@/lib/notify";
 import { accessToken, cleanTags, getYoutubeAuth, noAngle, YoutubeAuthError } from "@/lib/youtube";
 import { recordYoutubeUnits } from "@/lib/yt-units";
 import { Tracker } from "./progress";
-import { signedAssetUrl } from "./release";
 import { keepOrNextSlot } from "./schedule";
-import { DEFAULT_THUMB, pickBestThumb, thumbFile, type ThumbId, type ThumbScores } from "./thumb-plan";
+import { DEFAULT_THUMB, pickBestThumb, type ThumbId, type ThumbScores } from "./thumb-plan";
 import { scoreThumbnail } from "./vidiq";
 
 /** publishAt = null: đăng công khai ngay. */
@@ -65,25 +64,35 @@ export async function setThumbnail(token: string, videoId: string, file: string)
 }
 
 /**
- * Chấm từng phương án thumbnail bằng vidIQ (cần video đã có trên YouTube + URL ảnh truy cập được từ ngoài: link ký sẵn ~5 phút của release asset)
- * rồi chọn điểm cao nhất. Không chấm được / lỗi → phương án (a). Không bao giờ ném lỗi.
+ * Chấm từng phương án thumbnail bằng vidIQ rồi chọn điểm cao nhất. vidIQ chỉ chấm được ảnh đang đặt trên YouTube
+ * (không nhận URL ngoài) → đặt lần lượt từng ảnh lên video, đợi YouTube cập nhật, cho vidIQ chấm; cuối cùng người gọi đặt ảnh thắng.
+ * Không chấm được / lỗi → phương án (a). Không bao giờ ném lỗi. Tốn thêm 50 unit YouTube / phương án.
  */
-export async function chooseThumbnail(videoId: number, ytId: string, title: string, thumbs: { id: ThumbId; file: string }[], track: Tracker) {
+export async function chooseThumbnail(_videoId: number, ytId: string, title: string, thumbs: { id: ThumbId; file: string }[], track: Tracker) {
   const scores: ThumbScores = {};
-  for (const t of thumbs) {
-    try {
-      const imageUrl = await signedAssetUrl(videoId, thumbFile(t.id));
-      scores[t.id] = imageUrl ? await scoreThumbnail({ videoId: ytId, title, imageUrl }) : null;
-    } catch (e) {
-      scores[t.id] = null;
-      track.warn("youtube", `Không chấm được thumbnail ${t.id.toUpperCase()}: ${e instanceof Error ? e.message : e}`);
+  const auth = await getYoutubeAuth().catch(() => null);
+  const token = auth ? await accessToken(auth.refreshToken).catch(() => null) : null;
+  if (token && thumbs.length > 1) {
+    for (const t of thumbs) {
+      try {
+        await setThumbnail(token, ytId, t.file);
+        await new Promise((r) => setTimeout(r, THUMB_SETTLE_MS));
+        scores[t.id] = await scoreThumbnail({ videoId: ytId, title });
+      } catch (e) {
+        scores[t.id] = null;
+        track.warn("youtube", `Không chấm được thumbnail ${t.id.toUpperCase()}: ${e instanceof Error ? e.message : e}`);
+      }
     }
   }
   const chosen = pickBestThumb(scores, thumbs.map((t) => t.id));
   track.log("youtube", `Điểm thumbnail vidIQ: ${thumbs.map((t) => `${t.id.toUpperCase()}=${scores[t.id] ?? "?"}`).join(", ")} → dùng ${chosen.toUpperCase()}`);
+  console.log(`  Điểm thumbnail vidIQ: ${JSON.stringify(scores)} → ${chosen.toUpperCase()}`);
   const file = (thumbs.find((t) => t.id === chosen) ?? thumbs.find((t) => t.id === DEFAULT_THUMB) ?? thumbs[0]).file;
   return { file, scores: { a: scores.a ?? null, b: scores.b ?? null, c: scores.c ?? null, chosen } };
 }
+
+/** Đợi sau khi đặt thumbnail để YouTube kịp cập nhật ảnh trước khi vidIQ đọc. */
+const THUMB_SETTLE_MS = 25_000;
 
 const slot = (d: Date) =>
   d.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", weekday: "long", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });

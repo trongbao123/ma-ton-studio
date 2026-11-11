@@ -298,11 +298,13 @@ export function thumbScoreArgs(schema: { properties?: Record<string, unknown> } 
 }
 
 /** Chấm 1 thumbnail bằng vidIQ (URL ảnh phải truy cập được từ ngoài). Mọi lỗi → null + cảnh báo; không ném. */
-export async function scoreThumbnail(o: { videoId: string; title: string; imageUrl: string }): Promise<number | null> {
+export async function scoreThumbnail(o: { videoId: string; title: string; imageUrl?: string }): Promise<number | null> {
   try {
     const schema = await vidiqSchema("vidiq_score_thumbnail");
     if (!schema) return null;
-    const text = await callVidiq("vidiq_score_thumbnail", thumbScoreArgs(schema as { properties?: Record<string, unknown> }, o));
+    // Không có imageUrl → vidIQ chấm thumbnail ĐANG đặt trên YouTube (vidIQ không nhận ảnh từ host khác như GitHub).
+    const args = o.imageUrl ? thumbScoreArgs(schema as { properties?: Record<string, unknown> }, { ...o, imageUrl: o.imageUrl }) : { videoId: o.videoId, title: o.title };
+    const text = await callVidiq("vidiq_score_thumbnail", args);
     return text ? parseThumbScore(text) : null;
   } catch (e) {
     console.warn("⚠ vidIQ chấm thumbnail lỗi:", e instanceof Error ? e.message : e);
