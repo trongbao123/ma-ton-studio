@@ -883,6 +883,8 @@ if (process.argv[1]?.endsWith("render.ts")) {
     if (arg === "kaggle-test") return import("./i2v").then((x) => x.kaggleTest(process.argv[3] ?? "/tmp/i2v-in"));
     // i2v-sweep = dò tham số clip động trong 1 lượt Kaggle rồi in bảng YDIF/SSIM (xem i2v-sweep.ts).
     if (arg === "i2v-sweep") return import("./i2v").then((x) => x.i2vSweep(process.argv[3] ?? "/tmp/i2v-in"));
+    // i2v-model <ten> [dir] = tham do 1 model khac tren T4 (VRAM, giay/clip, YDIF/SSIM) truoc khi tich hop.
+    if (arg === "i2v-model") return import("./i2v").then((x) => x.i2vModelProbe(process.argv[3] ?? "cogvideox5b", process.argv[4] ?? "/tmp/i2v-in"));
     if (arg === "shorts") return import("./short-backfill").then((x) => x.backfillEpisodeShorts());
     if (arg.startsWith("redo:")) {
       // redo:<id>[:<ISO lịch>][:full]

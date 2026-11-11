@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CLIP_FRAMES } from "./i2v-plan";
-import { SWEEP_STYLES, meanYdif, parseSsim, ssimArgs, sweepCells, sweepTable, ydifArgs } from "./i2v-sweep";
+import { MODEL_PROBES, SWEEP_STYLES, meanYdif, parseSsim, ssimArgs, sweepCells, sweepTable, ydifArgs } from "./i2v-sweep";
 
 describe("sweepCells", () => {
   const cells = sweepCells({ motion: "qi aura erupting around him", endStrengths: [0, 0.3, 0.5], styles: ["effects", "action"] });
@@ -32,6 +32,32 @@ describe("sweepCells", () => {
     const got = sweepCells({ motion: "m", endStrengths: [0, 0.5], styles: ["action"], frames: [73, 97] });
     expect(got).toHaveLength(4);
     expect(got.filter((c) => c.frames === 73)).toHaveLength(2);
+  });
+});
+
+describe("MODEL_PROBES (thăm dò model khác trên T4)", () => {
+  it("mỗi ứng viên khai đủ thứ kernel cần để nạp", () => {
+    for (const [name, m] of Object.entries(MODEL_PROBES)) {
+      // `name` bắt buộc: run.py in spec['name'] cả ở nhánh lỗi — thiếu nó thì KeyError nuốt mất lỗi thật.
+      expect(m.name, name).toBeTruthy();
+      expect(m.repo, name).toMatch(/^[\w.-]+\/[\w.-]+$/);
+      expect(["ltx", "cogvideox"], name).toContain(m.family);
+      expect(m.frames % 8, `${name}: số khung phải là 8k+1`).toBe(1);
+      expect(m.width % 16, name).toBe(0);
+      expect(m.height % 16, name).toBe(0);
+    }
+  });
+  it("có mốc so sánh là chính model đang dùng", () => {
+    expect(MODEL_PROBES.ltx2b.family).toBe("ltx");
+    expect(MODEL_PROBES.ltx2b.frames).toBe(CLIP_FRAMES);
+  });
+  it("ứng viên mới phải khác model đang dùng, không thì thăm dò vô nghĩa", () => {
+    const others = Object.entries(MODEL_PROBES).filter(([k]) => k !== "ltx2b");
+    expect(others.length).toBeGreaterThan(0);
+    for (const [name, m] of others) expect(m.repo, name).not.toBe(MODEL_PROBES.ltx2b.repo);
+  });
+  it("T4 không có bf16 nên mọi ứng viên phải chạy được fp16", () => {
+    for (const [name, m] of Object.entries(MODEL_PROBES)) expect(m.dtype, name).toBe("float16");
   });
 });
 

@@ -87,9 +87,30 @@ export function manifestJobs(jobs: (ClipJob & { file: string })[]): ClipJob[] {
   });
 }
 
-/** Nội dung `manifest.json` trong dataset — run.py đọc đúng các khoá này. */
-export function buildManifest(clips: ClipJob[], seed = 42) {
-  return { width: CLIP_WIDTH, height: CLIP_HEIGHT, frames: CLIP_FRAMES, fps: STILL_FPS, seed, endStrength: CLIP_END_STRENGTH, negative: MOTION_NEGATIVE, clips };
+/**
+ * Nội dung `manifest.json` trong dataset — run.py đọc đúng các khoá này.
+ * `model` (chỉ dùng khi thăm dò, CLI `i2v-model`): có thì run.py CHỈ thử model đó, không rơi về danh sách mặc định,
+ * và kích thước/số khung lấy theo model vì mỗi model một ràng buộc (CogVideoX cố định 720×480, 49 khung).
+ */
+export function buildManifest(
+  clips: ClipJob[],
+  seed = 42,
+  model?: { width: number; height: number; frames: number; fps: number },
+  /** Chỗ kernel POST tiến độ về. Token nằm trong dataset Kaggle nên chỉ gửi khi thật sự cần. */
+  progress?: { url: string; token: string; slug: string; videoId: number },
+) {
+  return {
+    width: model?.width ?? CLIP_WIDTH,
+    height: model?.height ?? CLIP_HEIGHT,
+    frames: model?.frames ?? CLIP_FRAMES,
+    fps: model?.fps ?? STILL_FPS,
+    seed,
+    endStrength: CLIP_END_STRENGTH,
+    negative: MOTION_NEGATIVE,
+    ...(model ? { model } : {}),
+    ...(progress ? { progress } : {}),
+    clips,
+  };
 }
 
 /** Đuôi prompt chuyển động: chuyển động mượt, nhân vật không biến dạng, máy quay không rung. */

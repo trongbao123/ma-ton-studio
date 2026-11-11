@@ -1,4 +1,4 @@
-import { boolean, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, unique } from "drizzle-orm/pg-core";
+import { boolean, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, unique } from "drizzle-orm/pg-core";
 import type { VideoProgress } from "@/lib/flow/progress";
 
 export const chapterStatus = pgEnum("chapter_status", ["outline", "draft", "approved"]);
@@ -106,7 +106,16 @@ export const videos = pgTable("videos", {
   publishAt: timestamp("publish_at", { withTimezone: true }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+},
+  // Postgres KHÔNG tự tạo index cho khoá ngoại — thiếu mấy cái này thì mọi join videos↔chapters
+  // và mọi bộ lọc theo trạng thái/lịch đăng đều quét toàn bảng.
+  (t) => [
+    index("videos_chapter_id_idx").on(t.chapterId),
+    index("videos_status_idx").on(t.status),
+    index("videos_publish_at_idx").on(t.publishAt),
+    index("videos_upload_status_idx").on(t.uploadStatus),
+  ],
+);
 
 export type Series = typeof series.$inferSelect;
 export type Video = typeof videos.$inferSelect;

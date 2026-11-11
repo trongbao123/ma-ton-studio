@@ -43,6 +43,18 @@ describe("buildManifest", () => {
   });
 });
 
+describe("buildManifest · báo tiến độ", () => {
+  const progress = { url: "https://x.vercel.app/api/i2v/progress", token: "t", slug: "mts-i2v-run-0-abc", videoId: 7 };
+  it("có cấu hình thì kernel biết POST về đâu", () => {
+    expect(buildManifest([], 42, undefined, progress).progress).toEqual(progress);
+  });
+  it("KHÔNG có cấu hình thì manifest không mang token nào — đừng rải bí mật vào dataset khi không cần", () => {
+    const m = buildManifest([], 42);
+    expect(m).not.toHaveProperty("progress");
+    expect(JSON.stringify(m)).not.toContain("token");
+  });
+});
+
 describe("datasetFiles", () => {
   const manifest = { name: "manifest.json", path: "/w/manifest.json" };
   it("nhiều ô dò dùng CHUNG một ảnh thì chỉ gửi ảnh đó một lần — Kaggle từ chối dataset có đường dẫn trùng", () => {
