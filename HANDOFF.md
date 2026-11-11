@@ -64,20 +64,32 @@ Chạy `i2v-sweep` thật (T4, LTX 2B distilled, ảnh `long-img-1.jpg` của vi
 3. **Nghe thử tiếng hiệu ứng bằng tai** — tôi mới cân bằng số đo (LUFS/đỉnh), chưa ai nghe. File mẫu: `pnpm exec tsx scripts/sfx-measure.mjs --mix` rồi mở `.cache/sfx-measure/mix-gain-1.wav`.
 4. **Đặt thẻ End Screen trong Studio** cho tập đầu tiên có màn kết, theo toạ độ `OUTRO_CARD_SLOTS`.
 
-## NGHI VẤN HẾT PHÚT ACTIONS — cần anh xác nhận
+## LỊCH DAILY BỊ GITHUB ĐẨY LÙI 2–12 TIẾNG (đã đo, 14 lượt gần nhất)
 
-Lượt daily theo lịch **13:17 UTC ngày 11/11 không hề chạy** (tới 17:54 UTC vẫn không có). Đã loại trừ:
-workflow vẫn `active` (không bị tắt vì repo ngủ), cron `17 1,13 * * *` đúng.
+**KHÔNG phải hết phút** — tháng 11 dùng 1455/2000 phút, không tốn tiền (`gh api users/<user>/settings/billing/usage`;
+endpoint `billing/actions` cũ đã bị gỡ, trả 410).
 
-Nghi vấn chính là **hết 2.000 phút/tháng của repo private**, vì hai lượt daily gần đây chạy tới kịch trần rồi bị huỷ:
-10/11 là 6h29m (389 phút) và 11/11 là 4h00m (240 phút) — **riêng hai lượt đó đã 629 phút**.
-Cả 2 runner tự host (`win-1`, `win-2`) đều **offline** và `RUNNER_LABEL` không đặt, nên mọi thứ đang chạy trên phút trả phí của GitHub.
+Cron `17 1,13 * * *` nhưng lượt chạy THẬT lệch rất xa:
 
-Kiểm tra: `gh auth refresh -h github.com -s user` rồi `gh api users/trongbao123/settings/billing/actions`,
-hoặc xem https://github.com/settings/billing
+| cron danh nghĩa | chạy thật | trễ |
+|---|---|---|
+| 11/11 01:17Z | 07:47Z | 6,5 giờ |
+| 10/11 13:17Z | 20:29Z | 7,2 giờ |
+| 10/11 01:17Z | 03:33Z | 2,3 giờ |
+| 09/11 13:17Z | 19:47Z | 6,5 giờ |
+| 08/11 01:17Z | 10:18Z | 9,0 giờ |
+| 07/11 13:17Z | 00:34Z (hôm sau) | 11,3 giờ |
+| 07/11 01:17Z | 12:57Z | 11,7 giờ |
 
-Nếu đúng hết phút thì có 3 đường: bật lại runner tự host (0 phút), hạ `timeout-minutes: 240` để lượt hỏng không đốt 4 tiếng,
-hoặc tìm lý do lượt daily chạy tới 4–6 tiếng (render bù dồn).
+Trung vị ~6,5 giờ. Đây là hành vi đã biết của GitHub với `schedule` (hàng đợi ưu tiên thấp), không sửa được từ phía repo.
+
+**Hệ quả**: ghi chú trong `daily.yml` nói "lượt 8h17 viết + render + dựng tập kịp lịch đăng 15h" là **SAI thực tế** —
+với trễ 6,5 giờ thì nó khởi động lúc ~14h47 VN, và lúc trễ 9–11 giờ thì chạy SAU cả giờ đăng. Đó là lý do chương dồn lại,
+rồi lượt sau phải render bù 8 chương + 2 tập và đụng trần `timeout-minutes: 240` (10/11 mất 389 phút, 11/11 mất 240 phút — huỷ, mất trắng việc).
+
+**Cách sửa thật**: `workflow_dispatch` qua API chạy NGAY, không bị đẩy lùi. Dùng một bộ hẹn giờ ngoài (Vercel Cron của chính app,
+hoặc cron-job.org) gọi `POST /repos/<owner>/<repo>/actions/workflows/daily.yml/dispatches`. Đổi giờ cron không giải quyết được
+vì độ trễ dao động 2–12 giờ, không đoán nổi.
 
 ## Vận hành
 - **Lượt daily 20:17 ngày 11/11 KHÔNG chạy** — tới 20:51 vẫn chưa thấy trên Actions (lượt cuối là `render` 19:23). Cả 2 runner tự host (`win-1`, `win-2`) đang offline nhưng `RUNNER_LABEL` không đặt nên lẽ ra chạy `ubuntu-latest`. Cần xem còn phút Actions của repo private không (`gh` hiện thiếu scope `user` để đọc billing).
