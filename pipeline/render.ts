@@ -11,6 +11,7 @@ import { drawImage, imagesReady } from "./images";
 import { duration, ffmpeg, filterPath, measureLufs, once, pool } from "./ffmpeg";
 import { Tracker } from "./progress";
 import { buildClipSegment, newI2vRun, type I2vRun } from "./i2v";
+import { sfxEvents, sfxTrackArgs } from "./sfx";
 import { episodeMuxArgs, STILL_FPS, stillFrames, stillSegmentArgs, voiceGainDb } from "./still";
 import { cleanupParallax, prepareParallax } from "./parallax";
 import { PARALLAX_BUDGET, parallaxFilterGraph, parallaxInputArgs, parallaxMotionFor, parallaxWorkDir, planParallax, type ParallaxFiles } from "./parallax-plan";
@@ -367,6 +368,7 @@ export async function buildStillVideo(opts: {
     on?.shot?.();
     return file;
   });
+  let sfx: string | null = null;
   if (i2v) {
     // Kaggle chạy song song với dựng các đoạn tĩnh ở trên; giờ chờ nốt (có hạn) rồi thay đoạn của cảnh có clip.
     on?.log?.("Chờ clip động từ Kaggle");
@@ -378,14 +380,26 @@ export async function buildStillVideo(opts: {
       files[scene] = seg;
     });
     await on?.clips?.(clips, failure);
+    // Tiếng hiệu ứng ("ầm ầm") đúng mốc từng clip, tổng hợp bằng lavfi. Lỗi thì bỏ, tập vẫn có giọng + nhạc như cũ.
+    const events = sfxEvents(i2v.clips, scenes, narration.seconds);
+    if (events.length) {
+      const file = path.join(dir, `${name}-sfx.wav`);
+      try {
+        await once(file, (tmp) => ffmpeg(sfxTrackArgs(events, narration.seconds, tmp)));
+        sfx = file;
+        on?.log?.(`Tiếng hiệu ứng: ${events.length} tiếng cho ${clips.size} clip`);
+      } catch (e) {
+        on?.log?.(`⚠ Không dựng được tiếng hiệu ứng: ${e instanceof Error ? e.message.slice(0, 200) : e}`);
+      }
+    }
   }
-  on?.log?.("Nối đoạn + trộn giọng, nhạc nền (video copy)");
+  on?.log?.(`Nối đoạn + trộn giọng, nhạc nền${sfx ? ", tiếng hiệu ứng" : ""} (video copy)`);
   const list = path.join(dir, `${name}-segments.txt`);
   await writeFile(list, files.map((f) => `file '${f}'`).join("\n"));
   const music = opts.music ?? (await ambientBed(dir));
   const voiceGain = voiceGainDb(await measureLufs(narration.audio));
   await once(out, (tmp) =>
-    ffmpeg(episodeMuxArgs({ list, narration: narration.audio, music, seconds: narration.seconds, isAmbient: music.endsWith("ambient.wav"), voiceGain, out: tmp })),
+    ffmpeg(episodeMuxArgs({ list, narration: narration.audio, music, seconds: narration.seconds, isAmbient: music.endsWith("ambient.wav"), voiceGain, sfx, out: tmp })),
   );
   return { out };
 }
@@ -872,6 +886,8 @@ if (process.argv[1]?.endsWith("render.ts")) {
       return import("./clips").then((x) => x.makeSceneClips({ max: n, ignoreDailyCap: true }));
     }
     if (arg === "kaggle-test") return import("./i2v").then((x) => x.kaggleTest(process.argv[3] ?? "/tmp/i2v-in"));
+    // i2v-sweep = dò tham số clip động trong 1 lượt Kaggle rồi in bảng YDIF/SSIM (xem i2v-sweep.ts).
+    if (arg === "i2v-sweep") return import("./i2v").then((x) => x.i2vSweep(process.argv[3] ?? "/tmp/i2v-in"));
     if (arg === "shorts") return import("./short-backfill").then((x) => x.backfillEpisodeShorts());
     if (arg.startsWith("redo:")) {
       // redo:<id>[:<ISO lịch>][:full]

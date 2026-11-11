@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { planChapterScenes } from "./episode-plan";
-import { CLIP_FRAMES, MOTION_SUFFIX, buildManifest, clipSegmentArgs, gpuMinutes, kaggleSlug, kernelFailureKind, kernelPhase, kernelPushBody, motionPrompt, parseClipLog, pickClipScenes, splitClipSegment } from "./i2v-plan";
+import { CLIP_END_STRENGTH, CLIP_FRAMES, MOTION_NEGATIVE, MOTION_SUFFIX, buildManifest, clipSegmentArgs, gpuMinutes, kaggleSlug, kernelFailureKind, kernelPhase, kernelPushBody, motionPrompt, parseClipLog, pickClipScenes, splitClipSegment } from "./i2v-plan";
 
 describe("pickClipScenes", () => {
   const spans = planChapterScenes(1800).map((s, i) => ({ ...s, action: i === 30 || i === 40 }));
@@ -27,6 +27,19 @@ describe("pickClipScenes", () => {
   it("nhiều action hơn chỗ trống: không vượt max", () => {
     const many = planChapterScenes(1800).map((s) => ({ ...s, action: true }));
     expect(pickClipScenes(many).length).toBeLessThanOrEqual(7);
+  });
+});
+
+describe("buildManifest", () => {
+  it("mang sẵn negative chung để run.py không giữ bản sao riêng", () => {
+    const m = buildManifest([{ id: 0, image: "a.jpg", prompt: "p" }]);
+    expect(m.negative).toContain("deformed face");
+    expect(m.negative).toBe(MOTION_NEGATIVE);
+    expect(m).toMatchObject({ width: 768, height: 448, frames: CLIP_FRAMES, endStrength: CLIP_END_STRENGTH });
+  });
+  it("ô dò tham số ghi đè được độ khóa / số khung / negative của riêng nó", () => {
+    const m = buildManifest([{ id: 0, image: "a.jpg", prompt: "p", endStrength: 0, frames: 73, negative: "khác" }]);
+    expect(m.clips[0]).toMatchObject({ endStrength: 0, frames: 73, negative: "khác" });
   });
 });
 

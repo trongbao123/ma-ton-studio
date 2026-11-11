@@ -3,8 +3,9 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import { textProvider } from "@/lib/ai";
-import { ffmpeg, once, pool } from "./ffmpeg";
+import { ffmpeg, ffmpegLog, once, pool } from "./ffmpeg";
 import { CLIP_HEIGHT, CLIP_WIDTH, clipSegmentArgs, gpuMinutes, motionPrompt, pickClipScenes, type ClipJob, type SceneSpan } from "./i2v-plan";
+import { meanYdif, parseSsim, ssimArgs, sweepCells, sweepTable, ydifArgs, type SweepRow } from "./i2v-sweep";
 import type { Tracker } from "./progress";
 import { finishI2v, kaggleAuth, KERNEL_TIMEOUT_MINUTES, runI2v, startI2v, type I2vEvents, type I2vOutcome, type I2vSession } from "./kaggle";
 import type { I2vClip, I2vProgress, I2vStage } from "@/lib/flow/progress";
@@ -55,7 +56,7 @@ type SavedRun = { session: I2vSession; clips: I2vClip[] };
 export class I2vRun {
   readonly picks: number[];
   private started: Promise<I2vSession | null> = Promise.resolve(null);
-  private clips: I2vClip[] = [];
+  private list: I2vClip[] = [];
   private readonly stateFile: string;
 
   constructor(
@@ -75,7 +76,7 @@ export class I2vRun {
   }
 
   private stage(stage: I2vStage) {
-    this.o.report.progress({ stage, clips: this.clips });
+    this.o.report.progress({ stage, clips: this.list });
   }
 
   /** Đẩy lên Kaggle ngay khi ảnh các cảnh đã chọn vẽ xong (`imageOf(i)` = đường dẫn ảnh). Không ném, không chặn. */
@@ -90,15 +91,15 @@ export class I2vRun {
   private async start(imageOf: (scene: number) => string): Promise<I2vSession | null> {
     const saved = await readFile(this.stateFile, "utf8").then((t) => JSON.parse(t) as SavedRun, () => null);
     if (saved) {
-      this.clips = saved.clips;
+      this.list = saved.clips;
       this.o.report.log("Dùng lại phiên Kaggle của lần chạy trước");
       this.stage("running");
       return saved.session;
     }
     this.stage("upload");
     const motions = await motionPrompts(this.picks.map((i) => ({ prompt: this.o.prompts[i].prompt, text: this.o.scenes[i].text })));
-    this.clips = this.picks.map((scene, k) => ({ scene, motion: motions[k] }));
-    this.o.report.progress({ clips: this.clips });
+    this.list = this.picks.map((scene, k) => ({ scene, motion: motions[k] }));
+    this.o.report.progress({ clips: this.list });
     const jobs: (ClipJob & { file: string })[] = [];
     for (const [k, scene] of this.picks.entries()) {
       const file = path.join(this.o.dir, `${this.o.name}-i2v-in-${scene}.jpg`);
@@ -109,10 +110,10 @@ export class I2vRun {
     const res = await startI2v({ videoId: this.o.videoId, dir: this.o.dir, jobs, events });
     if ("error" in res) {
       this.o.report.log(`⚠ Không đẩy được lên Kaggle: ${res.error}`);
-      this.o.report.progress({ stage: undefined, clips: this.clips });
+      this.o.report.progress({ stage: undefined, clips: this.list });
       return null;
     }
-    await writeFile(this.stateFile, JSON.stringify({ session: res.session, clips: this.clips } satisfies SavedRun));
+    await writeFile(this.stateFile, JSON.stringify({ session: res.session, clips: this.list } satisfies SavedRun));
     this.o.report.progress({ kernelUrl: res.session.kernelUrl });
     return res.session;
   }
@@ -144,21 +145,26 @@ export class I2vRun {
       },
     });
     this.merge(out.results);
-    this.clips = this.clips.map((c) => (out.clips.has(c.scene) ? { ...c, file: this.assetName(c.scene) } : { ...c, ok: false }));
+    this.list = this.list.map((c) => (out.clips.has(c.scene) ? { ...c, file: this.assetName(c.scene) } : { ...c, ok: false }));
     const gpu = out.model?.split(" · ")[1];
     if (out.model) this.o.report.model(out.model.split(" · ")[0]);
-    this.o.report.progress({ stage: out.clips.size ? "done" : undefined, clips: this.clips, ...(gpu ? { gpu } : {}), gpuMinutes: gpuMinutes(out.gpuSeconds), ...(out.kernelUrl ? { kernelUrl: out.kernelUrl } : {}) });
+    this.o.report.progress({ stage: out.clips.size ? "done" : undefined, clips: this.list, ...(gpu ? { gpu } : {}), gpuMinutes: gpuMinutes(out.gpuSeconds), ...(out.kernelUrl ? { kernelUrl: out.kernelUrl } : {}) });
     return { clips: out.clips, failure: out.clips.size ? null : (out.reason ?? "Không có clip nào") };
   }
 
   /** Gộp kết quả từng clip (giây GPU, thành/bại) vào tiến độ để màn flow hiện "x/y clip" khi đang chạy. */
   private merge(results: { id: number; ok: boolean; seconds: number }[]) {
     const byId = new Map(results.map((r) => [r.id, r]));
-    this.clips = this.clips.map((c) => {
+    this.list = this.list.map((c) => {
       const r = byId.get(c.scene);
       return r ? { ...c, seconds: Math.round(r.seconds), ok: r.ok } : c;
     });
-    this.o.report.progress({ stage: "running", clips: this.clips });
+    this.o.report.progress({ stage: "running", clips: this.list });
+  }
+
+  /** Clip của lượt này: cảnh + prompt chuyển động, `file` chỉ có khi clip đã tải về xong. Dùng để dựng tiếng hiệu ứng (sfx.ts). */
+  get clips(): readonly I2vClip[] {
+    return this.list;
   }
 
   /** Tên asset (release) của clip cảnh `scene`, khớp `I2vClip.file`. */
@@ -182,6 +188,63 @@ export function newI2vRun(o: { videoId: number; dir: string; track: Tracker; sce
       model: (m) => track.model("i2v", m),
     },
   });
+}
+
+/**
+ * CLI `i2v-sweep [dir]`: dò tham số "làm như phim" trong MỘT lượt Kaggle.
+ * Lấy 1 ảnh thật, sinh 6 clip (2 kiểu prompt × 3 mức khóa khung cuối), rồi đo bằng số:
+ * YDIF = động tới đâu, SSIM khung cuối so với ảnh gốc = trôi khỏi ảnh tới đâu.
+ * Ô vừa YDIF cao vừa SSIM cao là ô nên đặt làm mặc định (CLIP_END_STRENGTH + prompt trong motionPrompts).
+ */
+export async function i2vSweep(dir = "/tmp/i2v-in"): Promise<void> {
+  const t0 = Date.now();
+  const lap = (what: string) => console.log(`[${((Date.now() - t0) / 1000).toFixed(1)}s] ${what}`);
+  const [image] = (await readdir(dir)).filter((f) => /^long-img-1\d*\.jpg$/.test(f)).sort();
+  if (!image) throw new Error(`Cần ít nhất 1 ảnh long-img-1*.jpg trong ${dir} (gh release download video-16 -p 'long-img-1*.jpg')`);
+  const work = path.join(dir, "i2v-sweep");
+  await mkdir(work, { recursive: true });
+  const motion = "purple demonic aura erupting around him, golden lightning crackling, robe and hair whipping in a violent wind, sparks flying";
+  const cells = sweepCells({ motion, endStrengths: [0, 0.3, 0.5], styles: ["effects", "action"] });
+  // Cùng MỘT ảnh cho mọi ô: chênh lệch đo được chỉ do tham số, không do ảnh khác nhau.
+  const src = path.join(work, "in.jpg");
+  await prepareClipImage(path.join(dir, image), src);
+  const jobs = cells.map((c) => ({ id: c.id, image: "in.jpg", prompt: c.prompt, endStrength: c.endStrength, frames: c.frames, negative: c.negative, file: src }));
+  lap(`${cells.length} ô thử từ ảnh ${image}`);
+  const out = await runI2v({
+    videoId: 0,
+    dir: work,
+    jobs,
+    events: { stage: (s, d) => lap(`Giai đoạn: ${s}${d ? ` — ${d}` : ""}`), clip: (r) => lap(`Ô ${r.id} xong: GPU ${r.seconds}s`) },
+  });
+  if (!out.clips.size) {
+    lap(`KHÔNG có clip nào: ${out.reason ?? "không rõ"}`);
+    return;
+  }
+  const byId = new Map(out.results.map((r) => [r.id, r]));
+  const rows: SweepRow[] = [];
+  for (const cell of cells) {
+    const clip = out.clips.get(cell.id);
+    const res = byId.get(cell.id);
+    if (!clip) {
+      rows.push({ cell, ok: false, seconds: Math.round(res?.seconds ?? 0), ydif: null, ssim: null });
+      continue;
+    }
+    const last = path.join(work, `last-${cell.id}.png`);
+    // Khung cuối clip, cắt ảnh gốc về đúng khung clip để SSIM so đúng vùng hình.
+    await ffmpeg(["-sseof", "-0.2", "-i", clip, "-frames:v", "1", "-update", "1", last]);
+    rows.push({
+      cell,
+      ok: true,
+      seconds: Math.round(res?.seconds ?? 0),
+      ydif: meanYdif(await ffmpegLog(ydifArgs(clip))),
+      ssim: parseSsim(await ffmpegLog(ssimArgs(last, src))),
+    });
+  }
+  console.log(`\nẢnh: ${image} · model ${out.model ?? "?"} · kernel ${out.kernelUrl ?? "?"}`);
+  console.log(`Câu chuyển động: ${motion}\n`);
+  console.log(sweepTable(rows));
+  console.log(`\nYDIF: đứng yên ≈ 0,1 · hiện tại (effects + khóa 0,5) ≈ 2,5–3,0. SSIM càng thấp càng trôi khỏi ảnh gốc.`);
+  console.log(`Clip để xem bằng mắt: ${work}`);
 }
 
 /** CLI `kaggle-test`: 2 ảnh thật (long-img-1*.jpg trong `dir`) → 2 clip trên Kaggle, in thời gian từng bước. */

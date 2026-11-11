@@ -46,12 +46,22 @@ export function pickClipScenes(scenes: SceneSpan[], limits: { min: number; max: 
   return [...chosen].sort((a, b) => a - b);
 }
 
-/** Một việc của kernel: ảnh trong dataset + prompt chuyển động tiếng Anh. */
-export type ClipJob = { id: number; image: string; prompt: string };
+/**
+ * Negative chung gửi kèm manifest (run.py chỉ dùng bản của mình khi manifest thiếu khoá này) — để chỗ duy nhất sửa là đây.
+ * "changing pose" nằm đây là lý do nhân vật đứng im; ô `action` của i2v-sweep.ts bỏ đúng từ đó ra để thử.
+ */
+export const MOTION_NEGATIVE =
+  "worst quality, inconsistent motion, blurry, jittery, distorted, morphing, deformed face, changing face, changing pose, new objects, extra people, photorealistic, live action, camera movement, zoom, shaky camera, static, frozen, still image, watermark, text";
+
+/**
+ * Một việc của kernel: ảnh trong dataset + prompt chuyển động tiếng Anh.
+ * `endStrength` / `frames` / `negative` chỉ dùng khi dò tham số (i2v-sweep) — bỏ trống thì lấy mức chung của manifest.
+ */
+export type ClipJob = { id: number; image: string; prompt: string; endStrength?: number; frames?: number; negative?: string };
 
 /** Nội dung `manifest.json` trong dataset — run.py đọc đúng các khoá này. */
 export function buildManifest(clips: ClipJob[], seed = 42) {
-  return { width: CLIP_WIDTH, height: CLIP_HEIGHT, frames: CLIP_FRAMES, fps: STILL_FPS, seed, endStrength: CLIP_END_STRENGTH, clips };
+  return { width: CLIP_WIDTH, height: CLIP_HEIGHT, frames: CLIP_FRAMES, fps: STILL_FPS, seed, endStrength: CLIP_END_STRENGTH, negative: MOTION_NEGATIVE, clips };
 }
 
 /** Đuôi prompt chuyển động: chuyển động mượt, nhân vật không biến dạng, máy quay không rung. */

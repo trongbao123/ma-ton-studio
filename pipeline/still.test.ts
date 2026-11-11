@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AMBIENT_GAIN, MUSIC_GAIN, STILL_TIMESCALE, conformArgs, episodeAudioGraph, episodeMuxArgs, parseIntegratedLufs, stillFrames, stillSegmentArgs, voiceGainDb } from "./still";
+import { AMBIENT_GAIN, MUSIC_GAIN, SFX_GAIN, STILL_TIMESCALE, conformArgs, episodeAudioGraph, episodeMuxArgs, parseIntegratedLufs, stillFrames, stillSegmentArgs, voiceGainDb } from "./still";
 
 describe("stillFrames", () => {
   it("làm tròn theo mốc cộng dồn: tổng các đoạn bằng đúng số khung của cả timeline", () => {
@@ -56,6 +56,16 @@ describe("episodeMuxArgs", () => {
     expect(episodeMuxArgs({ ...base, isAmbient: true }).join(" ")).toContain(`volume=${AMBIENT_GAIN}`);
     expect(episodeMuxArgs({ ...base, isAmbient: false }).join(" ")).toContain(`volume=${MUSIC_GAIN}`);
   });
+  it("không có track hiệu ứng thì vẫn đúng 3 input như cũ", () => {
+    const a = episodeMuxArgs({ ...base, isAmbient: false });
+    expect(a.filter((x) => x === "-i")).toHaveLength(3);
+  });
+  it("có track hiệu ứng: thành input thứ 4, sau nhạc", () => {
+    const a = episodeMuxArgs({ ...base, isAmbient: false, sfx: "sfx.wav" });
+    expect(a.filter((x) => x === "-i")).toHaveLength(4);
+    expect(a.lastIndexOf("-i")).toBe(a.indexOf("sfx.wav") - 1);
+    expect(a.indexOf("sfx.wav")).toBeGreaterThan(a.indexOf("m.mp3"));
+  });
 });
 
 describe("episodeAudioGraph", () => {
@@ -72,6 +82,17 @@ describe("episodeAudioGraph", () => {
   it("nhạc mờ vào 3s và mờ ra 5s cuối", () => {
     expect(g).toContain("afade=t=in:st=0:d=3");
     expect(g).toContain("afade=t=out:st=2395.00:d=5");
+  });
+  it("không có hiệu ứng: trộn 2 nguồn (giọng + nhạc đã hạ)", () => {
+    expect(g).toContain("amix=inputs=2");
+    expect(g).not.toContain("[3:a]");
+  });
+  it("có hiệu ứng: input thứ 4 hạ tiếng rồi trộn 3 nguồn, KHÔNG sidechain theo giọng", () => {
+    const s = episodeAudioGraph({ seconds: 2400, musicGain: 0.18, voiceGain: 13.5, sfx: true });
+    expect(s).toContain(`[3:a]`);
+    expect(s).toContain(`volume=${SFX_GAIN}`);
+    expect(s).toContain("amix=inputs=3");
+    expect(s.match(/sidechaincompress/g)).toHaveLength(1);
   });
 });
 

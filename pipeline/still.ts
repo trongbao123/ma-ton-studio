@@ -22,6 +22,14 @@ export const VOICE_LUFS = -16;
 export const MUSIC_GAIN = 0.3;
 /** Nền "ma đạo" tự sinh vốn nhỏ hơn nhạc thật nên cho to hơn một chút. */
 export const AMBIENT_GAIN = 0.45;
+/**
+ * Tiếng hiệu ứng của clip động (sfx.ts): để nguyên mức đã cân ở sfx.ts (SFX_TRIM_DB đặt mỗi tiếng ở -21…-26 LUFS,
+ * tức 5–10 dB dưới giọng đọc -16 LUFS) nên ở đây không hạ thêm.
+ * KHÔNG sidechain theo giọng — hiệu ứng chỉ kêu 2–4 giây ở đúng mốc, hạ theo giọng thì mất hẳn tác dụng.
+ * ĐỪNG nâng quá 1: đo bằng `pnpm exec tsx scripts/sfx-measure.mjs --mix`, từ 1,5 trở lên đỉnh thật của cả tập
+ * vượt 0 dBFS (+1,6 dB ở 1,5; +2,4 dB ở 3) dù đã có alimiter=0.9 — hard limit sinh đỉnh giữa hai mẫu.
+ */
+export const SFX_GAIN = 1;
 const MUSIC_FADE_IN = 3;
 const MUSIC_FADE_OUT = 5;
 export const AUDIO_BITRATE = "192k";
@@ -119,25 +127,28 @@ export function voiceGainDb(measuredLufs: number | null) {
 /**
  * Bộ lọc âm thanh: giọng về -16 LUFS; nhạc mờ vào/ra, tự hạ khi có giọng (sidechain); trộn rồi chặn đỉnh.
  * Có `voiceGain` (đã đo bằng ebur128, ~1 giây) thì chỉ nhân gain; không thì dùng loudnorm (đo local: 34 giây/40 phút giọng — đắt gấp 40 lần).
+ * `sfx`: có input thứ 4 là track hiệu ứng của clip động (sfx.ts) — hạ xuống SFX_GAIN rồi trộn thẳng, không sidechain.
  */
-export function episodeAudioGraph(o: { seconds: number; musicGain: number; voiceGain: number | null }) {
+export function episodeAudioGraph(o: { seconds: number; musicGain: number; voiceGain: number | null; sfx?: boolean }) {
   const fadeOutAt = Math.max(0, o.seconds - MUSIC_FADE_OUT).toFixed(2);
   const level = o.voiceGain == null ? `loudnorm=I=${VOICE_LUFS}:TP=-1.5:LRA=11` : `volume=${o.voiceGain.toFixed(2)}dB`;
   return [
     `[1:a]${level},aresample=${AUDIO_RATE},aformat=sample_fmts=fltp:channel_layouts=stereo,asplit=2[vo][sc]`,
     `[2:a]aresample=${AUDIO_RATE},aformat=sample_fmts=fltp:channel_layouts=stereo,volume=${o.musicGain},afade=t=in:st=0:d=${MUSIC_FADE_IN},afade=t=out:st=${fadeOutAt}:d=${MUSIC_FADE_OUT}[mu]`,
     "[mu][sc]sidechaincompress=threshold=0.04:ratio=3:attack=30:release=600:makeup=1[md]",
-    "[vo][md]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.9[a]",
+    ...(o.sfx ? [`[3:a]aresample=${AUDIO_RATE},aformat=sample_fmts=fltp:channel_layouts=stereo,volume=${SFX_GAIN}[sx]`] : []),
+    `[vo][md]${o.sfx ? "[sx]" : ""}amix=inputs=${o.sfx ? 3 : 2}:duration=first:normalize=0,alimiter=limit=0.9[a]`,
   ].join(";");
 }
 
 /** Bước cuối của chương tĩnh: nối các đoạn (concat copy) + trộn âm thanh trong MỘT lệnh, video `-c:v copy` (≈ 0 CPU video). */
-export function episodeMuxArgs(o: { list: string; narration: string; music: string; seconds: number; isAmbient: boolean; voiceGain: number | null; out: string }) {
+export function episodeMuxArgs(o: { list: string; narration: string; music: string; seconds: number; isAmbient: boolean; voiceGain: number | null; sfx?: string | null; out: string }) {
   return [
     "-f", "concat", "-safe", "0", "-i", o.list,
     "-i", o.narration,
     "-stream_loop", "-1", "-t", o.seconds.toFixed(2), "-i", o.music,
-    "-filter_complex", episodeAudioGraph({ seconds: o.seconds, musicGain: o.isAmbient ? AMBIENT_GAIN : MUSIC_GAIN, voiceGain: o.voiceGain }),
+    ...(o.sfx ? ["-i", o.sfx] : []),
+    "-filter_complex", episodeAudioGraph({ seconds: o.seconds, musicGain: o.isAmbient ? AMBIENT_GAIN : MUSIC_GAIN, voiceGain: o.voiceGain, sfx: Boolean(o.sfx) }),
     "-map", "0:v", "-map", "[a]",
     "-c:v", "copy", "-c:a", "aac", "-b:a", AUDIO_BITRATE, "-ar", AUDIO_RATE, "-ac", "2",
     "-shortest", "-movflags", "+faststart", o.out,
