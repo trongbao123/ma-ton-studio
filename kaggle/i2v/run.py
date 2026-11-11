@@ -125,10 +125,11 @@ def load_pipe(torch, spec):
         from diffusers import CogVideoXImageToVideoPipeline
 
         pipe = CogVideoXImageToVideoPipeline.from_pretrained(spec["repo"], torch_dtype=torch.float16)
-        # ĐỪNG quay lại enable_sequential_cpu_offload(): đo thật lần đầu cho peak chỉ 3,93 GiB trên card 16 GiB,
-        # tức offload từng lớp hoàn toàn thừa, mà nó chính là thứ kéo 1 clip lên 47 phút (55 giây/bước × 50 bước).
-        # model_cpu_offload đổi cả mô-đun một lần như LTX đang dùng.
-        pipe.enable_model_cpu_offload()
+        # PHẢI dùng sequential (từng LỚP), KHÔNG được đổi sang model_cpu_offload: đã thử và OOM ngay
+        # (12,58 GiB PyTorch cấp phát / 14,56 GiB khả dụng, kernel mwcfwxj4).
+        # Số "peak 3,93 GiB" ở lần chạy trước là HỆ QUẢ của sequential chứ không phải bằng chứng model nhẹ.
+        # Cái giá của sequential là 55 giây/bước → 47 phút/clip trên T4. Đó là mức không giảm được ở GPU này.
+        pipe.enable_sequential_cpu_offload()
         pipe.vae.enable_tiling()
         pipe.vae.enable_slicing()
         return pipe

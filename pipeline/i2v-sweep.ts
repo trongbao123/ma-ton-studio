@@ -53,13 +53,18 @@ export const MODEL_PROBES: Record<string, ModelProbe> = {
   },
   // 6B, nổi tiếng động người hơn LTX 2B. Kích thước CỐ ĐỊNH 720×480, 49 khung @ 8 fps (ghép vào pipeline phải đổi fps).
   // Rủi ro thật: model huấn luyện bf16, T4 chỉ có fp16 → dễ ra NaN/khung đen; `usable()` trong run.py sẽ bắt được.
-  // ĐÃ ĐO trên T4: chạy được, KHÔNG NaN dù train bf16; giữ cảnh rất chắc (hào quang/mặt/vương miện y nguyên
-  // qua 6 giây, chỗ LTX bỏ neo là trôi sạch) NHƯNG động ÍT hơn LTX — YDIF 1,94 so với 2,75.
-  // Lần đầu mất 47 phút/clip vì tôi bật sequential cpu offload; đo ra peak chỉ 3,93 GiB nên offload đó thừa.
+  // NGÕ CỤT TRÊN T4 — đã đo đủ, giữ lại để không ai thử lại từ đầu:
+  //  · Chạy được, KHÔNG NaN dù train bf16. Giữ cảnh rất chắc (hào quang/mặt/vương miện y nguyên qua 6 giây,
+  //    đúng chỗ LTX bỏ neo là trôi sạch).
+  //  · NHƯNG động ÍT hơn LTX: YDIF 1,94 so với 2,75 — không giải quyết được việc "nhân vật diễn".
+  //  · Và chậm 47 phút/clip. Bắt buộc sequential cpu offload; đổi sang model_cpu_offload là OOM ngay
+  //    (12,58/14,56 GiB, kernel mwcfwxj4). Peak 3,93 GiB ở bản sequential là HỆ QUẢ của offload từng lớp,
+  //    KHÔNG phải bằng chứng model nhẹ — đừng đọc nhầm như lần trước.
+  //  Muốn thử tiếp thì cần GPU khác (A100/L4 trả phí), không phải đổi tham số.
   cogvideox5b: {
     name: "CogVideoX-5B I2V", family: "cogvideox", repo: "zai-org/CogVideoX-5b-I2V", dtype: "float16",
     steps: 50, guidance: 6, width: 720, height: 480, frames: 49, fps: 8,
-    note: "giữ cảnh chắc nhưng YDIF 1,94 < LTX 2,75; VRAM đỉnh 3,93 GiB nên dùng model_cpu_offload, đừng dùng sequential",
+    note: "NGÕ CỤT trên T4: 47 phút/clip và YDIF 1,94 < LTX 2,75; model_cpu_offload thì OOM",
   },
 };
 
