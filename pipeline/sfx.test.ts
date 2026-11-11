@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CLIP_FRAMES } from "./i2v-plan";
-import { SFX_KINDS, SFX_SECONDS, SFX_TRIM_DB, sfxEvents, sfxKinds, sfxSource, sfxTrackArgs } from "./sfx";
+import { SFX_KINDS, SFX_SECONDS, SFX_TRIM_DB, sfxCutEvents, sfxEvents, sfxKinds, sfxSource, sfxTrackArgs } from "./sfx";
 import { SFX_GAIN, STILL_FPS } from "./still";
 
 /** Cảnh dài 60 giây liên tiếp như chương thật (1 ảnh/60 giây). */
@@ -51,6 +51,29 @@ describe("sfxEvents", () => {
   });
   it("bỏ cảnh không có trong danh sách", () => {
     expect(sfxEvents([clip(99, "lightning")], scenes, 300)).toEqual([]);
+  });
+});
+
+describe("sfxCutEvents (tiếng đập theo nhịp cắt của intro)", () => {
+  const scenes = [{ start: 0, end: 4 }, { start: 4, end: 7.5 }, { start: 7.5, end: 11 }, { start: 11, end: 15 }];
+
+  it("một tiếng cho mỗi lần đổi ảnh, KHÔNG có tiếng ở giây 0 (chưa cắt gì đã đập là vô lý)", () => {
+    const got = sfxCutEvents(scenes, 15);
+    expect(got).toHaveLength(scenes.length - 1);
+    expect(got.every((e) => e.at > 0)).toBe(true);
+  });
+  it("tiếng rơi đúng lúc đổi ảnh", () => {
+    expect(sfxCutEvents(scenes, 15).map((e) => e.at)).toEqual([4, 7.5, 11]);
+  });
+  it("đổi loại tiếng liên tiếp — 3 cú sấm giống hệt nghe như lỗi băng", () => {
+    const kinds = sfxCutEvents(scenes, 15).map((e) => e.kind);
+    for (let i = 1; i < kinds.length; i++) expect(kinds[i]).not.toBe(kinds[i - 1]);
+  });
+  it("bỏ mốc rơi ra ngoài đoạn", () => {
+    expect(sfxCutEvents(scenes, 8).map((e) => e.at)).toEqual([4, 7.5]);
+  });
+  it("một ảnh duy nhất thì không có nhịp cắt nào", () => {
+    expect(sfxCutEvents([{ start: 0, end: 10 }], 10)).toEqual([]);
   });
 });
 

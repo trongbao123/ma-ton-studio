@@ -12,6 +12,7 @@ import { duration, ffmpeg } from "./ffmpeg";
 import { playlistUrl, seriesPlaylist } from "./playlist";
 import { scenePrompts } from "./prompts";
 import { outroArgs } from "./outro";
+import { sfxCutEvents, sfxTrackArgs } from "./sfx";
 import { BURN_TEXT, buildVideo, FONT, musicCredit, narrate, pickMusic, splitScenes, thumbnail } from "./render";
 import { PUBLISH_HOUR_UTC } from "./schedule";
 import { conformArgs } from "./still";
@@ -47,7 +48,7 @@ const episodeSchema = z.object({
   shortTitle: z.string().describe("Tiêu đề Short ≤ 60 ký tự, có tên truyện, có #shorts"),
   shortDescription: z.string().describe("1–2 câu có tên truyện, mời xem tập full trên kênh, kèm #shorts"),
   coldOpen: z.string().describe("Lời đọc MỞ ĐẦU video 30–45 giây (85–120 từ), phát ngay giây đầu tiên để giữ người xem: kể khoảnh khắc gay cấn nhất của tập như đang diễn ra trước mắt; câu đầu tiên là biến cố/hành động cụ thể (KHÔNG chào hỏi, KHÔNG đọc tên truyện, KHÔNG nói 'trong tập này'); dừng ngay trước kết quả; câu cuối gợi tò mò để nghe từ đầu, vd 'Nhưng để hiểu vì sao mọi chuyện ra nông nỗi này, phải quay về từ đầu…'"),
-  shortScript: z.string().describe("Lời đọc Short 60–90 giây (170–230 từ): hook cực mạnh câu đầu, kể khoảnh khắc KỊCH TÍNH nhất trong 3 chương, dừng ở cao trào, câu cuối mời xem tập full"),
+  shortScript: z.string().describe("Lời đọc Short 15–20 giây (45–60 từ): hook cực mạnh câu đầu, kể khoảnh khắc KỊCH TÍNH nhất trong 3 chương, dừng ở cao trào, câu cuối mời xem tập full"),
 });
 
 const clip = (t: string, n: number) => (t.length > n ? `${t.slice(0, n - 1)}…` : t);
@@ -71,6 +72,23 @@ async function writeMeta(o: EpisodeInput, seoText: string | null, total: number)
  * Video cũ mở bằng câu đọc tên truyện trên 1 ảnh đứng yên → người xem từ đề xuất thoát sau ~10 giây, YouTube ngừng đẩy.
  * Encode lại cho trùng thông số chương tĩnh để ghép copy. Lỗi/hết quota thì bỏ đoạn mở đầu, không làm hỏng tập.
  */
+/** Thẻ tên truyện chiếm ngần này giây cuối intro. */
+const TITLE_CARD_SECONDS = 5;
+
+/** Track tiếng đập theo nhịp đổi ảnh của intro; lỗi (thiếu ffmpeg filter, v.v.) thì trả null, intro vẫn chạy. */
+async function buildCutSfx(dir: string, scenes: { start: number; end: number }[], seconds: number): Promise<string | null> {
+  const events = sfxCutEvents(scenes, seconds);
+  if (!events.length) return null;
+  const file = path.join(dir, "cold-sfx.wav");
+  try {
+    await ffmpeg(sfxTrackArgs(events, seconds, file));
+    return file;
+  } catch (e) {
+    console.warn("⚠ Bỏ tiếng hiệu ứng intro:", e instanceof Error ? e.message.slice(0, 200) : e);
+    return null;
+  }
+}
+
 async function makeColdOpen(o: EpisodeInput, m: z.infer<typeof episodeSchema>, music: string | null): Promise<{ file: string; seconds: number } | null> {
   if (!m.coldOpen?.trim()) return null;
   try {
@@ -82,8 +100,13 @@ async function makeColdOpen(o: EpisodeInput, m: z.infer<typeof episodeSchema>, m
     const narration = await narrate(`${m.coldOpen.trim()}${bridge}`, dir, o.s.ttsVoice);
     const scenes = splitScenes(narration.cues, coldOpenSceneCount(narration.seconds), narration.seconds);
     const prompts = await scenePrompts(m.characterLook, scenes.map((x) => x.text));
+    // Tiếng đập đúng nhịp đổi ảnh. Lỗi thì bỏ, intro vẫn có giọng + nhạc như cũ.
+    const sfx = await buildCutSfx(dir, scenes, narration.seconds);
+    // Thẻ tên truyện + số tập hiện ở CUỐI intro rồi mở thẳng vào chương 1 (kiểu title card của phim).
+    const card = `${o.s.title}\nTẬP ${o.episodeNo}`;
     const raw = await buildVideo({
-      dir, name: "cold", narration, scenes, prompts, music,
+      dir, name: "cold", narration, scenes, prompts, music, sfx,
+      titleCard: card, titleCardStart: Math.max(0, narration.seconds - TITLE_CARD_SECONDS),
       w: 1920, h: 1080, imgW: 1280, imgH: 768, fontSize: 62, marginV: 70,
     });
     const file = path.join(dir, "cold-open.mp4");
@@ -136,7 +159,7 @@ export async function makeOutro(o: { dir: string; video: string; videoId: number
 
 export type ShortInput = { dir: string; voice: string; script: string; characterLook: string; hook: string; music: string | null };
 
-/** Dựng Short 60–90 giây từ lời đọc; ném lỗi (kể cả QuotaExhaustedError) để người gọi quyết định. Trả đường dẫn short.mp4. */
+/** Dựng Short 15–20 giây từ lời đọc; ném lỗi (kể cả QuotaExhaustedError) để người gọi quyết định. Trả đường dẫn short.mp4. */
 export async function renderShort(o: ShortInput): Promise<string> {
   const dir = path.join(o.dir, "short");
   await mkdir(dir, { recursive: true });

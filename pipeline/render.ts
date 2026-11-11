@@ -12,7 +12,7 @@ import { duration, escText, ffmpeg, filterPath, measureLufs, once, pool } from "
 import { Tracker } from "./progress";
 import { buildClipSegment, newI2vRun, type I2vRun } from "./i2v";
 import { sfxEvents, sfxTrackArgs } from "./sfx";
-import { episodeMuxArgs, STILL_FPS, stillFrames, stillSegmentArgs, voiceGainDb } from "./still";
+import { episodeMuxArgs, SFX_GAIN, STILL_FPS, stillFrames, stillSegmentArgs, voiceGainDb } from "./still";
 import { cleanupParallax, prepareParallax } from "./parallax";
 import { PARALLAX_BUDGET, parallaxFilterGraph, parallaxInputArgs, parallaxMotionFor, parallaxWorkDir, planParallax, type ParallaxFiles } from "./parallax-plan";
 import { freshInsights, loadTrends, seoHints } from "@/lib/trends";
@@ -26,7 +26,7 @@ import { AI_NOTE, optimizeMeta } from "@/lib/seo-optimize";
 import { autoPublishEligible, publishToYoutube } from "./youtube";
 
 type ScenePrompt = Awaited<ReturnType<typeof scenePrompts>>[number];
-import { cuesForChunk, packChunks, sentences, toAss, type Cue } from "./text";
+import { cuesForChunk, packChunks, sentences, titleCardFilter, toAss, type Cue } from "./text";
 import { speak } from "./tts";
 
 // Đường dẫn tương đối (ffmpeg chạy ở gốc repo): đường dẫn tuyệt đối trên Windows có "C:" làm vỡ cú pháp filter của drawtext.
@@ -92,15 +92,6 @@ export function splitScenes(cues: Cue[], n: number, total: number) {
 /** Lời đọc (các cue chạm khoảng [start, end]) — prompt cảnh bám đúng câu đang đọc. */
 export function cueTextBetween(cues: Cue[], start: number, end: number) {
   return cues.filter((c) => c.start < end && c.end > start).map((c) => c.text).join(" ");
-}
-
-/**
- * Cỡ chữ title card vừa khung: mặc định w/22, dòng dài thì thu nhỏ để chiếm ≤ 90% chiều ngang
- * (chữ Việt có dấu rộng ~0.6 cỡ chữ). Trước đây tên chương dài bị cắt mất hai đầu ngay 5 giây đầu video.
- */
-export function titleCardFontSize(text: string, w: number) {
-  const longest = Math.max(1, ...text.split("\n").map((l) => [...l].length));
-  return Math.max(24, Math.min(Math.round(w / 22), Math.floor((w * 0.9) / (longest * 0.6))));
 }
 
 const FADE = 0.8;
@@ -190,6 +181,10 @@ export async function crossfadeGroup(clips: { file: string; seconds: number; fad
 export async function buildVideo(opts: {
   dir: string; name: string; narration: Narration; music?: string | null; prompts: ScenePrompt[]; scenes: { start: number; end: number }[];
   w: number; h: number; imgW: number; imgH: number; fontSize: number; marginV: number; titleCard?: string;
+  /** Giây bắt đầu hiện thẻ tên truyện (mặc định 0 = đầu video; intro đặt ở cuối để mở vào chương 1). */
+  titleCardStart?: number;
+  /** Track tiếng hiệu ứng dài bằng video (sfx.ts) — intro dùng để đập theo nhịp cắt. */
+  sfx?: string | null;
   /** Short: chữ lớn 2 giây đầu để giữ người lướt; thanh tiến độ mảnh trên đỉnh. */
   hook?: string; progressBar?: boolean;
   /** Mặc định NORMAL. */
@@ -275,18 +270,22 @@ export async function buildVideo(opts: {
   const grade = q.vignette ? "eq=contrast=1.05:saturation=1.08,vignette=PI/6" : "eq=contrast=1.05:saturation=1.08";
   const text = BURN_TEXT
     ? `,ass=${filterPath(ass)}:fontsdir=${filterPath(FONT_DIR)}` +
-      (opts.titleCard
-        ? `,drawtext=fontfile=${filterPath(FONT)}:text='${escText(opts.titleCard)}':fontsize=${titleCardFontSize(opts.titleCard, w)}:fontcolor=white:borderw=5:bordercolor=black@0.8:x=(w-tw)/2:y=(h-th)/2:alpha='if(lt(t,0.6),t/0.6,if(lt(t,4),1,max(0,(5-t))))':enable='lt(t,5)'`
-        : "") +
+      (opts.titleCard ? titleCardFilter({ text: opts.titleCard, w, font: FONT, start: opts.titleCardStart ?? 0 }) : "") +
       (opts.hook ? hookText(opts.hook, w) : "")
     : "";
   // Thanh tiến độ vàng mảnh trên đỉnh Short: người xem thấy còn bao lâu nên ít lướt qua.
   const bar = opts.progressBar ? `,drawbox=x=0:y=0:w='iw*t/${narration.seconds.toFixed(2)}':h=12:color=0xFFD23F@0.95:t=fill` : "";
-  on?.log?.("Trộn giọng đọc, nhạc nền, phụ đề");
+  on?.log?.(`Trộn giọng đọc, nhạc nền${opts.sfx ? ", tiếng hiệu ứng" : ""}, phụ đề`);
   const music = opts.music ?? (await ambientBed(dir));
+  // Tiếng hiệu ứng (intro): input thứ 4, trộn thẳng ở SFX_GAIN như bên chương tĩnh.
   const audio = [
     "-stream_loop", "-1", "-i", music,
-    "-filter_complex", `[2:a]volume=${music.endsWith("ambient.wav") ? 0.4 : 0.28}[m];[1:a][m]amix=inputs=2:duration=first:normalize=0[a]`,
+    ...(opts.sfx ? ["-i", opts.sfx] : []),
+    "-filter_complex",
+    `[2:a]volume=${music.endsWith("ambient.wav") ? 0.4 : 0.28}[m];` +
+      (opts.sfx
+        ? `[3:a]volume=${SFX_GAIN}[sx];[1:a][m][sx]amix=inputs=3:duration=first:normalize=0[a]`
+        : `[1:a][m]amix=inputs=2:duration=first:normalize=0[a]`),
     "-map", "0:v", "-map", "[a]",
   ];
   await once(out, (tmp) =>

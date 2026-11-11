@@ -76,6 +76,10 @@ export type VideoMeta = {
   shortClip?: { sourceChapterId: number; scoreTitle: number | null; episodeVideoId?: number };
   /** Tập ngày: tiến độ bù Short (attempts = số lần lỗi thật; gaveUp = bỏ cuộc; lastReason = lý do lần thử gần nhất). */
   shortBackfill?: { attempts: number; gaveUp?: boolean; done?: boolean; lastReason?: "quota" | "error"; lastError?: string };
+  /** Đã tự đăng bình luận kêu gọi thích/chia sẻ/đăng ký (pipeline/comment.ts) — có rồi thì không đăng lại. */
+  commentedAt?: string;
+  /** Như trên nhưng cho Short của row này (Short phát sau video dài 2 tiếng nên bình luận cũng muộn hơn). */
+  shortCommentedAt?: string;
 };
 
 /** Một lần render cho một chương: video dài + 1 Short + thumbnail, lưu ở GitHub Release `video-<id>`. */

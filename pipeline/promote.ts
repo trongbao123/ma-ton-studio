@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { videos } from "@/db/schema";
 import { loadSecrets } from "@/lib/secrets";
 import { accessToken, getYoutubeAuth, updateYoutubeSnippet } from "@/lib/youtube";
+import { postComment } from "./comment";
 import { recordYoutubeUnits } from "@/lib/yt-units";
 
 const MARK = "▶ XEM TIẾP";
@@ -32,14 +33,11 @@ export async function promoteEpisode(episodeId: number, targetIds: number[]) {
     await updateYoutubeSnippet(v.youtubeVideoId, { title: v.meta.title, description, tags: v.meta.tags });
     await recordYoutubeUnits("videoUpdate");
     await db().update(videos).set({ meta: { ...v.meta, description } }).where(eq(videos.id, v.id));
-    const res = await fetch("https://www.googleapis.com/youtube/v3/commentThreads?part=snippet", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        snippet: { videoId: v.youtubeVideoId, topLevelComment: { snippet: { textOriginal: `🔥 Nghe tiếp ${label} — trọn ${mins} phút liền mạch: ${url}\nĐăng ký kênh để không lỡ tập mới mỗi ngày lúc 15h!` } } },
-      }),
-    });
-    await recordYoutubeUnits("commentInsert");
-    console.log(`  #${v.id} youtu.be/${v.youtubeVideoId}: mô tả ✔, bình luận ${res.ok ? "✔" : `✗ ${res.status} ${(await res.text()).slice(0, 150)}`}`);
+    const err = await postComment(
+      token,
+      v.youtubeVideoId,
+      `🔥 Nghe tiếp ${label} — trọn ${mins} phút liền mạch: ${url}\nĐăng ký kênh để không lỡ tập mới mỗi ngày lúc 15h!`,
+    );
+    console.log(`  #${v.id} youtu.be/${v.youtubeVideoId}: mô tả ✔, bình luận ${err ? `✗ ${err}` : "✔"}`);
   }
 }

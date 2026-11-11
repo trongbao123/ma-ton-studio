@@ -16,7 +16,7 @@ import { ensureRelease, uploadAsset } from "./release";
 import { uploadVideo } from "./youtube";
 
 const shortDraftSchema = z.object({
-  shortScript: z.string().describe("Lời đọc Short 60–90 giây (170–230 từ): hook cực mạnh câu đầu, kể khoảnh khắc KỊCH TÍNH nhất trong các chương, dừng ở cao trào, câu cuối mời xem tập full"),
+  shortScript: z.string().describe("Lời đọc Short 15–20 giây (45–60 từ): hook cực mạnh câu đầu, kể khoảnh khắc KỊCH TÍNH nhất trong các chương, dừng ở cao trào, câu cuối mời xem tập full"),
   thumbnailText: z.string().describe("Chữ hook hiện trên Short, 2–3 từ IN HOA, cảm xúc mạnh"),
   characterLook: z.string().describe("English: ngoại hình nhân vật chính"),
 });

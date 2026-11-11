@@ -61,6 +61,20 @@ export function sfxEvents(
  */
 export const SFX_TRIM_DB: Record<SfxKind, number> = { thunder: 1.5, boom: 7.9, energy: 4.2, whoosh: -1.5, rumble: -1 };
 
+/** Vòng loại tiếng cho nhịp cắt của intro: đập mạnh xen tiếng gió, không lặp 2 cú giống nhau liền nhau. */
+const CUT_CYCLE: SfxKind[] = ["boom", "whoosh", "thunder", "energy"];
+
+/**
+ * Tiếng đập đúng lúc ĐỔI ẢNH của đoạn mở đầu cao trào — mỗi lần cắt một cú, đổi loại liên tiếp.
+ * Không có tiếng ở giây 0 (chưa cắt gì đã đập là vô lý) và bỏ mốc rơi ra ngoài đoạn.
+ */
+export function sfxCutEvents(scenes: readonly { start: number; end: number }[], seconds: number): SfxEvent[] {
+  return scenes
+    .slice(1)
+    .map((sc, i) => ({ kind: CUT_CYCLE[i % CUT_CYCLE.length], at: sc.start }))
+    .filter((e) => e.at > 0 && e.at < seconds);
+}
+
 /**
  * Bộ lọc lavfi tạo 1 tiếng (48 kHz, mono), đã cân mức theo SFX_TRIM_DB.
  * `variant` đổi seed nhiễu: 2 tiếng cùng loại trong một chương nghe khác nhau, nhưng dựng lại vẫn ra đúng file cũ (đo mức lặp lại được).

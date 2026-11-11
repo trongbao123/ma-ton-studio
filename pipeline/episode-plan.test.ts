@@ -110,11 +110,15 @@ describe("buildEpisodeToc", () => {
 });
 
 describe("coldOpenSceneCount", () => {
-  it("~6 giây 1 ảnh, kẹp 4–8", () => {
-    expect(coldOpenSceneCount(10)).toBe(4);
-    expect(coldOpenSceneCount(32)).toBe(5);
-    expect(coldOpenSceneCount(45)).toBe(8);
-    expect(coldOpenSceneCount(90)).toBe(8);
+  // Intro dồn dập: ~3,5 giây 1 ảnh thay vì ~6 — intro 30–45 giây có 9–13 ảnh thay vì 5–8.
+  it("~3,5 giây 1 ảnh, kẹp 8–14", () => {
+    expect(coldOpenSceneCount(10)).toBe(8);
+    expect(coldOpenSceneCount(32)).toBe(9);
+    expect(coldOpenSceneCount(45)).toBe(13);
+    expect(coldOpenSceneCount(90)).toBe(14);
+  });
+  it("cắt nhanh hơn Short một chút nhưng cùng cỡ — đều là đoạn giữ chân người xem", () => {
+    expect(coldOpenSceneCount(35)).toBeGreaterThanOrEqual(shortSceneCount(35) - 1);
   });
 });
 
