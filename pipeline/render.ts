@@ -777,8 +777,11 @@ if (process.argv[1]?.endsWith("render.ts")) {
     if (arg.startsWith("playlist:")) return import("./playlist").then((x) => x.backfillPlaylist(Number(arg.slice(9))));
     if (arg === "shorts") return import("./short-backfill").then((x) => x.backfillEpisodeShorts());
     if (arg.startsWith("redo:")) {
-      const [, id, iso] = arg.match(/^redo:(\d+)(?::(.+))?$/) ?? [];
-      return import("./redo-episode").then((x) => x.redoEpisode(Number(id), iso ? new Date(iso) : undefined));
+      // redo:<id>[:<ISO lịch>][:full]
+      const [, id, rest = ""] = arg.match(/^redo:(\d+)(?::(.+))?$/) ?? [];
+      const full = rest.endsWith(":full") || rest === "full";
+      const iso = rest.replace(/:?full$/, "");
+      return import("./redo-episode").then((x) => x.redoEpisode(Number(id), iso ? new Date(iso) : undefined, full));
     }
     if (arg.startsWith("thumbs:")) return import("./rethumb").then((x) => x.rethumb(Number(arg.slice(7))));
     if (arg === "trends") return import("./trends").then((x) => x.scanTrends());
