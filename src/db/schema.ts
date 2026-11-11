@@ -69,6 +69,8 @@ export type VideoMeta = {
   /** Tập ngày: lời đọc Short + dữ liệu đi kèm, giữ lại để bù Short sau nếu lúc dựng tập bị bỏ qua. */
   shortScript?: string;
   thumbnailText?: string;
+  /** Tập ngày: điểm vidIQ của 3 thumbnail (a cận mặt, b đối đầu, c bùng nổ; null = không chấm được) và phương án đã đặt lên YouTube. */
+  thumbScores?: { a?: number | null; b?: number | null; c?: number | null; chosen: "a" | "b" | "c" };
   characterLook?: string;
   /** Tập ngày: tiến độ bù Short (attempts = số lần lỗi thật; gaveUp = bỏ cuộc; lastReason = lý do lần thử gần nhất). */
   shortBackfill?: { attempts: number; gaveUp?: boolean; done?: boolean; lastReason?: "quota" | "error"; lastError?: string };

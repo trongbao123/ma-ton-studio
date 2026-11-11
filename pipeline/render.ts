@@ -13,7 +13,7 @@ import { Tracker } from "./progress";
 import { episodeMuxArgs, stillFrames, stillSegmentArgs, voiceGainDb } from "./still";
 import { freshInsights, loadTrends, seoHints } from "@/lib/trends";
 import { characterLookFor, metaRequest, scenePrompts, scenesRequest, videoMeta } from "./prompts";
-import { imageCount } from "./episode-plan";
+import { imageCount, planChapterScenes, shortSceneCount } from "./episode-plan";
 import { ensureRelease, uploadAsset } from "./release";
 import { keepOrNextSlot } from "./schedule";
 import { loadSecrets } from "@/lib/secrets";
@@ -79,9 +79,13 @@ export function splitScenes(cues: Cue[], n: number, total: number) {
   return Array.from({ length: n }, (_, i) => {
     const start = i * span;
     const end = i === n - 1 ? total : (i + 1) * span;
-    const text = cues.filter((c) => c.start < end && c.end > start).map((c) => c.text).join(" ");
-    return { start, end, text };
+    return { start, end, text: cueTextBetween(cues, start, end) };
   });
+}
+
+/** Lời đọc (các cue chạm khoảng [start, end]) — prompt cảnh bám đúng câu đang đọc. */
+export function cueTextBetween(cues: Cue[], start: number, end: number) {
+  return cues.filter((c) => c.start < end && c.end > start).map((c) => c.text).join(" ");
 }
 
 /**
@@ -270,7 +274,7 @@ export async function buildVideo(opts: {
  * Không phụ đề, không title card, không zoompan/xfade/grade. Giữ nguyên 1080p.
  */
 export async function buildStillVideo(opts: {
-  dir: string; name: string; narration: Narration; music?: string | null; prompts: ScenePrompt[]; scenes: { start: number; end: number }[];
+  dir: string; name: string; narration: Narration; music?: string | null; prompts: ScenePrompt[]; scenes: { start: number; end: number; zoom?: boolean }[];
   w: number; h: number; imgW: number; imgH: number;
   on?: { image?: (i: number, file: string, model?: string) => Promise<void>; shots?: (n: number) => void; shot?: () => void; log?: (text: string) => void };
 }) {
@@ -288,7 +292,7 @@ export async function buildStillVideo(opts: {
     const model = await drawImage(prompts[i].prompt, img, { width: opts.imgW, height: opts.imgH, seed: 1000 + i * 7 });
     await on?.image?.(i, img, model);
     const file = path.join(dir, `${name}-seg-${String(i).padStart(3, "0")}.mp4`);
-    await once(file, (tmp) => ffmpeg(stillSegmentArgs({ img, out: tmp, frames: stillFrames(sc.start, sc.end), w, h, logoCrop: LOGO_CROP })));
+    await once(file, (tmp) => ffmpeg(stillSegmentArgs({ img, out: tmp, frames: stillFrames(sc.start, sc.end), w, h, logoCrop: LOGO_CROP, zoom: sc.zoom })));
     on?.shot?.();
     return file;
   });
@@ -369,21 +373,30 @@ async function ambientBed(dir: string) {
 }
 
 /** `badge`: nhãn đỏ góc trên, vd "CHƯƠNG 12" hoặc "TRỌN BỘ CHƯƠNG 1–5" (bản gộp). */
-export async function thumbnail(dir: string, prompt: string, text: string, badge: string) {
-  const img = path.join(dir, "thumb-src.jpg");
-  await drawImage(`${prompt}, YouTube thumbnail, 16:9`, img, { width: 1280, height: 720, seed: 42 });
-  const out = path.join(dir, "thumbnail.jpg");
+export async function thumbnail(dir: string, prompt: string, text: string, badge: string, variant: { name?: string; seed?: number } = {}) {
+  const name = variant.name ?? "thumbnail";
+  const img = path.join(dir, `${name}-src.jpg`);
+  await drawImage(`${prompt}, YouTube thumbnail, 16:9`, img, { width: 1280, height: 720, seed: variant.seed ?? 42 });
+  const out = path.join(dir, `${name}.jpg`);
   // Chữ to 2 dòng bên TRÁI (ảnh chừa trống bên trái), nền tối dần để chữ nổi; nhãn chương góc trên.
   const lines = splitThumbText(text.toUpperCase());
+  const size = thumbFontSize(lines);
+  const lineH = Math.round(size * 1.18);
   const draw = BURN_TEXT
-    ? `,drawbox=x=0:y=0:w=iw*0.55:h=ih:color=black@0.35:t=fill,` +
+    ? `,drawbox=x=0:y=0:w=iw*0.58:h=ih:color=black@0.35:t=fill,` +
       lines
-        .map((l, i) => `drawtext=fontfile=${filterPath(FONT)}:text='${escText(l)}':fontsize=${lines.length > 1 ? 118 : 136}:fontcolor=${i ? "white" : "#FFD23F"}:borderw=10:bordercolor=black:x=50:y=(h/2)-${lines.length > 1 ? 130 : 70}+${i * 140}`)
+        .map((l, i) => `drawtext=fontfile=${filterPath(FONT)}:text='${escText(l)}':fontsize=${size}:fontcolor=${i ? "white" : "#FFD23F"}:borderw=${Math.round(size / 10)}:bordercolor=black:x=40:y=(h/2)-${Math.round((lineH * lines.length) / 2)}+${i * lineH}`)
         .join(",") +
-      `,drawtext=fontfile=${filterPath(FONT)}:text='${escText(badge)}':fontsize=54:fontcolor=white:box=1:boxcolor=#B91C1C:boxborderw=18:x=50:y=50`
+      `,drawtext=fontfile=${filterPath(FONT)}:text='${escText(badge)}':fontsize=60:fontcolor=white:box=1:boxcolor=#B91C1C:boxborderw=18:x=40:y=40`
     : "";
   await ffmpeg(["-i", img, "-vf", `${LOGO_CROP}scale=1280:720:force_original_aspect_ratio=increase:flags=lanczos,crop=1280:720:(iw-ow)/2:(ih-oh)*0.3,eq=contrast=1.12:saturation=1.25,unsharp=5:5:0.8${draw}`, "-q:v", "2", out]);
   return out;
+}
+
+/** Cỡ chữ thumbnail: to nhất có thể (tối đa 170) nhưng dòng dài nhất vẫn nằm trong ~56% khung rộng 1280 (chữ Việt hoa rộng ~0,62 cỡ chữ). */
+export function thumbFontSize(lines: string[]) {
+  const longest = Math.max(1, ...lines.map((l) => [...l].length));
+  return Math.round(Math.min(lines.length > 1 ? 150 : 170, 700 / (longest * 0.62)));
 }
 
 /** "NUỐT XÁC THẦN LINH" → ["NUỐT XÁC", "THẦN LINH"] — chia đôi theo số chữ để chữ thật to. */
@@ -416,14 +429,12 @@ function clip(req: { system: string; prompt: string }) {
   return `[system] ${req.system}\n\n${req.prompt}`.slice(0, 4000);
 }
 
-const SHORT_SCENES = 5;
-
 /** Cache cảnh/ảnh của video chương gắn với số ảnh `n`: đổi cách chia (vd chuyển sang chế độ tập) thì bỏ ảnh/cảnh cũ — ảnh lệch lời đọc. */
-async function resetStaleScenes(dir: string, n: number) {
+async function resetStaleScenes(dir: string, plan: string) {
   const marker = path.join(dir, "scene-plan.txt");
-  if ((await readFile(marker, "utf8").catch(() => "")) === String(n)) return;
+  if ((await readFile(marker, "utf8").catch(() => "")) === plan) return;
   for (const f of await readdir(dir).catch(() => [] as string[])) if (/^long-(img-\d+\.jpg|shot|group|silent|seg)/.test(f)) await rm(path.join(dir, f), { force: true });
-  await writeFile(marker, String(n));
+  await writeFile(marker, plan);
 }
 
 /**
@@ -444,17 +455,21 @@ async function renderInternalChapter(o: { videoId: number; s: Series; c: Chapter
   };
   await db().update(videos).set({ meta }).where(eq(videos.id, videoId));
 
-  const longText = `${s.title}. Chương ${c.number}: ${c.title}.\n${c.content}`;
+  // Không đọc "Tên truyện. Chương N: …" ở đầu: người xem từ đề xuất thoát ngay ở câu đọc máy đó. Tập tự mở bằng đoạn cao trào + câu chuyển.
+  const longText = c.content;
   track.start("tts", { long: ttsChunks(longText).length });
   track.log("tts", `Giọng ${s.ttsVoice}`);
   console.log("● Chương nội bộ: đọc giọng");
   const long = await narrate(longText, dir, s.ttsVoice, (i, total) => track.tick("tts", "long", `Đoạn ${i + 1}/${total}`));
   track.finish("tts");
 
-  const n = imageCount(long.seconds, true);
-  await resetStaleScenes(dir, n);
-  const scenes = splitScenes(long.cues, n, long.seconds);
-  const prompts = await cached(path.join(dir, `long-scenes-${n}.json`), () => scenePrompts(look.characterLook, scenes.map((x) => x.text)));
+  // 2 phút đầu ~6 giây/ảnh (zoom nhẹ), phần sau 1 ảnh/30 giây; lời cảnh lấy theo cue đang đọc trong khoảng của ảnh.
+  const spans = planChapterScenes(long.seconds);
+  const n = spans.length;
+  const planTag = `fast-${n}`;
+  await resetStaleScenes(dir, planTag);
+  const scenes = spans.map((sp) => ({ ...sp, text: cueTextBetween(long.cues, sp.start, sp.end) }));
+  const prompts = await cached(path.join(dir, `long-scenes-${planTag}.json`), () => scenePrompts(look.characterLook, scenes.map((x) => x.text)));
   track.tick("agent", "long", `${n} prompt cảnh`);
   track.finish("agent");
 
@@ -616,13 +631,13 @@ export async function renderVideo(videoId: number) {
     track.set({ prompts: { meta: clip(metaRequest(s, c, undefined, trendHints)), scenes: clip(scenesRequest(m.characterLook, longScenes.map((x) => x.text))) } });
     const longPrompts = await cached(path.join(dir, `long-scenes-${n}.json`), () => scenePrompts(m.characterLook, longScenes.map((x) => x.text)));
     track.tick("agent", "long", `${n} prompt cảnh video dài`);
-    let shortScenes = short ? splitScenes(short.cues, SHORT_SCENES, short.seconds) : [];
+    let shortScenes = short ? splitScenes(short.cues, shortSceneCount(short.seconds), short.seconds) : [];
     let shortPrompts: ScenePrompt[] = [];
     if (short) {
       try {
         const raw = await cached(path.join(shortDir, "scenes.json"), () => scenePrompts(m.characterLook, shortScenes.map((x) => x.text)));
         shortPrompts = raw.map((p) => ({ ...p, prompt: `${p.prompt}, vertical portrait composition` }));
-        track.tick("agent", "short", `${SHORT_SCENES} prompt cảnh Short`);
+        track.tick("agent", "short", `${shortScenes.length} prompt cảnh Short`);
       } catch (e) {
         if (e instanceof QuotaExhaustedError) throw e;
         track.warn("agent", `Bỏ qua Short — lỗi prompt cảnh: ${e instanceof Error ? e.message : e}`);
@@ -641,7 +656,7 @@ export async function renderVideo(videoId: number) {
     });
 
     // ── Vẽ ảnh + dựng video chạy đan xen: shot nào có ảnh là dựng luôn.
-    track.start("images", { long: n, ...(short ? { short: SHORT_SCENES } : {}) });
+    track.start("images", { long: n, ...(short ? { short: shortScenes.length } : {}) });
     track.start("video");
     // AI vẽ thực sự đã dùng (Cloudflare, rồi DeepInfra khi hết quota…) — hiện trên node Vẽ ảnh và trang Hạn mức AI.
     const imageModels = new Set<string>();

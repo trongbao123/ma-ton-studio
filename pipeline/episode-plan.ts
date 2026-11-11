@@ -19,6 +19,7 @@ const EPISODE_IMAGE_SECONDS = 30;
 /** Video chương thường: 1 ảnh ~25 giây, tối đa 30. */
 const DEFAULT_IMAGE_SECONDS = 25;
 const MIN_IMAGES = 6;
+const SHORT_IMAGE_SECONDS = 3.5;
 const VN_OFFSET_MS = 7 * 3600_000;
 
 /** Ngày theo giờ Việt Nam (YYYY-MM-DD) — marker "đã viết hôm nay" reset lúc 0h VN. */
@@ -40,9 +41,33 @@ export function chaptersToWrite(o: { chaptersPerDay: number; writtenToday: numbe
   return Math.max(0, Math.min(o.chaptersPerDay * CATCH_UP_FACTOR - o.writtenToday, room));
 }
 
-/** Đoạn mở đầu cao trào: ~7 giây đổi 1 ảnh, 3–6 ảnh. */
+/** Đoạn mở đầu cao trào: ~6 giây đổi 1 ảnh, 4–8 ảnh. */
 export function coldOpenSceneCount(seconds: number) {
-  return Math.min(6, Math.max(3, Math.round(seconds / 7)));
+  return Math.min(8, Math.max(4, Math.round(seconds / 6)));
+}
+
+/** Short: ~3,5 giây đổi 1 ảnh (người lướt Shorts bỏ đi nếu hình đứng yên), 5–30 ảnh. */
+export function shortSceneCount(seconds: number) {
+  return Math.min(30, Math.max(5, Math.round(seconds / SHORT_IMAGE_SECONDS)));
+}
+
+/** Hai phút đầu của chương nội bộ đổi ảnh nhanh (~6 giây/ảnh) — phút đầu quyết định người xem từ đề xuất ở lại hay thoát. */
+export const FAST_OPEN_SECONDS = 120;
+const FAST_OPEN_IMAGE_SECONDS = 6;
+
+/**
+ * Lịch ảnh của video chương nội bộ: `FAST_OPEN_SECONDS` đầu chia ~6 giây/ảnh (20 ảnh), phần sau 1 ảnh/30 giây
+ * (tối đa EPISODE_MAX_IMAGES). Trả mốc [start, end] liền nhau, phủ kín [0, seconds]; `zoom` = đoạn thuộc 2 phút đầu.
+ * Chương ngắn hơn 2 phút thì cả chương theo nhịp nhanh.
+ */
+export function planChapterScenes(seconds: number) {
+  const head = Math.min(FAST_OPEN_SECONDS, seconds);
+  const headCount = Math.max(1, Math.round(head / FAST_OPEN_IMAGE_SECONDS));
+  const rest = seconds - head;
+  const restCount = rest > 0 ? Math.min(EPISODE_MAX_IMAGES, Math.max(1, Math.round(rest / EPISODE_IMAGE_SECONDS))) : 0;
+  const slice = (from: number, span: number, count: number, zoom: boolean) =>
+    Array.from({ length: count }, (_, i) => ({ start: from + (span * i) / count, end: i === count - 1 ? from + span : from + (span * (i + 1)) / count, zoom }));
+  return [...slice(0, head, headCount, true), ...slice(head, rest, restCount, false)];
 }
 
 /** Số ảnh cho video chương: nội bộ (tập) 1 ảnh/30 giây, tối đa 80; thường 1 ảnh/25 giây, tối đa 30. Luôn ≥ 6. */
@@ -115,6 +140,14 @@ export const tocText = (toc: { start: number; title: string }[]) => toc.map((t) 
 
 /** Nhãn thời lượng cho tiêu đề: "FULL 2H" (làm tròn giờ, tối thiểu 1H). */
 export const fullLabel = (seconds: number) => `FULL ${Math.max(1, Math.round(seconds / 3600))}H`;
+
+/** Nhãn góc thumbnail kèm thời lượng: "FULL 1H30" (làm tròn 5 phút); dưới 5 phút lẻ thì "FULL 2H". */
+export function fullBadge(seconds: number) {
+  const totalMin = Math.max(60, Math.round(seconds / 300) * 5);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return m ? `FULL ${h}H${String(m).padStart(2, "0")}` : `FULL ${h}H`;
+}
 
 /** Tiêu đề luôn có nhãn tập (AI/vidIQ có thể bỏ): thiếu "Tập N" / "FULL" thì nối "| Tập N (Chương X–Y)"; cắt ≤ 100 ký tự. */
 export function ensureEpisodeLabel(title: string, o: { episodeNo: number; from: number; to: number }) {

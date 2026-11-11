@@ -810,12 +810,14 @@ function usePauseOnLeave() {
   return ref;
 }
 
-const DownloadLink = ({ href, text }: { href?: string; text: string }) =>
+const DownloadLink = ({ href, text, download }: { href?: string; text: string; download?: string }) =>
   href ? (
-    <a href={href} className="btn-secondary mt-3 inline-block !px-3 !py-1.5 text-xs">
+    <a href={href} download={download} className="btn-secondary mt-3 inline-block !px-3 !py-1.5 text-xs">
       {text}
     </a>
   ) : null;
+
+const THUMB_VARIANT_LABELS = [["a", "Cận mặt + chữ"], ["b", "Đối đầu"], ["c", "Sức mạnh bùng nổ"]] as const;
 
 function ThumbnailOut({ data, tab }: PanelProps) {
   const src = data.video.files["thumbnail.jpg"];
@@ -823,8 +825,31 @@ function ThumbnailOut({ data, tab }: PanelProps) {
   if (tab === "in") return <Empty text="Thumbnail do bước Ảnh cảnh tạo ra, theo tiêu đề / mô tả từ thẻ SEO & Thumbnail." />;
   if (tab === "log") return <StepLog data={data} id="images" />;
   if (!src && !live) return <Empty text="Chưa có thumbnail." />;
+  const variants = THUMB_VARIANT_LABELS.flatMap(([id, label]) => {
+    const href = data.video.files[`thumb-${id}.jpg`];
+    return href ? [{ id, label, href }] : [];
+  });
+  const scores = data.video.meta?.thumbScores;
   return (
     <>
+      {variants.length > 1 && (
+        <Sec title="3 phương án thumbnail">
+          <div className="grid gap-3 sm:grid-cols-3">
+            {variants.map((v) => (
+              <div key={v.id}>
+                {/* eslint-disable-next-line @next/next/no-img-element -- file từ GitHub Release qua redirect */}
+                <img src={v.href} alt={`Thumbnail ${v.id.toUpperCase()}`} width={640} height={360} loading="lazy" decoding="async" className="aspect-video w-full rounded-xl border border-border object-cover" />
+                <p className="mt-1 text-xs">
+                  <b>{v.id.toUpperCase()}</b> · {v.label} · vidIQ: {scores?.[v.id] ?? "chưa chấm"}
+                  {scores?.chosen === v.id && " · đang dùng"}
+                </p>
+                <DownloadLink href={v.href} download={`thumb-${v.id}.jpg`} text={`⬇ Tải ${v.id.toUpperCase()}`} />
+              </div>
+            ))}
+          </div>
+          <p className="mt-2 text-xs opacity-70">Dùng 3 ảnh này cho Thử nghiệm A/B (Test &amp; Compare) trong YouTube Studio.</p>
+        </Sec>
+      )}
       {live && live !== src && (
         <Sec title="Đang dùng trên YouTube">
           {/* eslint-disable-next-line @next/next/no-img-element -- ảnh YouTube (i.ytimg.com) */}

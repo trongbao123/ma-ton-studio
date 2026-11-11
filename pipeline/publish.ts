@@ -7,6 +7,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { videos } from "@/db/schema";
 import { loadSecrets } from "@/lib/secrets";
+import { THUMB_IDS, thumbFile } from "./thumb-plan";
 import { publishToYoutube } from "./youtube";
 
 const run = promisify(execFile);
@@ -15,13 +16,14 @@ const run = promisify(execFile);
 async function main(videoId: number) {
   await loadSecrets(true);
   const dir = await mkdtemp(path.join(tmpdir(), `publish-${videoId}-`));
-  await run("gh", ["release", "download", `video-${videoId}`, "--repo", process.env.GITHUB_REPOSITORY!, "--dir", dir, "--pattern", "*.mp4", "--pattern", "thumbnail.jpg"]);
+  await run("gh", ["release", "download", `video-${videoId}`, "--repo", process.env.GITHUB_REPOSITORY!, "--dir", dir, "--pattern", "*.mp4", "--pattern", "thumbnail.jpg", "--pattern", "thumb-?.jpg"]);
   const files = await readdir(dir);
   if (!files.includes("long.mp4")) throw new Error("Release không có long.mp4 — render lại video.");
   await publishToYoutube(videoId, {
     long: path.join(dir, "long.mp4"),
     short: files.includes("short.mp4") ? path.join(dir, "short.mp4") : undefined,
     thumb: files.includes("thumbnail.jpg") ? path.join(dir, "thumbnail.jpg") : undefined,
+    thumbs: THUMB_IDS.filter((id) => files.includes(thumbFile(id))).map((id) => ({ id, file: path.join(dir, thumbFile(id)) })),
   });
 }
 

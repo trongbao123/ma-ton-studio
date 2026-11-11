@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { pickBatch } from "./compile-plan";
-import { buildEpisodeToc, chaptersToWrite, coldOpenSceneCount, ensureEpisodeLabel, episodeBacklog, fullLabel, imageCount, occupiesDailySlot, pickPublishSlot, tocText, vnDay } from "./episode-plan";
+import { buildEpisodeToc, chaptersToWrite, coldOpenSceneCount, fullBadge, planChapterScenes, shortSceneCount, ensureEpisodeLabel, episodeBacklog, fullLabel, imageCount, occupiesDailySlot, pickPublishSlot, tocText, vnDay } from "./episode-plan";
 
 const row = (id: number, number: number, o: Partial<Parameters<typeof episodeBacklog>[0][number]> = {}) => ({
   id, number, status: "ready" as const, youtubeVideoId: null, publishAt: null, hasLong: true, meta: null, ...o,
@@ -110,10 +110,58 @@ describe("buildEpisodeToc", () => {
 });
 
 describe("coldOpenSceneCount", () => {
-  it("~7 giây 1 ảnh, kẹp 3–6", () => {
-    expect(coldOpenSceneCount(10)).toBe(3);
+  it("~6 giây 1 ảnh, kẹp 4–8", () => {
+    expect(coldOpenSceneCount(10)).toBe(4);
     expect(coldOpenSceneCount(32)).toBe(5);
-    expect(coldOpenSceneCount(90)).toBe(6);
+    expect(coldOpenSceneCount(45)).toBe(8);
+    expect(coldOpenSceneCount(90)).toBe(8);
+  });
+});
+
+describe("shortSceneCount", () => {
+  it("~3,5 giây 1 ảnh, kẹp 5–30", () => {
+    expect(shortSceneCount(10)).toBe(5);
+    expect(shortSceneCount(70)).toBe(20);
+    expect(shortSceneCount(90)).toBe(26);
+    expect(shortSceneCount(600)).toBe(30);
+  });
+});
+
+describe("planChapterScenes", () => {
+  it("120 giây đầu 20 ảnh × 6 giây có zoom, sau đó 1 ảnh/30 giây không zoom", () => {
+    const plan = planChapterScenes(1920);
+    const head = plan.filter((x) => x.zoom);
+    expect(head).toHaveLength(20);
+    expect(head[1].start).toBeCloseTo(6);
+    expect(head.at(-1)!.end).toBeCloseTo(120);
+    const rest = plan.filter((x) => !x.zoom);
+    expect(rest).toHaveLength(60);
+    expect(rest[0].start).toBeCloseTo(120);
+    expect(rest[0].end - rest[0].start).toBeCloseTo(30);
+  });
+  it("phủ kín [0, seconds], liền nhau, không hở", () => {
+    for (const total of [45, 120, 130, 1234.5, 3600, 9000]) {
+      const plan = planChapterScenes(total);
+      expect(plan[0].start).toBe(0);
+      expect(plan.at(-1)!.end).toBeCloseTo(total);
+      plan.slice(1).forEach((sc, i) => expect(sc.start).toBeCloseTo(plan[i].end));
+    }
+  });
+  it("tổng không quá 80 ảnh phần sau + 20 ảnh đầu; chương ngắn thì cả chương nhịp nhanh", () => {
+    expect(planChapterScenes(20000).filter((x) => !x.zoom)).toHaveLength(80);
+    expect(planChapterScenes(45).every((x) => x.zoom)).toBe(true);
+    expect(planChapterScenes(45)).toHaveLength(8);
+  });
+});
+
+describe("fullBadge", () => {
+  it("giờ + phút làm tròn 5 phút", () => {
+    expect(fullBadge(5400)).toBe("FULL 1H30");
+    expect(fullBadge(5500)).toBe("FULL 1H30");
+    expect(fullBadge(7200)).toBe("FULL 2H");
+    expect(fullBadge(3500)).toBe("FULL 1H");
+    expect(fullBadge(7080)).toBe("FULL 2H");
+    expect(fullBadge(4500)).toBe("FULL 1H15");
   });
 });
 

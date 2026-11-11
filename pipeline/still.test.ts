@@ -106,3 +106,13 @@ describe("conformArgs", () => {
     expect(a.endsWith("c.mp4")).toBe(true);
   });
 });
+
+describe("stillSegmentArgs zoom", () => {
+  const vf = (a: string[]) => a[a.indexOf("-vf") + 1];
+  it("zoom dùng zoompan đúng số khung, ảnh tĩnh thì không", () => {
+    const z = vf(stillSegmentArgs({ img: "a", out: "o", frames: 144, w: 1920, h: 1080, zoom: true }));
+    expect(z).toMatch(/zoompan=.*d=144:s=1920x1080:fps=24/);
+    expect(z).not.toMatch(/loop=loop/);
+    expect(vf(stillSegmentArgs({ img: "a", out: "o", frames: 144, w: 1920, h: 1080 }))).not.toMatch(/zoompan/);
+  });
+});

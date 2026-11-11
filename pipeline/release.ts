@@ -70,3 +70,20 @@ export async function uploadAsset(videoId: number, releaseId: number | null, fil
     .set({ assets: sql`${videos.assets} || ${JSON.stringify({ [name]: id })}::jsonb` })
     .where(eq(videos.id, videoId));
 }
+
+/**
+ * Link tải công khai có chữ ký (hết hạn ~5 phút) của 1 asset trong repo private — để dịch vụ ngoài (vidIQ) đọc ảnh mà không cần token.
+ * GitHub trả 302 tới objects.githubusercontent.com kèm chữ ký; ta lấy chính link đó. Không có asset / không chạy trên Actions → null.
+ */
+export async function signedAssetUrl(videoId: number, name: string): Promise<string | null> {
+  const g = gh();
+  if (!g) return null;
+  const [v] = await db().select({ assets: videos.assets }).from(videos).where(eq(videos.id, videoId));
+  const assetId = v?.assets[name];
+  if (!assetId) return null;
+  const res = await fetch(`https://api.github.com/repos/${g.repo}/releases/assets/${assetId}`, {
+    headers: { Authorization: `Bearer ${g.token}`, Accept: "application/octet-stream" },
+    redirect: "manual",
+  });
+  return res.headers.get("location");
+}

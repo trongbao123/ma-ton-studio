@@ -256,3 +256,56 @@ export async function vidiqSchema(name: string) {
   const s = await connect();
   return s?.tools.find((t) => t.name === name)?.inputSchema ?? null;
 }
+
+/** Điểm 0–100 từ kết quả vidiq_score_thumbnail: JSON `{"score":67}` (có thể lồng) hoặc câu chữ "score: 67". Không đọc được → null. */
+export function parseThumbScore(text: string): number | null {
+  const valid = (n: unknown) => (typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= 100 ? n : null);
+  const find = (v: unknown): number | null => {
+    if (!v || typeof v !== "object") return null;
+    const o = v as Record<string, unknown>;
+    const direct = valid(typeof o.score === "string" ? Number(o.score) : o.score) ?? valid(o.overallScore);
+    if (direct != null) return direct;
+    for (const x of Object.values(o)) {
+      const n = find(x);
+      if (n != null) return n;
+    }
+    return null;
+  };
+  try {
+    return find(JSON.parse(text));
+  } catch {
+    const m = text.match(/(?:score|điểm)\D{0,12}(\d{1,3}(?:\.\d+)?)/i);
+    return m ? valid(Number(m[1])) : null;
+  }
+}
+
+type SchemaProp = { type?: string | string[]; anyOf?: SchemaProp[]; oneOf?: SchemaProp[]; properties?: Record<string, unknown> };
+
+/**
+ * Tham số cho vidiq_score_thumbnail theo schema thật: `image` nhận chuỗi URL thì đưa URL; chỉ nhận object thì `{ url }`.
+ * `title` chỉ gửi khi schema có field đó.
+ */
+export function thumbScoreArgs(schema: { properties?: Record<string, unknown> } | null, o: { videoId: string; title: string; imageUrl: string }) {
+  const props = schema?.properties ?? {};
+  const image = props.image as SchemaProp | undefined;
+  const variants = [image, ...(image?.anyOf ?? []), ...(image?.oneOf ?? [])].flatMap((v) => (v ? [v.type].flat() : []));
+  const acceptsString = !image || variants.includes("string") || variants.every((t) => t == null);
+  return {
+    videoId: o.videoId,
+    ...("title" in props ? { title: o.title } : {}),
+    image: acceptsString ? o.imageUrl : { url: o.imageUrl },
+  };
+}
+
+/** Chấm 1 thumbnail bằng vidIQ (URL ảnh phải truy cập được từ ngoài). Mọi lỗi → null + cảnh báo; không ném. */
+export async function scoreThumbnail(o: { videoId: string; title: string; imageUrl: string }): Promise<number | null> {
+  try {
+    const schema = await vidiqSchema("vidiq_score_thumbnail");
+    if (!schema) return null;
+    const text = await callVidiq("vidiq_score_thumbnail", thumbScoreArgs(schema as { properties?: Record<string, unknown> }, o));
+    return text ? parseThumbScore(text) : null;
+  } catch (e) {
+    console.warn("⚠ vidIQ chấm thumbnail lỗi:", e instanceof Error ? e.message : e);
+    return null;
+  }
+}

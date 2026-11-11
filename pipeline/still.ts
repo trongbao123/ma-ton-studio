@@ -5,6 +5,10 @@
 export const STILL_FPS = 24;
 /** Dip-to-black ở đầu và cuối mỗi đoạn. */
 export const STILL_FADE_SECONDS = 0.5;
+/** Đoạn zoom ngắn (~6 giây) nên mờ ngắn hơn để không nhấp nháy tối liên tục. */
+const ZOOM_FADE_SECONDS = 0.25;
+/** Phóng to tối đa trong 1 đoạn zoom (10%). */
+const ZOOM_AMOUNT = 0.1;
 const STILL_CRF = "23";
 const STILL_PRESET = "veryfast";
 /** Khung hình khoá mỗi 5 giây — đủ cho YouTube và cho tua. */
@@ -27,16 +31,23 @@ export function stillFrames(start: number, end: number, fps = STILL_FPS) {
 }
 
 /** Ảnh → đoạn video tĩnh `frames` khung hình, 1920×1080 (scale/crop một lần), mờ vào/ra. `logoCrop` là chuỗi filter cắt logo (có dấu phẩy cuối) hoặc rỗng. */
-export function stillSegmentArgs(o: { img: string; out: string; frames: number; w: number; h: number; logoCrop?: string; fps?: number }) {
+export function stillSegmentArgs(o: { img: string; out: string; frames: number; w: number; h: number; logoCrop?: string; fps?: number; zoom?: boolean }) {
   const fps = o.fps ?? STILL_FPS;
   const seconds = o.frames / fps;
-  const fade = Math.min(STILL_FADE_SECONDS, seconds / 2);
+  const fade = Math.min(o.zoom ? ZOOM_FADE_SECONDS : STILL_FADE_SECONDS, seconds / 2);
+  // `zoom`: 2 phút đầu của chương — zoom chậm vào giữa ảnh (zoompan, dựng từ ảnh nền 2× để không giật điểm ảnh); phần sau vẫn ảnh tĩnh.
+  const motion = o.zoom
+    ? [
+        `scale=${o.w * 2}:${o.h * 2}:flags=bicubic`,
+        `zoompan=z='1+${ZOOM_AMOUNT}*on/${o.frames}':x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2':d=${o.frames}:s=${o.w}x${o.h}:fps=${fps}`,
+        "format=yuv420p",
+      ]
+    : ["format=yuv420p", "loop=loop=-1:size=1:start=0"];
   const vf = [
     `${o.logoCrop ?? ""}scale=${o.w}:${o.h}:force_original_aspect_ratio=increase:flags=bicubic`,
     `crop=${o.w}:${o.h}:(iw-ow)/2:(ih-oh)*0.3`,
-    "format=yuv420p",
     // Nhân khung đã scale/crop (1 khung) thay vì `-loop 1` bắt scale lại từng khung: đo local ≈ -18% thời gian đoạn, ra cùng file.
-    "loop=loop=-1:size=1:start=0",
+    ...motion,
     `fade=t=in:st=0:d=${fade}`,
     `fade=t=out:st=${(seconds - fade).toFixed(3)}:d=${fade}`,
   ].join(",");

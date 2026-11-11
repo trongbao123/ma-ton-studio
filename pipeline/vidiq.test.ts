@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { genreSeeds, onTopic, parseKeywordTable, parseScoredTitles } from "./vidiq";
+import { genreSeeds, onTopic, parseKeywordTable, parseScoredTitles, parseThumbScore, thumbScoreArgs } from "./vidiq";
 
 describe("parseScoredTitles", () => {
   it("đọc JSON lồng nhau", () => {
@@ -48,5 +48,31 @@ describe("vidIQ", () => {
     expect(onTopic("truyện tu tiên")).toBe(true);
     expect(onTopic("review truyện tranh")).toBe(false);
     expect(onTopic("hh vietsub")).toBe(false);
+  });
+});
+
+describe("parseThumbScore", () => {
+  it("đọc JSON {score} trực tiếp, lồng và dạng chuỗi", () => {
+    expect(parseThumbScore('{"score":67}')).toBe(67);
+    expect(parseThumbScore('{"result":{"score":"81.5"}}')).toBe(81.5);
+    expect(parseThumbScore('{"score":0}')).toBe(0);
+  });
+  it("đọc câu chữ; điểm ngoài 0–100 hoặc không có điểm → null", () => {
+    expect(parseThumbScore("Thumbnail score: 72 / 100")).toBe(72);
+    expect(parseThumbScore('{"score":250}')).toBeNull();
+    expect(parseThumbScore("lỗi không xác định")).toBeNull();
+    expect(parseThumbScore('{"foo":1}')).toBeNull();
+  });
+});
+
+describe("thumbScoreArgs", () => {
+  const o = { videoId: "abc", title: "T", imageUrl: "https://x/y.jpg" };
+  it("image kiểu string → đưa URL; có title thì gửi title", () => {
+    const schema = { properties: { videoId: { type: "string" }, title: { type: "string" }, image: { type: "string" } } };
+    expect(thumbScoreArgs(schema, o)).toEqual({ videoId: "abc", title: "T", image: "https://x/y.jpg" });
+  });
+  it("image chỉ nhận object → { url }; anyOf có string → URL; schema không có title → bỏ title", () => {
+    expect(thumbScoreArgs({ properties: { image: { type: "object" } } }, o)).toEqual({ videoId: "abc", image: { url: "https://x/y.jpg" } });
+    expect(thumbScoreArgs({ properties: { image: { anyOf: [{ type: "string" }, { type: "object" }] } } }, o).image).toBe("https://x/y.jpg");
   });
 });

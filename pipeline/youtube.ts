@@ -9,7 +9,10 @@ import { escapeHtml, notify, WEB_URL } from "@/lib/notify";
 import { accessToken, cleanTags, getYoutubeAuth, noAngle, YoutubeAuthError } from "@/lib/youtube";
 import { recordYoutubeUnits } from "@/lib/yt-units";
 import { Tracker } from "./progress";
+import { signedAssetUrl } from "./release";
 import { keepOrNextSlot } from "./schedule";
+import { DEFAULT_THUMB, pickBestThumb, thumbFile, type ThumbId, type ThumbScores } from "./thumb-plan";
+import { scoreThumbnail } from "./vidiq";
 
 /** publishAt = null: đăng công khai ngay. */
 export type Upload = { file: string; title: string; description: string; tags: string[]; publishAt: Date | null };
@@ -61,6 +64,27 @@ async function setThumbnail(token: string, videoId: string, file: string) {
   if (!res.ok) throw new Error(`${res.status} ${(await res.text()).slice(0, 200)}`);
 }
 
+/**
+ * Chấm từng phương án thumbnail bằng vidIQ (cần video đã có trên YouTube + URL ảnh truy cập được từ ngoài: link ký sẵn ~5 phút của release asset)
+ * rồi chọn điểm cao nhất. Không chấm được / lỗi → phương án (a). Không bao giờ ném lỗi.
+ */
+async function chooseThumbnail(videoId: number, ytId: string, title: string, thumbs: { id: ThumbId; file: string }[], track: Tracker) {
+  const scores: ThumbScores = {};
+  for (const t of thumbs) {
+    try {
+      const imageUrl = await signedAssetUrl(videoId, thumbFile(t.id));
+      scores[t.id] = imageUrl ? await scoreThumbnail({ videoId: ytId, title, imageUrl }) : null;
+    } catch (e) {
+      scores[t.id] = null;
+      track.warn("youtube", `Không chấm được thumbnail ${t.id.toUpperCase()}: ${e instanceof Error ? e.message : e}`);
+    }
+  }
+  const chosen = pickBestThumb(scores, thumbs.map((t) => t.id));
+  track.log("youtube", `Điểm thumbnail vidIQ: ${thumbs.map((t) => `${t.id.toUpperCase()}=${scores[t.id] ?? "?"}`).join(", ")} → dùng ${chosen.toUpperCase()}`);
+  const file = (thumbs.find((t) => t.id === chosen) ?? thumbs.find((t) => t.id === DEFAULT_THUMB) ?? thumbs[0]).file;
+  return { file, scores: { a: scores.a ?? null, b: scores.b ?? null, c: scores.c ?? null, chosen } };
+}
+
 const slot = (d: Date) =>
   d.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", weekday: "long", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 
@@ -87,7 +111,7 @@ export { cleanTags };
  * Đăng video đã render lên YouTube theo lịch. Người gọi đã "giữ chỗ" (`uploadStatus = uploading`):
  * render sau khi `autoPublishEligible`, hoặc nút "Đăng lại". Mọi lỗi → `failed` + báo Telegram, video vẫn `ready` để đăng tay.
  */
-export async function publishToYoutube(videoId: number, files: { long: string; short?: string; thumb?: string }) {
+export async function publishToYoutube(videoId: number, files: { long: string; short?: string; thumb?: string; thumbs?: { id: ThumbId; file: string }[] }) {
   const [v] = await db().select().from(videos).where(eq(videos.id, videoId));
   if (!v) return;
   const track = new Tracker(videoId, v.progress);
@@ -118,8 +142,14 @@ export async function publishToYoutube(videoId: number, files: { long: string; s
       );
     }
 
-    if (files.thumb) {
-      await setThumbnail(token, id, files.thumb).then(
+    let thumbToSet = files.thumb;
+    if (files.thumbs && files.thumbs.length > 1) {
+      const picked = await chooseThumbnail(videoId, id, meta.title, files.thumbs, track);
+      thumbToSet = picked.file;
+      await db().update(videos).set({ meta: { ...meta, thumbScores: picked.scores } }).where(eq(videos.id, videoId));
+    }
+    if (thumbToSet) {
+      await setThumbnail(token, id, thumbToSet).then(
         () => track.log("youtube", "Đã đặt thumbnail"),
         (e) => track.warn("youtube", `Không đặt được thumbnail (kênh cần xác minh số điện thoại?): ${e instanceof Error ? e.message : e}`),
       );

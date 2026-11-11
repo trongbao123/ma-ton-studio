@@ -15,7 +15,7 @@ import { AI_NOTE, optimizeMeta } from "@/lib/seo-optimize";
 import { buildChapterMarks, collectMusicCredits, COMPILE_SIZE, compileLabel, nextCompileSlot, pickBatch, type CompileCandidate } from "./compile-plan";
 import { duration, ffmpeg, streamSignature } from "./ffmpeg";
 import { thumbnail } from "./render";
-import { buildEpisodeContent } from "./episode";
+import { buildEpisodeContent, type ThumbVariant } from "./episode";
 import { episodeBacklog } from "./episode-plan";
 import { nextPublishSlot } from "./schedule";
 import { ensureRelease, uploadAsset } from "./release";
@@ -201,6 +201,7 @@ export async function compileSeries(seriesId: number) {
     const credits = collectMusicCredits(batch.map((r) => r.meta?.description ?? ""));
     let meta: VideoMeta;
     let thumb: string | null;
+    let thumbs: ThumbVariant[] = [];
     let short: string | null = null;
     if (episode) {
       console.log("● Nội dung tập");
@@ -212,7 +213,7 @@ export async function compileSeries(seriesId: number) {
         s, dir, videoId, from, to, compilation, credits, episodeNo: state.episodeNo, previousEpisodeUrl: prevUrl,
         chapters: batch.map((r, i) => ({ chapter: chapterRows.find((c) => c.id === r.chapterId)!, seconds: durations[i] })),
       });
-      ({ meta, thumb, short } = built);
+      ({ meta, thumb, thumbs, short } = built);
       // Đoạn mở đầu cao trào ghép lên trước chương đầu (concat copy — đã encode trùng thông số chương tĩnh).
       if (built.coldOpen) {
         const withIntro = path.join(dir, "long-intro.mp4");
@@ -253,7 +254,7 @@ export async function compileSeries(seriesId: number) {
 
     console.log("● Upload lên kho");
     const releaseId = await ensureRelease(videoId, true);
-    for (const f of [out, ...(thumb ? [thumb] : []), ...(short ? [short] : []), metaFile]) await uploadAsset(videoId, releaseId, f);
+    for (const f of [out, ...(thumb ? [thumb] : []), ...thumbs.map((t) => t.file), ...(short ? [short] : []), metaFile]) await uploadAsset(videoId, releaseId, f);
 
     const taken = await db()
       .select({ at: videos.publishAt })
@@ -273,7 +274,7 @@ export async function compileSeries(seriesId: number) {
         `📅 Lịch đăng: ${publishAt.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", weekday: "long", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}\n` +
         `👉 ${WEB_URL}/videos/${videoId}`,
     );
-    if (publish) await publishToYoutube(videoId, { long: out, thumb: thumb ?? undefined, short: short ?? undefined });
+    if (publish) await publishToYoutube(videoId, { long: out, thumb: thumb ?? undefined, thumbs, short: short ?? undefined });
     if (process.env.GITHUB_ACTIONS) await rm(dir, { recursive: true, force: true });
     console.log(`✔ Xong ${name} #${videoId} (${Math.round(seconds / 60)} phút)`);
   } catch (e) {
