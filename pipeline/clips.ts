@@ -22,7 +22,7 @@ import { addToShortsPlaylist, playlistUrl, seriesPlaylist } from "./playlist";
 import { ensureRelease, uploadAsset } from "./release";
 import { musicCredit, pickMusic } from "./render";
 import { uploadVideo } from "./youtube";
-import { genreSeeds, keywordResearch, pickBestTitle, type ScoredTitle } from "./vidiq";
+import { genreSeeds, keywordResearch, pickBestTitle, scoreTitles, type ScoredTitle } from "./vidiq";
 
 /** Chương lỗi quá ngần này lần (không phải hết quota) thì bỏ qua, không thử lại mỗi lượt. */
 const MAX_CLIP_FAILS = 3;
@@ -65,7 +65,13 @@ async function chooseClipTitle(d: ClipDraft, keywords: string[]): Promise<{ best
   const options = d.titleOptions.map((t) => ensureShortsTag(t));
   const res = await pickBestTitle(options, d.description, CLIP_TITLE_TARGET, CLIP_TITLE_ROUNDS, keywords, "short").catch(() => null);
   const all = res?.all ?? options.map((title) => ({ title, score: null }));
-  return { best: pickClipTitle(all, keywords), all };
+  const best = pickClipTitle(all, keywords);
+  // Tiêu đề cuối bị ghép từ khóa / #shorts → khác bản đã chấm: chấm lại để web hiện điểm thật (~5 credit).
+  if (best.score == null) {
+    const [score] = (await scoreTitles([best.title], "short").catch(() => null)) ?? [null];
+    if (score != null) return { best: { ...best, score }, all: [{ title: best.title, score }, ...all] };
+  }
+  return { best, all };
 }
 
 /** Unit YouTube đã dùng trong ngày quota hiện tại (Pacific). */
