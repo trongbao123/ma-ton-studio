@@ -87,9 +87,23 @@ Trung vị ~6,5 giờ. Đây là hành vi đã biết của GitHub với `schedu
 với trễ 6,5 giờ thì nó khởi động lúc ~14h47 VN, và lúc trễ 9–11 giờ thì chạy SAU cả giờ đăng. Đó là lý do chương dồn lại,
 rồi lượt sau phải render bù 8 chương + 2 tập và đụng trần `timeout-minutes: 240` (10/11 mất 389 phút, 11/11 mất 240 phút — huỷ, mất trắng việc).
 
-**Cách sửa thật**: `workflow_dispatch` qua API chạy NGAY, không bị đẩy lùi. Dùng một bộ hẹn giờ ngoài (Vercel Cron của chính app,
-hoặc cron-job.org) gọi `POST /repos/<owner>/<repo>/actions/workflows/daily.yml/dispatches`. Đổi giờ cron không giải quyết được
-vì độ trễ dao động 2–12 giờ, không đoán nổi.
+**Đã làm**: Vercel Cron gọi `/api/cron/daily` → dispatch sang GitHub (`workflow_dispatch` chạy NGAY, không qua hàng đợi đó).
+`vercel.json` khai 2 lượt 01:17 và 13:17 UTC. Đổi giờ cron GitHub thì vô ích vì độ trễ dao động 2–12 giờ, không căn nổi.
+Cron trong `daily.yml` **vẫn giữ làm lưới an toàn** — Vercel hỏng thì muộn còn hơn không; chạy trùng cũng rẻ vì daily tự kiểm tồn kho rồi thoát sớm.
+
+### CẦN ĐẶT TRÊN VERCEL thì cron mới chạy (Settings → Environment Variables)
+
+| Biến | Giá trị |
+|---|---|
+| `CRON_SECRET` | chuỗi ngẫu nhiên tự đặt — Vercel tự gửi kèm `Authorization: Bearer <giá trị này>`; **thiếu thì route trả 503** chứ không chạy mở toang |
+| `GH_TOKEN` | PAT GitHub có quyền ghi Actions (fine-grained: repo `ma-ton-studio`, Actions = Read and write) |
+| `GITHUB_REPOSITORY` | `trongbao123/ma-ton-studio` |
+| `I2V_PROGRESS_TOKEN` | `YbGFsyc-6h0I_wKkn801yOn1V72tAzql` (đã đặt sẵn bên GitHub Actions) |
+
+Gói Hobby cho tối đa 2 cron job, mỗi cái 1 lần/ngày, kích hoạt ngẫu nhiên trong GIỜ đã khai — tức sai số ~1 giờ
+thay vì 6,5 giờ như hiện nay. Đang dùng đúng 2.
+
+Thử tay: `curl -H "Authorization: Bearer <CRON_SECRET>" https://ma-ton-studio.vercel.app/api/cron/daily`
 
 ## Vận hành
 - **Lượt daily 20:17 ngày 11/11 KHÔNG chạy** — tới 20:51 vẫn chưa thấy trên Actions (lượt cuối là `render` 19:23). Cả 2 runner tự host (`win-1`, `win-2`) đang offline nhưng `RUNNER_LABEL` không đặt nên lẽ ra chạy `ubuntu-latest`. Cần xem còn phút Actions của repo private không (`gh` hiện thiếu scope `user` để đọc billing).
