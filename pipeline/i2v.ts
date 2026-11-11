@@ -17,13 +17,13 @@ export async function prepareClipImage(src: string, out: string, logoCrop = ""):
 
 /** AI rẻ viết prompt chuyển động (tiếng Anh) cho từng cảnh từ prompt ảnh + đoạn truyện. Thiếu/lỗi thì dùng chuyển động chung an toàn. */
 export async function motionPrompts(scenes: { prompt: string; text: string }[]): Promise<string[]> {
-  const fallback = "hair and clothes gently moving in the wind, subtle breathing, soft glowing light";
+  const fallback = "hair and robe gently moving in the breeze, subtle breathing, candle and glow softly flickering";
   try {
     const { motions } = await textProvider().generateJson({
-      system: "You write short motion prompts for an image-to-video model (LTX-Video). Describe ONLY movement of what is already in the picture.",
+      system: "You write short motion prompts for an image-to-video model (LTX-Video). Describe ONLY small ambient movement of what is already in the picture — the model distorts faces and invents objects when asked for actions or camera moves.",
       prompt:
-        "For each scene write ONE English motion prompt (12–25 words): what moves (hair, robe, sword, energy, clouds, mist, fire, water), how (gently, slowly, swirling), and a slow camera move (push-in / slow pan). " +
-        "Keep the character identity, no new objects, no cuts, no fast shaky camera. Return one item per scene in order.\n\n" +
+        "For each scene write ONE English motion prompt (10–20 words) of SUBTLE ambient motion only: hair/robe swaying, breathing, blinking, mist, clouds, flames, glowing energy pulsing, water rippling. " +
+        "NO actions (no swinging, walking, turning, drawing weapons), NO camera moves, no new objects. Return one item per scene in order.\n\n" +
         scenes.map((s, i) => `${i + 1}. IMAGE: ${s.prompt.slice(0, 300)}\n   STORY: ${s.text.slice(0, 400)}`).join("\n\n"),
       schema: z.object({ motions: z.array(z.string()) }),
       temperature: 0.6,
@@ -193,8 +193,8 @@ export async function kaggleTest(dir = "/tmp/i2v-in", logoCrop = ""): Promise<vo
   const work = path.join(dir, "kaggle-test");
   await mkdir(work, { recursive: true });
   const motions = [
-    "hair and robe flowing in the wind, sword glowing with spiritual energy, slow push-in",
-    "mist and clouds drifting, robe fluttering, faint glowing qi swirling around the character, slow camera pan",
+    "hair and robe gently swaying, purple aura softly pulsing, candle flame flickering",
+    "mist and clouds slowly drifting, robe gently fluttering, faint glowing qi pulsing around the character",
   ].map(motionPrompt);
   const jobs: (ClipJob & { file: string })[] = [];
   for (const [id, name] of images.entries()) {

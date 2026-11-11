@@ -38,9 +38,9 @@ describe("kernel", () => {
   it("slug chỉ gồm a-z0-9-", () => {
     expect(kaggleSlug("data", 27, Date.now())).toMatch(/^mts-i2v-data-27-[a-z0-9]+$/);
   });
-  it("manifest 121 khung, kích thước chia hết cho 32", () => {
+  it("manifest 73 khung, kích thước chia hết cho 32", () => {
     const m = buildManifest([{ id: 1, image: "a.jpg", prompt: "p" }]);
-    expect(m.frames).toBe(121);
+    expect(m.frames).toBe(73);
     expect(m.width % 32).toBe(0);
     expect(m.height % 32).toBe(0);
   });
@@ -70,7 +70,7 @@ describe("kernel", () => {
 
 describe("splitClipSegment / clipSegmentArgs", () => {
   it("đoạn ngắn hơn clip: chỉ phát clip, cắt theo đoạn", () => {
-    expect(splitClipSegment(100, CLIP_FRAMES)).toEqual({ clipFrames: 100, stillFrames: 0, crossfadeFrames: 0 });
+    expect(splitClipSegment(60, CLIP_FRAMES)).toEqual({ clipFrames: 60, stillFrames: 0, crossfadeFrames: 0 });
   });
   it("đoạn dài hơn clip: clip rồi mờ chéo 1 giây sang ảnh tĩnh, tổng khớp đoạn", () => {
     const s = splitClipSegment(720, CLIP_FRAMES);
@@ -84,13 +84,13 @@ describe("splitClipSegment / clipSegmentArgs", () => {
     const g = a[a.indexOf("-filter_complex") + 1];
     expect(g).toContain("flags=lanczos");
     expect(g).toContain("xfade=transition=fade:duration=1.000");
-    expect(g).toContain("offset=4.042");
+    expect(g).toContain("offset=2.042");
     expect(a[a.indexOf("-frames:v") + 1]).toBe("720");
     expect(a[a.indexOf("-video_track_timescale") + 1]).toBe("12288");
     expect(a.filter((x) => x === "-i")).toHaveLength(2);
   });
   it("đoạn ngắn: một đầu vào, không xfade", () => {
-    const a = clipSegmentArgs({ ...base, frames: 100 });
+    const a = clipSegmentArgs({ ...base, frames: 60 });
     expect(a.filter((x) => x === "-i")).toHaveLength(1);
     expect(a.join(" ")).not.toContain("xfade");
   });

@@ -35,7 +35,7 @@ MODELS = [
         "guidance": 3.0,
     },
 ]
-NEGATIVE = "worst quality, inconsistent motion, blurry, jittery, distorted, shaky camera, watermark, text"
+NEGATIVE = "worst quality, inconsistent motion, blurry, jittery, distorted, morphing, deformed face, changing face, changing pose, new objects, extra people, photorealistic, live action, camera movement, zoom, shaky camera, watermark, text"
 
 
 def log(msg):
