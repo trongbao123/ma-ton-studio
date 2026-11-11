@@ -9,8 +9,15 @@ const HEAD_CLIP_SHARE = 3;
 /** Clip 121 khung (8k+1 theo yêu cầu LTX-Video) ở 24 fps ≈ 5,04 giây. */
 // 97 frame ≈ 4s: khung đầu khóa cứng + khung cuối khóa nhẹ (CLIP_END_STRENGTH) giữ mặt; 73 frame + khóa cứng 2 đầu thì gần như đứng yên.
 export const CLIP_FRAMES = 97;
-/** Độ khóa ảnh gốc ở khung cuối: 1 = đứng yên, 0 = không khóa (trôi mặt/tư thế). */
-export const CLIP_END_STRENGTH = 0.5;
+/**
+ * Độ khóa ảnh gốc ở khung cuối: 1 = đứng yên, 0 = không khóa.
+ * 0,3 đo được từ `i2v-sweep` (Kaggle T4, LTX 2B distilled, ảnh cận mặt có hào quang):
+ *   khóa 0,5 → YDIF 2,01 · SSIM 0,816   |   khóa 0,3 → YDIF 2,75 · SSIM 0,802   |   khóa 0 → YDIF 7,60 · SSIM 0,599
+ * tức 0,3 cho thêm ~37% chuyển động mà gần như không trôi thêm.
+ * ĐỪNG hạ về 0: YDIF cao lúc đó là đo sự TRÔI, không phải diễn xuất — ngay giữa clip model đã bỏ cảnh
+ * (mất hào quang, mất mắt phát sáng, trời thành nắng nhạt), xem khung ở HANDOFF.
+ */
+export const CLIP_END_STRENGTH = 0.3;
 export const CLIP_SECONDS = CLIP_FRAMES / STILL_FPS;
 /** Kích thước LTX-Video phải chia hết cho 32; 768×448 gần 16:9 nhất — khi ghép sẽ scale/crop lên 1080p. */
 export const CLIP_WIDTH = 768;
@@ -58,6 +65,27 @@ export const MOTION_NEGATIVE =
  * `endStrength` / `frames` / `negative` chỉ dùng khi dò tham số (i2v-sweep) — bỏ trống thì lấy mức chung của manifest.
  */
 export type ClipJob = { id: number; image: string; prompt: string; endStrength?: number; frames?: number; negative?: string };
+
+export type DatasetFile = { name: string; path: string };
+
+/**
+ * File gửi lên dataset Kaggle: manifest trước, rồi mỗi tên ảnh ĐÚNG MỘT LẦN.
+ * Các ô dò tham số dùng chung một ảnh — gửi trùng thì Kaggle từ chối cả dataset ("Path must be unique").
+ */
+export function datasetFiles(manifest: DatasetFile, jobs: (ClipJob & { file: string })[]): DatasetFile[] {
+  const byName = new Map<string, DatasetFile>();
+  for (const j of jobs) if (!byName.has(j.image)) byName.set(j.image, { name: j.image, path: j.file });
+  return [manifest, ...byName.values()];
+}
+
+/** Việc ghi vào manifest: bỏ đường dẫn máy local (kernel không thấy được), GIỮ mọi tham số ghi đè của ô dò. */
+export function manifestJobs(jobs: (ClipJob & { file: string })[]): ClipJob[] {
+  return jobs.map((j) => {
+    const job = { ...j } as ClipJob & { file?: string };
+    delete job.file;
+    return job;
+  });
+}
 
 /** Nội dung `manifest.json` trong dataset — run.py đọc đúng các khoá này. */
 export function buildManifest(clips: ClipJob[], seed = 42) {

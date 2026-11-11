@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { planChapterScenes } from "./episode-plan";
-import { CLIP_END_STRENGTH, CLIP_FRAMES, MOTION_NEGATIVE, MOTION_SUFFIX, buildManifest, clipSegmentArgs, gpuMinutes, kaggleSlug, kernelFailureKind, kernelPhase, kernelPushBody, motionPrompt, parseClipLog, pickClipScenes, splitClipSegment } from "./i2v-plan";
+import { CLIP_END_STRENGTH, CLIP_FRAMES, MOTION_NEGATIVE, MOTION_SUFFIX, buildManifest, datasetFiles, manifestJobs, clipSegmentArgs, gpuMinutes, kaggleSlug, kernelFailureKind, kernelPhase, kernelPushBody, motionPrompt, parseClipLog, pickClipScenes, splitClipSegment } from "./i2v-plan";
 
 describe("pickClipScenes", () => {
   const spans = planChapterScenes(1800).map((s, i) => ({ ...s, action: i === 30 || i === 40 }));
@@ -43,6 +43,32 @@ describe("buildManifest", () => {
   });
 });
 
+describe("datasetFiles", () => {
+  const manifest = { name: "manifest.json", path: "/w/manifest.json" };
+  it("nhiều ô dò dùng CHUNG một ảnh thì chỉ gửi ảnh đó một lần — Kaggle từ chối dataset có đường dẫn trùng", () => {
+    const jobs = [0, 1, 2].map((id) => ({ id, image: "in.jpg", prompt: "p", file: "/w/in.jpg" }));
+    const got = datasetFiles(manifest, jobs);
+    expect(got).toEqual([manifest, { name: "in.jpg", path: "/w/in.jpg" }]);
+  });
+  it("ảnh khác nhau thì giữ đủ", () => {
+    const jobs = [0, 1].map((id) => ({ id, image: `scene-${id}.jpg`, prompt: "p", file: `/w/scene-${id}.jpg` }));
+    expect(datasetFiles(manifest, jobs)).toHaveLength(3);
+  });
+  it("manifest luôn đứng đầu", () => {
+    expect(datasetFiles(manifest, [{ id: 0, image: "a.jpg", prompt: "p", file: "/w/a.jpg" }])[0]).toBe(manifest);
+  });
+});
+
+describe("manifestJobs", () => {
+  it("giữ tham số ghi đè của từng ô dò — mất chúng thì 6 ô chạy y hệt nhau, dò vô nghĩa", () => {
+    const got = manifestJobs([{ id: 0, image: "in.jpg", prompt: "p", file: "/w/in.jpg", endStrength: 0.3, frames: 73, negative: "n" }]);
+    expect(got[0]).toEqual({ id: 0, image: "in.jpg", prompt: "p", endStrength: 0.3, frames: 73, negative: "n" });
+  });
+  it("bỏ đường dẫn máy local (kernel không thấy được)", () => {
+    expect(manifestJobs([{ id: 0, image: "in.jpg", prompt: "p", file: "/w/in.jpg" }])[0]).not.toHaveProperty("file");
+  });
+});
+
 describe("kernel", () => {
   it("push body bật GPU + internet, gắn dataset, private", () => {
     const b = kernelPushBody({ username: "u", slug: "k", title: "t", script: "print(1)", datasetSlug: "d", timeoutSeconds: 3600 });
@@ -54,7 +80,9 @@ describe("kernel", () => {
   it("manifest 97 khung, kích thước chia hết cho 32", () => {
     const m = buildManifest([{ id: 1, image: "a.jpg", prompt: "p" }]);
     expect(m.frames).toBe(97);
-    expect(m.endStrength).toBe(0.5);
+    // Khóa khung cuối 0,3 — chốt bằng số đo của i2v-sweep; 0 thì model bỏ cảnh, 0,5 thì phí ~37% chuyển động.
+    expect(m.endStrength).toBe(0.3);
+    expect(m.endStrength).toBeGreaterThan(0);
     expect(m.width % 32).toBe(0);
     expect(m.height % 32).toBe(0);
   });

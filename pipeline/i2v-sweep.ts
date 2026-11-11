@@ -9,8 +9,10 @@ export type SweepStyle = "effects" | "action";
 export const SWEEP_STYLES: Record<SweepStyle, { suffix: string; negative: string }> = {
   effects: { suffix: MOTION_SUFFIX, negative: MOTION_NEGATIVE },
   action: {
-    // Bỏ "changing pose" khỏi negative: production đang vừa xin hành động vừa cấm đổi tư thế nên nhân vật đứng im.
-    // Vẫn giữ "deformed face"/"camera movement" — thứ thật sự làm clip xấu là méo mặt và máy quay trôi, không phải cử động.
+    // Bỏ "changing pose" khỏi negative, giữ "deformed face"/"camera movement".
+    // ĐÃ ĐO (i2v-sweep, LTX 2B): KHÔNG ăn thua — ở cùng mức khóa, `action` cho ÍT chuyển động hơn `effects`
+    // (2,06 vs 2,75 ở khóa 0,3; 1,55 vs 2,01 ở khóa 0,5) và ở khóa 0 thì trôi mạnh hơn hẳn (SSIM 0,566 vs 0,599).
+    // Giữ lại để đo tiếp khi đổi model lớn hơn — với 2B thì prompt không phải nút thắt.
     suffix:
       "the character performs ONE small natural action from the scene — turns his head, lifts an arm, takes a single step, or swings his weapon once — " +
       "with epic xianxia visual effects around him, static camera, the character keeps the same face, hair and outfit, same 3D donghua art style",

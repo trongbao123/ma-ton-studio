@@ -20,7 +20,29 @@ Resume: `git pull && git checkout wip/film-mode`. Nhánh này đi trước `main
 - Đã kiểm thật: 15,00s, chữ ký luồng **trùng khít** chương tĩnh nên `concatLongs` ghép `-c copy`, tập 12s + 15s = 27,02s.
 - Mục lục không đổi (không thêm mốc, chỉ chương cuối dài thêm 15 giây).
 
-### Bộ dò "nhân vật không di chuyển" — xong phần đo, CHỜ GPU
+### "Nhân vật không di chuyển" — ĐÃ ĐO TRÊN KAGGLE, chốt khóa 0,3
+
+Chạy `i2v-sweep` thật (T4, LTX 2B distilled, ảnh `long-img-1.jpg` của video-26 — cận mặt + hào quang tím, ca khó nhất). Kernel: `mts-i2v-run-0-mwca1mcs`, 6 ô ~40–58s GPU mỗi ô, tổng ~17 phút kể cả xếp hàng.
+
+| # | kiểu | khóa cuối | YDIF | SSIM | đọc ra gì |
+|---|---|---|---|---|---|
+| 0 | effects | 0 | 7,60 | 0,599 | **trôi, không dùng được** |
+| 1 | effects | **0,3** | **2,75** | **0,802** | **← đã chốt làm mặc định** |
+| 2 | effects | 0,5 | 2,01 | 0,816 | mặc định cũ |
+| 3 | action | 0 | 9,35 | 0,566 | trôi nặng nhất |
+| 4 | action | 0,3 | 2,06 | 0,822 | kém ô 1 |
+| 5 | action | 0,5 | 1,55 | 0,832 | ít động nhất |
+
+**Hai kết luận, cả hai đều ngược với giả thiết ban đầu:**
+
+1. **YDIF cao ở khóa 0 là đo sự TRÔI, không phải diễn xuất.** Nhìn khung giữa clip (t=2s/4s): model đã bỏ cảnh — mất hào quang tím, mất mắt phát sáng, mất vương miện, trời nắng nhạt, nhân vật ngồi dậy thành cảnh khác. Đừng tin YDIF một mình, luôn phải xem khung hình.
+2. **Giả thiết "`changing pose` trong negative trói tay model" là SAI.** Bỏ từ đó ra làm chuyển động *giảm* (2,06 vs 2,75 ở cùng khóa 0,3) và trôi mạnh hơn ở khóa 0. Với LTX 2B, prompt không phải nút thắt — cái neo khung cuối là thứ giữ bức tranh lại, và model đánh đổi "nhân vật cử động" bằng "đổi luôn cả cảnh".
+
+**Đã áp dụng**: `CLIP_END_STRENGTH` 0,5 → **0,3** (+37% chuyển động, SSIM gần như không đổi). Giữ nguyên prompt kiểu `effects`.
+
+**Nước đi tiếp theo nếu vẫn muốn nhân vật diễn**: phải đổi MODEL, không phải sửa prompt. Thử LTX 13B distilled fp8 hoặc Wan 2.1 1.3B i2v — đo VRAM + thời gian trên T4 trước, rồi chạy lại `i2v-sweep` (ô `action` giữ nguyên trong code để đo lại với model mới).
+
+### Bộ dò (công cụ) — dùng lại được
 - **Phát hiện**: production đang vừa xin hành động vừa cấm — prompt `motionPrompts` ghi "no walking, fighting, swinging weapons" và `MOTION_NEGATIVE` có `changing pose`. Nhân vật đứng im là đúng như đã ra lệnh, chưa chắc tại model yếu.
 - `pipeline/i2v-sweep.ts` + CLI: **6 ô trong MỘT lượt Kaggle** (2 kiểu prompt × 3 mức khóa khung cuối 0 / 0,3 / 0,5), rồi in bảng YDIF (động tới đâu) + SSIM khung cuối so ảnh gốc (trôi tới đâu).
 - `MOTION_NEGATIVE` chuyển về `i2v-plan.ts` và gửi kèm manifest; `run.py` nhận ghi đè **từng clip** (`endStrength` / `frames` / `negative`).
@@ -28,13 +50,14 @@ Resume: `git pull && git checkout wip/film-mode`. Nhánh này đi trước `main
 
 ## Việc còn lại
 
-1. **Chạy sweep rồi chọn mặc định** (cần token Kaggle — máy PC hiện tại `.env.local` chỉ có `VERCEL_OIDC_TOKEN`):
+1. **Thử model lớn hơn cho chuyển động nhân vật** (xem phần đã đo ở trên — prompt đã hết đường, phải đổi model).
+   Chạy lại bộ dò sau khi đổi model:
    ```
    set -a; . ./.env.local; set +a
-   pnpm exec tsx pipeline/render.ts i2v-sweep /tmp/i2v-in     # cần long-img-1*.jpg trong thư mục
+   pnpm exec tsx pipeline/render.ts i2v-sweep C:/Users/admin/i2v-in
+   gh release download video-26 -p 'long-img-1.jpg' -D C:/Users/admin/i2v-in   # lấy ảnh thử
    ```
-   Ô nào **vừa YDIF cao vừa SSIM cao** thì lấy: sửa `CLIP_END_STRENGTH` (i2v-plan.ts) + lời prompt trong `motionPrompts` (i2v.ts) theo `SWEEP_STYLES` thắng cuộc. Mốc so sánh: hiện tại (effects + khóa 0,5) YDIF ≈ 2,5–3,0.
-   Nếu cả 6 ô đều méo mặt khi cho hành động → mới tính tới model lớn hơn (LTX 13B distilled fp8 / Wan 2.1 1.3B), đo VRAM + thời gian trước.
+   **Luôn mở clip ra xem**, đừng chỉ đọc bảng số: YDIF cao có thể là trôi (đã dính một lần).
 2. **Nhân vật nói như phim (lời thoại + khớp môi)** — Large, chưa đụng.
    - Giọng: Gemini TTS multi-speaker (`pipeline/tts.ts`), quota model tốt nhất 10 lượt/ngày → dễ cạn.
    - Khớp môi: spike 1 cảnh trên Kaggle T4 (LatentSync 1.5 ~ vừa 16GB?; Wav2Lip mờ). Cảnh 2 nhân vật cần biết ai nói. Chỉ đưa vào pipeline nếu đẹp.

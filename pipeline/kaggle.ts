@@ -7,7 +7,7 @@ import { db } from "@/db";
 import { aiUsage } from "@/db/schema";
 import { KAGGLE_GPU_USAGE_MODEL } from "@/lib/limits";
 export { fetchKaggleGpuQuota as gpuQuota } from "@/lib/kaggle-quota";
-import { buildManifest, gpuMinutes, kaggleSlug, kernelFailureKind, kernelPhase, kernelPushBody, parseClipLog, type ClipJob, type ClipResult, type KernelPhase } from "./i2v-plan";
+import { buildManifest, datasetFiles, gpuMinutes, kaggleSlug, kernelFailureKind, kernelPhase, kernelPushBody, manifestJobs, parseClipLog, type ClipJob, type ClipResult, type KernelPhase } from "./i2v-plan";
 
 const API = "https://www.kaggle.com/api/v1";
 /** Tối đa chờ kernel (đẩy → xong), theo yêu cầu ≈ 60 phút. */
@@ -172,11 +172,11 @@ export async function startI2v(o: { videoId: number; dir: string; jobs: (ClipJob
   try {
     o.events?.stage?.("upload", `${o.jobs.length} ảnh`);
     const manifestFile = path.join(o.dir, `i2v-manifest-${stamp}.json`);
-    await writeFile(manifestFile, JSON.stringify(buildManifest(o.jobs.map(({ id, image, prompt }) => ({ id, image, prompt })))));
+    await writeFile(manifestFile, JSON.stringify(buildManifest(manifestJobs(o.jobs))));
     await createDataset(auth, {
       slug: datasetSlug,
       title: datasetSlug,
-      files: [{ name: "manifest.json", path: manifestFile }, ...o.jobs.map((j) => ({ name: j.image, path: j.file }))],
+      files: datasetFiles({ name: "manifest.json", path: manifestFile }, o.jobs),
     });
     const kernelUrl = await pushKernel(auth, { slug: kernelSlug, title: kernelSlug, datasetSlug });
     o.events?.stage?.("queued", kernelUrl);
