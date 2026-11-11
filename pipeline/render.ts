@@ -749,7 +749,7 @@ export async function renderVideo(videoId: number) {
 }
 
 // CLI: tsx pipeline/render.ts <videoId>  |  "seo:<videoId>" = chỉ làm lại SEO + cập nhật YouTube (không render)
-// |  "compile:<seriesId>" = gộp các chương đã render thành video dài 1–2 giờ  |  "trends" = quét xu hướng YouTube (vidIQ + AI).
+// |  "compile:<seriesId>" = gộp các chương đã render thành video dài 1–2 giờ  |  "trends" = quét xu hướng YouTube (vidIQ + AI)  |  "shorts" = bù Short cho tập thiếu.
 if (process.argv[1]?.endsWith("render.ts")) {
   const arg = process.argv[2] ?? "";
   const runJob = () => {
@@ -760,6 +760,7 @@ if (process.argv[1]?.endsWith("render.ts")) {
     }
     if (arg === "reschedule") return import("./schedule").then((x) => x.rescheduleToPublishHour());
     if (arg.startsWith("playlist:")) return import("./playlist").then((x) => x.backfillPlaylist(Number(arg.slice(9))));
+    if (arg === "shorts") return import("./short-backfill").then((x) => x.backfillEpisodeShorts());
     if (arg === "trends") return import("./trends").then((x) => x.scanTrends());
     if (arg.startsWith("compile:")) return import("./compile").then((x) => x.compileSeries(Number(arg.slice(8))));
     return renderVideo(Number(arg));

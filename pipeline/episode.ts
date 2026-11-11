@@ -96,22 +96,29 @@ async function makeColdOpen(o: EpisodeInput, m: z.infer<typeof episodeSchema>, m
   }
 }
 
-/** Short 60–90 giây từ lời đọc kịch tính nhất; lỗi/hết quota thì bỏ Short, không làm hỏng tập. */
+export type ShortInput = { dir: string; voice: string; script: string; characterLook: string; hook: string; music: string | null };
+
+/** Dựng Short 60–90 giây từ lời đọc; ném lỗi (kể cả QuotaExhaustedError) để người gọi quyết định. Trả đường dẫn short.mp4. */
+export async function renderShort(o: ShortInput): Promise<string> {
+  const dir = path.join(o.dir, "short");
+  await mkdir(dir, { recursive: true });
+  const narration = await narrate(o.script, dir, o.voice, undefined, 34);
+  const scenes = splitScenes(narration.cues, SHORT_SCENES, narration.seconds);
+  const raw = await scenePrompts(o.characterLook, scenes.map((x) => x.text));
+  const video = await buildVideo({
+    dir, name: "short", narration, scenes, music: o.music,
+    prompts: raw.map((p) => ({ ...p, prompt: `${p.prompt}, vertical portrait composition` })),
+    w: 1080, h: 1920, imgW: 768, imgH: 1408, fontSize: 80, marginV: 520, hook: o.hook, progressBar: true,
+  });
+  return video.out;
+}
+
+/** Short lúc dựng tập; lỗi/hết quota thì bỏ Short (tập vẫn lên, Short được bù sau bởi backfillEpisodeShorts). */
 async function makeShort(o: EpisodeInput, m: z.infer<typeof episodeSchema>, music: string | null) {
   try {
-    const dir = path.join(o.dir, "short");
-    await mkdir(dir, { recursive: true });
-    const narration = await narrate(m.shortScript, dir, o.s.ttsVoice, undefined, 34);
-    const scenes = splitScenes(narration.cues, SHORT_SCENES, narration.seconds);
-    const raw = await scenePrompts(m.characterLook, scenes.map((x) => x.text));
-    const video = await buildVideo({
-      dir, name: "short", narration, scenes, music,
-      prompts: raw.map((p) => ({ ...p, prompt: `${p.prompt}, vertical portrait composition` })),
-      w: 1080, h: 1920, imgW: 768, imgH: 1408, fontSize: 80, marginV: 520, hook: m.thumbnailText, progressBar: true,
-    });
-    return video.out;
+    return await renderShort({ dir: o.dir, voice: o.s.ttsVoice, script: m.shortScript, characterLook: m.characterLook, hook: m.thumbnailText, music });
   } catch (e) {
-    console.warn(`⚠ Bỏ qua Short${e instanceof QuotaExhaustedError ? " (hết quota)" : ""}:`, e instanceof Error ? e.message : e);
+    console.warn(`⚠ Bỏ qua Short${e instanceof QuotaExhaustedError ? " (hết quota)" : ""} — sẽ bù ở lượt daily sau:`, e instanceof Error ? e.message : e);
     return null;
   }
 }
@@ -137,6 +144,7 @@ export async function buildEpisodeContent(o: EpisodeInput) {
   const draft: VideoMeta = {
     title, description: `${m.description}\n\n${AI_NOTE}`, tags: m.tags,
     shortTitle: m.shortTitle, shortDescription: m.shortDescription,
+    shortScript: m.shortScript, thumbnailText: m.thumbnailText, characterLook: m.characterLook,
     seo: { titleScore: best.score, titleOptions: all, keywords }, compilation: o.compilation,
   };
   const fixed = await optimizeMeta(
@@ -162,7 +170,9 @@ export async function buildEpisodeContent(o: EpisodeInput) {
   const toc = buildEpisodeToc(items, coldOpen ? { seconds: coldOpen.seconds, title: "Mở đầu" } : undefined);
   const description = composeDescription(fixed.meta.description, toc, links, hashtagsFor(keywords), o.credits.join("\n\n"));
   const credit = music ? `\n\n${musicCredit(music)}` : "";
-  const meta: VideoMeta = { ...fixed.meta, title, description, shortDescription: `${fixed.meta.shortDescription}${credit}`, compilation: o.compilation };
+  const meta: VideoMeta = { ...fixed.meta, title, description, shortDescription: `${fixed.meta.shortDescription}${credit}`, compilation: o.compilation,
+    shortScript: m.shortScript, thumbnailText: m.thumbnailText, characterLook: m.characterLook,
+  };
   console.log(`  Điểm SEO: ${fixed.score}; tiêu đề: ${meta.title}`);
 
   console.log("● Thumbnail");

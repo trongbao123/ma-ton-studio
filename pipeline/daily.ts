@@ -213,6 +213,8 @@ async function main() {
   // Chương vừa viết thì render luôn trong lượt này (không đợi 6 tiếng sau).
   if (quotaLeft) await renderQueue(failures);
   await dispatchCompilations().catch((e) => failures.push(`bản gộp: ${e instanceof Error ? e.message : e}`));
+  // Tập đã lên mà thiếu Short (lúc dựng hết quota/lỗi) thì bù ở đây; lỗi không làm hỏng job.
+  await import("./short-backfill").then((x) => x.backfillEpisodeShorts()).catch((e) => console.warn("⚠ Bù Short lỗi:", e instanceof Error ? e.message : e));
   if (failures.length) {
     await notify(`❌ <b>Job tự động có lỗi</b>\n${escapeHtml(failures.join("\n").slice(0, 800))}`);
     console.error("Lỗi:\n" + failures.join("\n"));

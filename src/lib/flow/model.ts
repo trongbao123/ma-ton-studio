@@ -1,3 +1,4 @@
+import { backfillStatusText } from "@/lib/short-backfill";
 import type { Video, VideoMeta } from "@/db/schema";
 import { brandOfModel, type BrandId } from "@/components/brand-icons";
 import type { ProviderId, Route } from "@/lib/ai/routing";
@@ -358,9 +359,11 @@ function outputCard(kind: "long" | "short", d: FlowData, videoStep: Base): CardV
   if (file) return { ...common, state: "done", subtitle: "đã dựng", metrics: [kind === "long" && sec ? `Thời lượng ${clock(sec)}` : "Đã dựng"] };
   const finished = d.video.status === "ready" || d.video.status === "published";
   if (kind === "short" && !d.series.makeShort) return { ...common, state: "skip", subtitle: "bộ truyện tắt Short", metrics: [] };
+  const pending = kind === "short" ? backfillStatusText(d.video) : null;
+  if (pending && !pending.final) return { ...common, state: "wait", subtitle: pending.text, metrics: [], warning: pending.text };
   if (finished) {
-    const warning = kind === "short" ? { warning: "Không có Short" } : {};
-    return { ...common, state: "skip", subtitle: kind === "short" ? "không có Short" : "không có file", metrics: [], ...warning };
+    const warning = kind === "short" ? { warning: pending ? `Short ${pending.text}` : "Không có Short" } : {};
+    return { ...common, state: "skip", subtitle: kind === "short" ? (pending?.text ?? "không có Short") : "không có file", metrics: [], ...warning };
   }
   const progress = videoStep.state === "run" && counts && counts.total > 0 ? counts.done / counts.total : undefined;
   return {
@@ -406,7 +409,8 @@ function buildIssues(d: FlowData): Issue[] {
   if (quota) out.push({ tone: "warn", text: `Chờ quota ${quota === "images" ? "ảnh" : "AI"}: ${v.error}`, card: quota });
   else if (v.status === "queued" && v.error) out.push({ tone: "info", text: `Đang chờ: ${v.error}`, card: "video" });
   if (finished && m && !musicTitle(m.description)) out.push({ tone: "warn", text: "Chưa có nhạc nền", card: "video" });
-  if (finished && d.series.makeShort && !v.files["short.mp4"]) out.push({ tone: "warn", text: "Không có Short", card: "short" });
+  const pendingShort = backfillStatusText(v);
+  if (finished && d.series.makeShort && !v.files["short.mp4"]) out.push({ tone: "warn", text: pendingShort ? `Short: ${pendingShort.text}` : "Không có Short", card: "short" });
   if (m) {
     const total = totalScore(scoreMeta(m, d.series.title));
     if (total < SEO_TARGET) out.push({ tone: "warn", text: `Điểm SEO ${total} chưa đạt ${SEO_TARGET} — dùng Magic fill`, card: "seo" });

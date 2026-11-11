@@ -66,6 +66,12 @@ export type VideoMeta = {
   compilation?: { seriesId: number; from: number; to: number; videoIds: number[]; episode?: boolean; episodeNo?: number };
   /** Bản đang chạy trên YouTube (đồng bộ về): thumbnail thật (kể cả đổi tay trong Studio) và trạng thái public/private/unlisted. */
   yt?: { thumb: string | null; privacy: string | null };
+  /** Tập ngày: lời đọc Short + dữ liệu đi kèm, giữ lại để bù Short sau nếu lúc dựng tập bị bỏ qua. */
+  shortScript?: string;
+  thumbnailText?: string;
+  characterLook?: string;
+  /** Tập ngày: tiến độ bù Short (attempts = số lần lỗi thật; gaveUp = bỏ cuộc; lastReason = lý do lần thử gần nhất). */
+  shortBackfill?: { attempts: number; gaveUp?: boolean; done?: boolean; lastReason?: "quota" | "error"; lastError?: string };
 };
 
 /** Một lần render cho một chương: video dài + 1 Short + thumbnail, lưu ở GitHub Release `video-<id>`. */

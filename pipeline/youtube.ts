@@ -11,10 +11,11 @@ import { recordYoutubeUnits } from "@/lib/yt-units";
 import { Tracker } from "./progress";
 import { keepOrNextSlot } from "./schedule";
 
-type Upload = { file: string; title: string; description: string; tags: string[]; publishAt: Date };
+/** publishAt = null: đăng công khai ngay. */
+export type Upload = { file: string; title: string; description: string; tags: string[]; publishAt: Date | null };
 
 /** Upload resumable: xin URL phiên rồi PUT cả file (stream, không nạp vào RAM). Trả id video YouTube. */
-async function uploadVideo(token: string, u: Upload) {
+export async function uploadVideo(token: string, u: Upload) {
   const size = (await stat(u.file)).size;
   const init = await fetch("https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status", {
     method: "POST",
@@ -28,9 +29,8 @@ async function uploadVideo(token: string, u: Upload) {
       // 24 = Entertainment.
       snippet: { title: u.title.slice(0, 100), description: u.description.slice(0, 5000), tags: u.tags, categoryId: "24", defaultLanguage: "vi" },
       status: {
-        // Lên lịch: để riêng tư tới đúng giờ thì YouTube tự công khai.
-        privacyStatus: "private",
-        publishAt: u.publishAt.toISOString(),
+        // Lên lịch: để riêng tư tới đúng giờ thì YouTube tự công khai; không có lịch thì công khai ngay.
+        ...(u.publishAt ? { privacyStatus: "private", publishAt: u.publishAt.toISOString() } : { privacyStatus: "public" }),
         selfDeclaredMadeForKids: false,
         // Nhãn "nội dung đã chỉnh sửa/tổng hợp" bắt buộc với giọng đọc + ảnh AI.
         containsSyntheticMedia: true,
