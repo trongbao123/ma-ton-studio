@@ -1,14 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { isAuthorized } from "@/lib/auth";
+import { PUBLIC_PATHS } from "@/lib/public-routes";
 import { SESSION_COOKIE, verifySession } from "@/lib/session";
-
-// Trang công khai: Google bắt buộc để duyệt OAuth (trang chủ + chính sách bảo mật) và trang đăng nhập — không chứa dữ liệu.
-// Webhook YouTube (WebSub): hub của Google gọi không đăng nhập — route tự kiểm chữ ký HMAC.
-const PUBLIC = new Set(["/about", "/privacy", "/login", "/api/youtube/websub"]);
 
 export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
-  if (PUBLIC.has(pathname)) return NextResponse.next();
+  // Danh sách + lý do từng đường dẫn nằm ở public-routes.ts; mỗi route ở đó tự kiểm quyền bên trong.
+  if (PUBLIC_PATHS.has(pathname)) return NextResponse.next();
   const password = process.env.ADMIN_PASSWORD;
   const user = process.env.ADMIN_USER;
   // Cookie phiên (trang đăng nhập) hoặc Basic Auth cũ (vẫn nhận để link/công cụ cũ không gãy).
