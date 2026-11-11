@@ -78,14 +78,15 @@ def load_pipe(torch, spec):
     if spec["file"]:
         from huggingface_hub import hf_hub_download
 
-        path = hf_hub_download(spec["repo"], spec["file"])
-        pipe = LTXImageToVideoPipeline.from_single_file(path, torch_dtype=dtype)
-        # Bản single-file không kèm text encoder: lấy T5 từ repo gốc.
-        if getattr(pipe, "text_encoder", None) is None:
-            from transformers import T5EncoderModel, T5TokenizerFast
+        from transformers import T5EncoderModel, T5TokenizerFast
 
-            pipe.text_encoder = T5EncoderModel.from_pretrained(spec["repo"], subfolder="text_encoder", torch_dtype=dtype)
-            pipe.tokenizer = T5TokenizerFast.from_pretrained(spec["repo"], subfolder="tokenizer")
+        path = hf_hub_download(spec["repo"], spec["file"])
+        # File single-file không chứa T5: phải truyền sẵn text encoder (lấy từ repo diffusers gốc), không thì diffusers báo
+        # "Weights for this component appear to be missing in the checkpoint".
+        base = spec.get("textRepo", "Lightricks/LTX-Video")
+        text_encoder = T5EncoderModel.from_pretrained(base, subfolder="text_encoder", torch_dtype=dtype)
+        tokenizer = T5TokenizerFast.from_pretrained(base, subfolder="tokenizer")
+        pipe = LTXImageToVideoPipeline.from_single_file(path, text_encoder=text_encoder, tokenizer=tokenizer, torch_dtype=dtype)
     else:
         pipe = LTXImageToVideoPipeline.from_pretrained(spec["repo"], torch_dtype=dtype)
     # T5-XXL + transformer không vừa 15 GiB cùng lúc: mỗi mô-đun lên GPU khi dùng rồi về CPU.
@@ -149,7 +150,7 @@ def main():
                 num_inference_steps=spec_used["steps"],
                 guidance_scale=spec_used["guidance"],
                 decode_timestep=0.05,
-                image_cond_noise_scale=0.025,
+                decode_noise_scale=0.025,
                 generator=gen,
             ).frames[0]
             if usable(out):
