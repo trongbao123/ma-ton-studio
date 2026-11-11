@@ -6,9 +6,12 @@ import { AnimatedCount } from "@/components/animated-count";
 import { BrandIcon } from "@/components/brand-icons";
 import { Lamp } from "@/components/usage-lamp";
 import { LAMP_TEXT } from "@/lib/ai/sources";
+import type { I2vStage } from "@/lib/flow/progress";
 import { buildLamps } from "@/lib/live/lamps";
 import { useLive } from "@/lib/live/store";
 import type { ChannelStat, LiveStatus } from "@/lib/live/types";
+
+const KAGGLE_STAGE_TEXT: Record<I2vStage, string> = { upload: "đang đẩy ảnh", queued: "chờ GPU", running: "đang tạo clip", download: "đang tạo clip", done: "xong" };
 
 type Props = {
   /** Trạng thái server render lần đầu; SSE tới thì thay bằng bản mới. */
@@ -28,7 +31,7 @@ export function TopStatusLive({ initial, initialChannelStat, channel, channelUrl
 
   return (
     <div className="flex w-full items-center gap-4">
-      <div className="min-w-0 flex-1 text-sm">
+      <div className="flex min-w-0 flex-1 items-center gap-2 text-sm">
         {r ? (
           <Link href={`/videos/${r.id}`} className="inline-flex max-w-full items-center gap-2 rounded-full bg-sky-500/10 px-3 py-1 text-sky-200 hover:bg-sky-500/15">
             <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-sky-400" />
@@ -45,6 +48,19 @@ export function TopStatusLive({ initial, initialChannelStat, channel, channelUrl
           </Link>
         ) : (
           <span className="text-muted">Không có video đang làm</span>
+        )}
+        {s.kaggle && r && (
+          <Link
+            href={`/videos/${r.id}`}
+            title="Clip động: ảnh → video 4–5 giây trên GPU free của Kaggle"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-cyan-500/10 px-3 py-1 text-cyan-200 hover:bg-cyan-500/15"
+          >
+            <BrandIcon id="kaggle" size={13} />
+            <span>
+              Kaggle: {KAGGLE_STAGE_TEXT[s.kaggle.stage]}
+              {s.kaggle.total ? ` ${s.kaggle.done}/${s.kaggle.total}` : ""}
+            </span>
+          </Link>
         )}
       </div>
       <Link href="/usage" aria-label="Xem hạn mức AI" className="flex shrink-0 items-center gap-1 rounded-full border border-border bg-card/70 px-1.5 py-1 hover:border-zinc-600">

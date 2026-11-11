@@ -1,4 +1,4 @@
-import { eq, gte } from "drizzle-orm";
+import { and, eq, gte } from "drizzle-orm";
 import { db } from "@/db";
 import { aiUsage } from "@/db/schema";
 import { fetchClaudeLimits } from "@/lib/ai/claude-limits";
@@ -11,6 +11,8 @@ import {
   cfNeuronsOf,
   geminiDailyLimit,
   GH_MONTHLY_MINUTES,
+  KAGGLE_GPU_USAGE_MODEL,
+  KAGGLE_WEEKLY_GPU_MINUTES,
   nextMonthStart,
   percentUsed,
   YT_DAILY_UNITS,
@@ -18,6 +20,7 @@ import {
   type LimitRow,
   type LimitWindow,
 } from "@/lib/limits";
+import { fetchKaggleGpuQuota, kaggleWeekStartDay, nextKaggleReset } from "@/lib/kaggle-quota";
 import { loadSecrets } from "@/lib/secrets";
 import { vidiqBalance } from "@/lib/vidiq-balance";
 
@@ -189,6 +192,29 @@ async function githubRow(): Promise<LimitRow> {
   };
 }
 
+const KAGGLE_WEEKLY_HOURS = KAGGLE_WEEKLY_GPU_MINUTES / 60;
+const hoursOf = (seconds: number) => Math.round(seconds / 360) / 10;
+
+/** Kaggle GPU free: số thật từ API `/kernels/quota` (30 giờ/tuần); không đọc được thì cộng phút GPU app đã ghi (ai_usage "_kaggle_gpu") trong tuần — ước tính. */
+async function kaggleRow(): Promise<LimitRow> {
+  const row = { id: "kaggle", name: "Kaggle GPU (clip động)", brand: "kaggle" as const, asOf: null };
+  const real = await fetchKaggleGpuQuota();
+  if (real) {
+    const used = hoursOf(real.usedSeconds);
+    const note = real.hasEverRun ? null : "Kaggle chưa từng cấp GPU cho tài khoản này — cần xác minh số điện thoại (kernel chạy không có GPU/internet).";
+    return { ...row, source: "api", windows: [makeWindow("Tuần này", used, hoursOf(real.totalSeconds), "giờ", new Date(real.refreshAt))], note };
+  }
+  const reset = nextKaggleReset();
+  const rows = await db().select({ calls: aiUsage.calls }).from(aiUsage).where(and(eq(aiUsage.model, KAGGLE_GPU_USAGE_MODEL), gte(aiUsage.day, kaggleWeekStartDay(reset))));
+  const minutes = rows.reduce((n, r) => n + r.calls, 0);
+  return {
+    ...row,
+    source: "estimate",
+    windows: [makeWindow("Tuần này", Math.round((minutes / 60) * 10) / 10, KAGGLE_WEEKLY_HOURS, "giờ", reset)],
+    note: "Cộng phút GPU app đã ghi (từ lúc đẩy kernel đến lúc xong, gồm cả chờ hàng đợi). Chưa đọc được số thật từ Kaggle (thiếu KAGGLE_API_TOKEN trên Vercel).",
+  };
+}
+
 const failed = (id: string, name: string, brand: LimitRow["brand"], reason: unknown): LimitRow => ({
   id,
   name,
@@ -215,6 +241,7 @@ export async function loadLimits(): Promise<LimitRow[]> {
     { id: "vidiq", name: "vidIQ", brand: "vidiq", run: vidiqRow },
     { id: "youtube", name: "YouTube Data API", brand: "youtube", run: async () => youtubeRow(await todayP) },
     { id: "github", name: "GitHub Actions", brand: "github", run: githubRow },
+    { id: "kaggle", name: "Kaggle GPU (clip động)", brand: "kaggle", run: kaggleRow },
   ];
   const settled = await Promise.allSettled(jobs.map((j) => j.run()));
   const rows = settled.map((r, i) => (r.status === "fulfilled" ? r.value : failed(jobs[i].id, jobs[i].name, jobs[i].brand, r.reason)));

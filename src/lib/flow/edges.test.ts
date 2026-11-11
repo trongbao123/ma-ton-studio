@@ -6,14 +6,14 @@ const cardsWith = (states: Partial<Record<CardId, CardState>>) =>
   Object.fromEntries(CARD_ORDER.map((id) => [id, { id, state: states[id] ?? "wait" } as CardView])) as Record<CardId, CardView>;
 
 describe("TREE_EDGES", () => {
-  it("rẽ 3 nhánh sau SEO, hợp ở Dựng video, rẽ 2 nhánh rồi hợp ở YouTube", () => {
+  it("rẽ 4 nhánh sau SEO, hợp ở Dựng video, rẽ 2 nhánh rồi hợp ở YouTube", () => {
     const from = (id: CardId) => TREE_EDGES.filter(([a]) => a === id).map(([, b]) => b);
     const into = (id: CardId) => TREE_EDGES.filter(([, b]) => b === id).map(([a]) => a);
-    expect(from("seo")).toEqual(["tts", "images", "thumbnail"]);
-    expect(into("video")).toEqual(["tts", "images", "thumbnail"]);
+    expect(from("seo")).toEqual(["tts", "images", "i2v", "thumbnail"]);
+    expect(into("video")).toEqual(["tts", "images", "i2v", "thumbnail"]);
     expect(from("video")).toEqual(["long", "short"]);
     expect(into("youtube")).toEqual(["long", "short"]);
-    expect(TREE_EDGES).toHaveLength(12);
+    expect(TREE_EDGES).toHaveLength(14);
   });
 });
 

@@ -4,6 +4,7 @@ import { aiUsage, chapters, series, videos } from "@/db/schema";
 import { loadCliStatus } from "@/lib/ai/cli-status";
 import { bySource, type SourceId } from "@/lib/ai/sources";
 import { quotaDay } from "@/lib/ai/usage";
+import { kaggleNow } from "@/lib/flow/progress";
 import { loadSecrets } from "@/lib/secrets";
 import type { LiveStatus } from "@/lib/live/types";
 import { liveSummary } from "@/lib/studio";
@@ -87,6 +88,7 @@ export async function liveStatus(): Promise<LiveStatus> {
   const r = running.find((v) => v.status === "rendering");
   return {
     rendering: r ? { id: r.id, number: r.number, updatedAt: r.updatedAt.toISOString(), ...liveSummary(r.progress) } : null,
+    kaggle: kaggleNow(r?.progress),
     queued: running.filter((v) => v.status === "queued").length,
     today: bySource(today),
     cliOk: cli,

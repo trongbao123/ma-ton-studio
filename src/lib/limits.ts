@@ -24,7 +24,7 @@ export type LimitWindow = {
   resetsAt: string | null;
 };
 
-export type LimitBrand = "claude" | "openai" | "gemini" | "cloudflare" | "youtube" | "github" | "vidiq";
+export type LimitBrand = "claude" | "openai" | "gemini" | "cloudflare" | "youtube" | "github" | "vidiq" | "kaggle";
 
 export type LimitRow = {
   id: string;
@@ -79,6 +79,11 @@ export type YtOp = keyof typeof YT_COSTS;
 export function ytUnitsOf(calls: Partial<Record<YtOp, number>>): number {
   return (Object.keys(calls) as YtOp[]).reduce((sum, op) => sum + YT_COSTS[op] * (calls[op] ?? 0), 0);
 }
+
+/** Kaggle GPU free: 30 giờ/tuần (đo từ API `/kernels/quota`: 108.000 giây), reset hằng tuần. */
+export const KAGGLE_WEEKLY_GPU_MINUTES = 1800;
+/** Dòng ai_usage ghi PHÚT GPU Kaggle app đã dùng (`calls` = phút) theo ngày UTC. */
+export const KAGGLE_GPU_USAGE_MODEL = "_kaggle_gpu";
 
 /** Cloudflare Workers AI free: 10.000 neuron/ngày, reset 00:00 UTC. */
 export const CF_DAILY_NEURONS = 10_000;

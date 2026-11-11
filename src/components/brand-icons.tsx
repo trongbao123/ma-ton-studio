@@ -1,5 +1,5 @@
 // Không đánh dấu "use client": chỉ có SVG + hàm thuần, dùng được cả ở trang server (Xưởng truyện gọi brandOfModel).
-import { siClaude, siCloudflare, siGooglegemini, siYoutube } from "simple-icons";
+import { siClaude, siCloudflare, siGooglegemini, siKaggle, siYoutube } from "simple-icons";
 import {
   AudioLines,
   BookOpenCheck,
@@ -15,6 +15,7 @@ import {
   ImagePlus,
   Music,
   NotebookText,
+  Play,
   ScrollText,
   Search,
   Tag,
@@ -33,6 +34,7 @@ export const BRANDS = {
   gemini: siGooglegemini,
   cloudflare: siCloudflare,
   openai: siOpenai,
+  kaggle: siKaggle,
 } satisfies Record<string, Brand>;
 export type BrandId = keyof typeof BRANDS;
 
@@ -66,6 +68,7 @@ export const STEP_ICONS: Record<string, LucideIcon> = {
   model: Cpu,
   tts: AudioLines,
   images: ImagePlus,
+  i2v: Play,
   video: Clapperboard,
   thumbnail: ImageIcon,
   long: Film,

@@ -40,8 +40,8 @@ const OUTPUT: CardId[] = ["thumbnail", "long", "short"];
 const states = (d: FlowData) => Object.fromEntries(CARD_ORDER.map((k) => [k, buildFlow(d).cards[k].state]));
 
 describe("buildFlow", () => {
-  it("10 thẻ của cây dọc đúng thứ tự", () => {
-    expect(CARD_ORDER).toEqual(["trends", "chapter", "seo", "tts", "images", "thumbnail", "video", "long", "short", "youtube"]);
+  it("11 thẻ của cây dọc đúng thứ tự", () => {
+    expect(CARD_ORDER).toEqual(["trends", "chapter", "seo", "tts", "images", "i2v", "thumbnail", "video", "long", "short", "youtube"]);
     expect(Object.keys(buildFlow(data()).cards)).toEqual(CARD_ORDER);
   });
 
@@ -226,5 +226,40 @@ describe("formatSlot / formatTime", () => {
   });
   it("formatTime có giờ và ngày", () => {
     expect(formatTime("2026-11-09T07:32:00.000Z")).toBe("14:32 09/11");
+  });
+});
+
+describe("thẻ Clip động (Kaggle)", () => {
+  const step = (state: "run" | "done" | "error", extra: object = {}) => ({ state, log: [], long: { done: 0, total: 6 }, ...extra });
+  const i2v = (stage: "upload" | "queued" | "running" | "done", okCount: number) => ({
+    stage,
+    model: "LTX-Video 2B",
+    kernelUrl: "https://www.kaggle.com/code/u/k",
+    clips: Array.from({ length: 6 }, (_, i) => ({ scene: i, motion: "hair flowing", ...(i < okCount ? { ok: true } : {}) })),
+  });
+
+  it("video cũ không có bước này: bỏ qua; đang render: chờ", () => {
+    expect(buildFlow(data({ status: "ready" })).cards.i2v.state).toBe("skip");
+    expect(buildFlow(data({ status: "rendering" })).cards.i2v.state).toBe("wait");
+  });
+  it("đang đẩy ảnh / chạy GPU kèm số clip", () => {
+    const up = buildFlow(data({ status: "rendering", progress: { steps: { i2v: step("run") }, i2v: i2v("upload", 0) } })).cards.i2v;
+    expect(up).toMatchObject({ state: "run", subtitle: "đang đẩy lên Kaggle" });
+    const gpu = buildFlow(data({ status: "rendering", progress: { steps: { i2v: step("run") }, i2v: i2v("running", 2) } })).cards.i2v;
+    expect(gpu.subtitle).toBe("đang chạy trên GPU (2/6 clip)");
+    expect(gpu.progress).toBeCloseTo(2 / 6);
+    expect(gpu.links[0].href).toContain("kaggle.com");
+  });
+  it("lỗi: dùng ảnh tĩnh, có việc kẹt mức cảnh báo (không phải lỗi render)", () => {
+    const d = data({ status: "ready", progress: { steps: { i2v: step("error", { error: "Kaggle không cấp GPU" }) }, i2v: i2v("running", 0) } });
+    const { cards, issues } = buildFlow(d);
+    expect(cards.i2v).toMatchObject({ state: "error", subtitle: "lỗi → dùng ảnh tĩnh" });
+    expect(cards.i2v.warning).toContain("dùng ảnh tĩnh");
+    expect(issues.find((i) => i.card === "i2v")).toMatchObject({ tone: "warn" });
+    expect(cards.video.state).toBe("done");
+  });
+  it("xong: số clip + giờ GPU", () => {
+    const d = data({ status: "ready", progress: { steps: { i2v: step("done") }, i2v: { ...i2v("done", 5), gpuMinutes: 14 } } });
+    expect(buildFlow(d).cards.i2v).toMatchObject({ state: "done", subtitle: "xong (5/6 clip)", metrics: ["5/6 clip", "GPU 14 phút"] });
   });
 });

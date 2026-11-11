@@ -13,7 +13,7 @@ import { DEFAULT_MODEL, PROVIDERS, type ProviderId, type Route } from "@/lib/ai/
 import { ActionForm } from "@/components/action-form";
 import { CopyButton } from "@/components/copy-button";
 import { formatSlot, formatTime, type CardId, type FlowData, type NodeId } from "@/lib/flow/model";
-import type { Scene } from "@/lib/flow/progress";
+import type { I2vClip, Scene } from "@/lib/flow/progress";
 import { musicTitle, thousands } from "@/lib/flow/derive";
 import { scoreMeta, SEO_TARGET, totalScore, type SeoScore } from "@/lib/flow/seo";
 import { VOICES } from "@/lib/flow/voices";
@@ -708,6 +708,73 @@ function Images({ data, tab }: PanelProps) {
   );
 }
 
+/** Clip động (Kaggle): lưới clip phát được (autoplay, tắt tiếng, lặp) kèm ảnh gốc, prompt chuyển động và thời gian GPU. */
+/** Chú thích dưới clip: lỗi → ảnh tĩnh, đã xong thì thời gian GPU, còn lại đang tạo. */
+function clipCaption(c: I2vClip): string {
+  if (c.ok === false) return "lỗi → ảnh tĩnh";
+  return c.seconds == null ? "đang tạo" : `${c.seconds}s GPU`;
+}
+
+function I2v({ data, tab }: PanelProps) {
+  const i2vInfo = data.video.progress?.i2v;
+  const files = data.video.files;
+  const kernel = i2vInfo?.kernelUrl ? (
+    <Sec title="Kaggle">
+      <Row k="Model" v={i2vInfo.model ?? "—"} />
+      <Row k="GPU" v={i2vInfo.gpu ? `${i2vInfo.gpu}${i2vInfo.gpuMinutes ? ` · ${i2vInfo.gpuMinutes} phút` : ""}` : "—"} />
+      <p className="mt-2 text-[11px]">
+        <a href={i2vInfo.kernelUrl} target="_blank" rel="noreferrer" className="text-sky-400 hover:underline">
+          Mở kernel trên Kaggle (xem log) ↗
+        </a>
+      </p>
+    </Sec>
+  ) : null;
+  if (tab === "log") return <StepLog data={data} id="i2v" extra={kernel} />;
+  if (!i2vInfo?.clips.length) return <Empty text="Chưa có clip động — chương này chưa chạy bước Kaggle, hoặc Kaggle không cấp GPU (cảnh dùng ảnh tĩnh)." />;
+  if (tab === "in")
+    return (
+      <Sec title="Prompt chuyển động từng clip">
+        <ol className="space-y-3">
+          {i2vInfo.clips.map((c) => (
+            <li key={c.scene}>
+              <p className="mb-1 text-[11px] text-muted">Cảnh {c.scene + 1}</p>
+              <Code>{c.motion}</Code>
+            </li>
+          ))}
+        </ol>
+      </Sec>
+    );
+  return (
+    <>
+      {kernel}
+      <Sec title="Clip mẫu">
+        <div className="grid grid-cols-2 gap-2">
+          {i2vInfo.clips.map((c) => {
+            const clip = c.file && files[c.file];
+            const img = files[`long-img-${c.scene}.jpg`];
+            return (
+              <figure key={c.scene} className="overflow-hidden rounded-lg ring-1 ring-white/10">
+                {clip ? (
+                  <video src={clip} poster={img} autoPlay muted loop playsInline preload="metadata" className="aspect-video w-full object-cover" />
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element -- ảnh từ GitHub Release qua redirect
+                  img && <img src={img} alt="" loading="lazy" className="aspect-video w-full object-cover opacity-50" />
+                )}
+                <figcaption className="space-y-0.5 p-1.5 text-[10px] leading-snug text-muted">
+                  <span className="font-bold text-zinc-300">
+                    Cảnh {c.scene + 1} · {clipCaption(c)}
+                  </span>
+                  <span className="line-clamp-2 block">{c.motion}</span>
+                </figcaption>
+              </figure>
+            );
+          })}
+        </div>
+      </Sec>
+    </>
+  );
+}
+
 /** Xem ảnh to; có danh sách thì chuyển ảnh bằng nút ‹ ›, phím ←/→ hoặc vuốt. Esc / bấm nền để đóng. */
 function Lightbox({ items, start, onClose }: { items: { src: string; scene?: Scene }[]; start: number; onClose: () => void }) {
   const [i, setI] = useState(start);
@@ -1041,6 +1108,7 @@ export const PANELS: Record<CardId, (p: PanelProps) => ReactNode> = {
   seo: Seo,
   tts: Tts,
   images: Images,
+  i2v: I2v,
   thumbnail: ThumbnailOut,
   video: VideoOut,
   long: LongOut,

@@ -114,6 +114,13 @@ export function buildSubs(d: FlowData, cards: Record<CardId, CardView>): SubView
       modelSub("images-prompt", "images", "Prompt cảnh", textModel(d, "scenes")),
     );
   }
+  if (!reuse) {
+    const i2v = d.video.progress?.i2v;
+    subs.push(
+      { id: "i2v-model", parent: "i2v", label: "Model", value: orDash(i2v?.model), icon: "model", brand: null, ok: Boolean(i2v?.model) },
+      { id: "i2v-gpu", parent: "i2v", label: "GPU", value: i2v?.gpu ? `${i2v.gpu}${i2v.gpuMinutes ? ` · ${i2v.gpuMinutes}p` : ""}` : "—", icon: "video", ok: Boolean(i2v?.gpu) },
+    );
+  }
   subs.push(drawSub("thumbnail-model", "thumbnail", "AI vẽ ảnh", d));
 
   const music = m ? musicTitle(m.description) : null;

@@ -14,18 +14,18 @@ import {
   type ImagePick,
 } from "./derive";
 import { scoreMeta, SEO_TARGET, totalScore } from "./seo";
-import type { StepProgress, VideoProgress } from "./progress";
+import { i2vSubtitle, type StepProgress, type VideoProgress } from "./progress";
 
 export type FileName = "long.mp4" | "short.mp4" | "thumbnail.jpg" | "youtube.txt";
 /** Id bước PIPELINE ghi tiến độ (videos.progress) — khác với thẻ trên màn flow (CardId). */
-export type NodeId = "trigger" | "agent" | "tts" | "images" | "video" | "youtube";
+export type NodeId = "trigger" | "agent" | "tts" | "images" | "i2v" | "video" | "youtube";
 export type StepState = "wait" | "run" | "done" | "error" | "skip";
 
 /**
- * Mười thẻ xếp thành cây dọc: Xu hướng → Viết chương → SEO & Thumbnail → (Giọng đọc | Ảnh cảnh | Thumbnail)
+ * Mười một thẻ xếp thành cây dọc: Xu hướng → Viết chương → SEO & Thumbnail → (Giọng đọc | Ảnh cảnh | Clip động | Thumbnail)
  * → Dựng video → (Video dài | Short) → YouTube.
  */
-export type CardId = "trends" | "chapter" | "seo" | "tts" | "images" | "thumbnail" | "video" | "long" | "short" | "youtube";
+export type CardId = "trends" | "chapter" | "seo" | "tts" | "images" | "i2v" | "thumbnail" | "video" | "long" | "short" | "youtube";
 /** `quota`: chờ hết quota AI; `idle`: chưa có dữ liệu (Xu hướng chưa quét). */
 export type CardState = StepState | "quota" | "idle";
 export type CardLink = { label: string; href: string };
@@ -101,7 +101,7 @@ export type FlowData = {
   };
 };
 
-export const CARD_ORDER: CardId[] = ["trends", "chapter", "seo", "tts", "images", "thumbnail", "video", "long", "short", "youtube"];
+export const CARD_ORDER: CardId[] = ["trends", "chapter", "seo", "tts", "images", "i2v", "thumbnail", "video", "long", "short", "youtube"];
 
 export const CARD_TITLES: Record<CardId, string> = {
   trends: "Xu hướng",
@@ -109,6 +109,7 @@ export const CARD_TITLES: Record<CardId, string> = {
   seo: "SEO & Thumbnail",
   tts: "Giọng đọc",
   images: "Ảnh cảnh",
+  i2v: "Clip động (Kaggle)",
   thumbnail: "Thumbnail",
   video: "Dựng video",
   long: "Video dài",
@@ -117,7 +118,7 @@ export const CARD_TITLES: Record<CardId, string> = {
 };
 
 /** Bước pipeline ghi tiến độ cho từng thẻ (Xu hướng, Viết chương không chạy trong job render). */
-export const PROGRESS_OF: Partial<Record<CardId, NodeId>> = { seo: "agent", tts: "tts", images: "images", video: "video", youtube: "youtube" };
+export const PROGRESS_OF: Partial<Record<CardId, NodeId>> = { seo: "agent", tts: "tts", images: "images", i2v: "i2v", video: "video", youtube: "youtube" };
 
 export const CARD_STATE_TEXT: Record<CardState, string> = {
   wait: "Chờ",
@@ -135,6 +136,7 @@ export const TITLES: Record<NodeId, string> = {
   agent: "SEO & Thumbnail",
   tts: "Giọng đọc",
   images: "Ảnh cảnh",
+  i2v: "Clip động (Kaggle)",
   video: "Dựng video",
   youtube: "YouTube",
 };
@@ -336,6 +338,33 @@ function videoCard(d: FlowData, base: Base): CardView {
   return { id: "video", title: CARD_TITLES.video, ...base, ai: null, metrics, chips: [], links: [] };
 }
 
+/**
+ * Clip động (Kaggle): chạy song song với vẽ ảnh, đổ vào Dựng video. Video render trước khi có bước này hoặc bộ truyện không dùng thì "bỏ qua".
+ * Lỗi hoặc quá hạn KHÔNG làm hỏng video: cảnh đó dùng ảnh tĩnh, thẻ chỉ báo lỗi để biết.
+ */
+function i2vCard(d: FlowData): CardView {
+  const p = d.video.progress;
+  const step = p?.steps.i2v;
+  const i2vInfo = p?.i2v;
+  const common = { id: "i2v" as const, title: CARD_TITLES.i2v, ai: null, chips: i2vInfo?.model ? [i2vInfo.model] : [], links: i2vInfo?.kernelUrl ? [{ label: "Kernel Kaggle (log)", href: i2vInfo.kernelUrl }] : [] };
+  if (!step) {
+    const finished = d.video.status === "ready" || d.video.status === "published";
+    return { ...common, state: finished ? "skip" : "wait", subtitle: finished ? "không dùng clip động" : "chờ", metrics: [] };
+  }
+  const ok = (i2vInfo?.clips ?? []).filter((c) => c.ok).length;
+  const total = step.long?.total ?? i2vInfo?.clips.length ?? 0;
+  const progress = step.state === "run" && total > 0 ? ok / total : undefined;
+  const warning = step.state === "error" ? `${step.error ?? "lỗi"} — dùng ảnh tĩnh` : step.warning;
+  return {
+    ...common,
+    state: step.state,
+    subtitle: i2vSubtitle(step.state, i2vInfo?.stage, ok, total),
+    metrics: [total ? `${ok}/${total} clip` : "", i2vInfo?.gpuMinutes ? `GPU ${i2vInfo.gpuMinutes} phút` : ""].filter(Boolean),
+    ...(warning ? { warning } : {}),
+    ...(progress != null ? { progress } : {}),
+  };
+}
+
 /** Thumbnail: có file thì xong; chưa có thì chạy theo bước Ảnh cảnh (file do bước đó tạo ra). */
 function thumbnailCard(d: FlowData, imagesStep: Base): CardView {
   const file = thumbOf(d);
@@ -407,6 +436,8 @@ function buildIssues(d: FlowData): Issue[] {
   // Short cắt cảnh: chỉ có tiêu đề/mô tả Short + file Short — không có nhạc nền trong mô tả dài, SEO video dài hay thẻ giọng/ảnh riêng để cảnh báo.
   const isClip = Boolean(m?.shortClip);
   if (v.status === "failed") out.push({ tone: "error", text: `Render lỗi: ${v.error ?? "không rõ nguyên nhân"}`, card: "video" });
+  const i2v = v.progress?.steps.i2v;
+  if (i2v?.state === "error") out.push({ tone: "warn", text: `Clip động lỗi, dùng ảnh tĩnh: ${i2v.error ?? "không rõ nguyên nhân"}`, card: "i2v" });
   if (v.uploadStatus === "failed") out.push({ tone: "error", text: `Upload YouTube lỗi: ${v.uploadError ?? "không rõ nguyên nhân"}`, card: "youtube" });
   if (quota) out.push({ tone: "warn", text: `Chờ quota ${quota === "images" ? "ảnh" : "AI"}: ${v.error}`, card: quota });
   else if (v.status === "queued" && v.error) out.push({ tone: "info", text: `Đang chờ: ${v.error}`, card: "video" });
@@ -434,6 +465,7 @@ export function buildFlow(d: FlowData): { cards: Record<CardId, CardView>; issue
     seo: seoCard(d, steps.agent),
     tts: ttsCard(d, steps.tts),
     images: imagesCard(d, steps.images),
+    i2v: i2vCard(d),
     thumbnail: thumbnailCard(d, steps.images),
     video: videoCard(d, steps.video),
     long: outputCard("long", d, steps.video),
@@ -444,6 +476,7 @@ export function buildFlow(d: FlowData): { cards: Record<CardId, CardView>; issue
   const reuse = d.video.meta?.compilation;
   if (reuse)
     for (const id of ["tts", "images"] as const) cards[id] = { ...cards[id], state: "done", subtitle: reuseText(reuse), progress: undefined };
+  if (reuse) cards.i2v = { ...cards.i2v, state: "skip", subtitle: reuseText(reuse), progress: undefined };
   const quota = quotaCard(d.video);
   if (quota) cards[quota] = { ...cards[quota], state: "quota", subtitle: "chờ quota" };
   return { cards, issues: buildIssues(d) };

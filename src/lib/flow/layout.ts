@@ -7,7 +7,7 @@ export type Pos = { x: number; y: number };
 export const MAIN_ORDER: CardId[] = CARD_ORDER;
 
 /** Các hàng của cây dọc; hàng nhiều thẻ là các nhánh song song. */
-export const TREE_ROWS: CardId[][] = [["trends"], ["chapter"], ["seo"], ["tts", "images", "thumbnail"], ["video"], ["long", "short"], ["youtube"]];
+export const TREE_ROWS: CardId[][] = [["trends"], ["chapter"], ["seo"], ["tts", "images", "i2v", "thumbnail"], ["video"], ["long", "short"], ["youtube"]];
 
 /** Bề rộng thẻ, khoảng hở giữa các nhánh song song và bước cách giữa hai hàng (px trên canvas). */
 export const CARD_WIDTH = 248;

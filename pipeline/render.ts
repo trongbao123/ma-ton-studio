@@ -10,6 +10,7 @@ import { escapeHtml, notify, WEB_URL } from "@/lib/notify";
 import { drawImage, imagesReady } from "./images";
 import { duration, ffmpeg, filterPath, measureLufs, once, pool } from "./ffmpeg";
 import { Tracker } from "./progress";
+import { buildClipSegment, newI2vRun, type I2vRun } from "./i2v";
 import { episodeMuxArgs, stillFrames, stillSegmentArgs, voiceGainDb } from "./still";
 import { freshInsights, loadTrends, seoHints } from "@/lib/trends";
 import { characterLookFor, metaRequest, scenePrompts, scenesRequest, videoMeta } from "./prompts";
@@ -276,9 +277,15 @@ export async function buildVideo(opts: {
 export async function buildStillVideo(opts: {
   dir: string; name: string; narration: Narration; music?: string | null; prompts: ScenePrompt[]; scenes: { start: number; end: number; zoom?: boolean }[];
   w: number; h: number; imgW: number; imgH: number;
-  on?: { image?: (i: number, file: string, model?: string) => Promise<void>; shots?: (n: number) => void; shot?: () => void; log?: (text: string) => void };
+  /** Clip động (Kaggle): cảnh được chọn dùng clip thay ảnh tĩnh; lỗi/quá hạn thì giữ ảnh tĩnh. */
+  i2v?: I2vRun;
+  on?: {
+    image?: (i: number, file: string, model?: string) => Promise<void>; shots?: (n: number) => void; shot?: () => void; log?: (text: string) => void;
+    /** Clip động đã tải về (hoặc lỗi → `failure`): cho phép upload clip lên kho và đóng bước. */
+    clips?: (clips: Map<number, string>, failure: string | null) => Promise<void>;
+  };
 }) {
-  const { dir, name, narration, prompts, scenes, w, h, on } = opts;
+  const { dir, name, narration, prompts, scenes, w, h, on, i2v } = opts;
   on?.shots?.(scenes.length);
   const out = path.join(dir, `${name}.mp4`);
   // Bản cuối đã xuất đủ dài (job trước bị huỷ ở bước sau) thì dùng lại.
@@ -287,15 +294,42 @@ export async function buildStillVideo(opts: {
     return { out };
   }
   await rm(out, { force: true });
+  const imgOf = (i: number) => path.join(dir, `${name}-img-${i}.jpg`);
+  // Mỗi ảnh vẽ + báo một lần (cảnh chọn làm clip được vẽ trước để đẩy Kaggle sớm, vòng chính không vẽ lại).
+  const drawn = new Map<number, Promise<void>>();
+  const drawScene = (i: number) => {
+    if (!drawn.has(i)) {
+      drawn.set(i, (async () => {
+        const model = await drawImage(prompts[i].prompt, imgOf(i), { width: opts.imgW, height: opts.imgH, seed: 1000 + i * 7 });
+        await on?.image?.(i, imgOf(i), model);
+      })());
+    }
+    return drawn.get(i)!;
+  };
+  if (i2v) {
+    await pool(i2v.picks, 3, drawScene);
+    i2v.begin(imgOf);
+  }
   const files = await pool(scenes, 3, async (sc, i) => {
-    const img = path.join(dir, `${name}-img-${i}.jpg`);
-    const model = await drawImage(prompts[i].prompt, img, { width: opts.imgW, height: opts.imgH, seed: 1000 + i * 7 });
-    await on?.image?.(i, img, model);
+    const img = imgOf(i);
+    await drawScene(i);
     const file = path.join(dir, `${name}-seg-${String(i).padStart(3, "0")}.mp4`);
     await once(file, (tmp) => ffmpeg(stillSegmentArgs({ img, out: tmp, frames: stillFrames(sc.start, sc.end), w, h, logoCrop: LOGO_CROP, zoom: sc.zoom })));
     on?.shot?.();
     return file;
   });
+  if (i2v) {
+    // Kaggle chạy song song với dựng các đoạn tĩnh ở trên; giờ chờ nốt (có hạn) rồi thay đoạn của cảnh có clip.
+    on?.log?.("Chờ clip động từ Kaggle");
+    const { clips, failure } = await i2v.collect();
+    await pool([...clips.entries()], 2, async ([scene, clip]) => {
+      const seg = path.join(dir, `${name}-seg-clip-${String(scene).padStart(3, "0")}.mp4`);
+      const sc = scenes[scene];
+      await buildClipSegment({ clip, img: imgOf(scene), file: seg, start: sc.start, end: sc.end, w, h, logoCrop: LOGO_CROP });
+      files[scene] = seg;
+    });
+    await on?.clips?.(clips, failure);
+  }
   on?.log?.("Nối đoạn + trộn giọng, nhạc nền (video copy)");
   const list = path.join(dir, `${name}-segments.txt`);
   await writeFile(list, files.map((f) => `file '${f}'`).join("\n"));
@@ -414,8 +448,8 @@ async function previewAudio(wav: string, out: string) {
 }
 
 /** Upload phụ (ảnh cảnh, giọng nghe thử): lỗi chỉ cảnh báo, không làm hỏng render. */
-async function uploadPreview(videoId: number, releaseId: number | null, file: string) {
-  return uploadAsset(videoId, releaseId, file).then(
+async function uploadPreview(videoId: number, releaseId: number | null, file: string, name?: string) {
+  return uploadAsset(videoId, releaseId, file, name).then(
     () => true,
     (e) => {
       console.warn("⚠ Upload xem trước lỗi:", e instanceof Error ? e.message : e);
@@ -433,7 +467,7 @@ function clip(req: { system: string; prompt: string }) {
 async function resetStaleScenes(dir: string, plan: string) {
   const marker = path.join(dir, "scene-plan.txt");
   if ((await readFile(marker, "utf8").catch(() => "")) === plan) return;
-  for (const f of await readdir(dir).catch(() => [] as string[])) if (/^long-(img-\d+\.jpg|shot|group|silent|seg)/.test(f)) await rm(path.join(dir, f), { force: true });
+  for (const f of await readdir(dir).catch(() => [] as string[])) if (/^long-(img-\d+\.jpg|shot|group|silent|seg|clip|i2v)/.test(f)) await rm(path.join(dir, f), { force: true });
   await writeFile(marker, plan);
 }
 
@@ -478,10 +512,18 @@ async function renderInternalChapter(o: { videoId: number; s: Series; c: Chapter
   track.start("video");
   // Như video thường: ghi AI vẽ đã dùng + gửi từng ảnh lên kho để màn flow có "Ảnh từng cảnh" xem trước.
   const imageModels = new Set<string>();
+  const i2v = newI2vRun({ videoId, dir, track, scenes, prompts, logoCrop: LOGO_CROP });
+  if (i2v) track.start("i2v", { long: i2v.picks.length });
   const video = await buildStillVideo({
-    dir, name: "long", narration: long, prompts, scenes, music,
+    dir, name: "long", narration: long, prompts, scenes, music, i2v,
     w: 1920, h: 1080, imgW: 1280, imgH: 768,
     on: {
+      clips: async (clips, failure) => {
+        for (const [scene, file] of clips) await uploadPreview(videoId, releaseId, file, i2v!.assetName(scene));
+        if (failure && !clips.size) return void track.finish("i2v", "error", failure);
+        if (failure) track.warn("i2v", failure);
+        track.finish("i2v");
+      },
       image: async (i, file, model) => {
         if (model && !imageModels.has(model)) {
           imageModels.add(model);
@@ -780,6 +822,7 @@ if (process.argv[1]?.endsWith("render.ts")) {
       const n = Number(arg.match(/^clips(?::(\d+))?$/)?.[1] ?? 2);
       return import("./clips").then((x) => x.makeSceneClips({ max: n, ignoreDailyCap: true }));
     }
+    if (arg === "kaggle-test") return import("./i2v").then((x) => x.kaggleTest(process.argv[3] ?? "/tmp/i2v-in"));
     if (arg === "shorts") return import("./short-backfill").then((x) => x.backfillEpisodeShorts());
     if (arg.startsWith("redo:")) {
       // redo:<id>[:<ISO lịch>][:full]

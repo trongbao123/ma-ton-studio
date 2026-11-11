@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { videos } from "@/db/schema";
 import type { NodeId } from "@/lib/flow/model";
-import { LOG_KEEP, type StepProgress, type VideoProgress } from "@/lib/flow/progress";
+import { LOG_KEEP, type I2vProgress, type StepProgress, type VideoProgress } from "@/lib/flow/progress";
 
 const FLUSH_MS = 2000;
 const HEARTBEAT_MS = 60_000;
@@ -79,6 +79,12 @@ export class Tracker {
 
   set(patch: Partial<Omit<VideoProgress, "steps">>) {
     Object.assign(this.p, patch);
+    this.schedule();
+  }
+
+  /** Cập nhật tiến độ clip động (Kaggle): gộp vào `progress.i2v` rồi ghi. */
+  i2v(patch: Partial<I2vProgress>) {
+    this.p.i2v = { clips: [], ...this.p.i2v, ...patch };
     this.schedule();
   }
 

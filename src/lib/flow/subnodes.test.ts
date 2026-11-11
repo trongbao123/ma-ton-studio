@@ -138,3 +138,18 @@ describe("subOffset", () => {
     expect(subOffset(1, 248).y - subOffset(0, 248).y).toBe(SUB_HEIGHT + SUB_GAP);
   });
 });
+
+describe("node con của Clip động", () => {
+  it("có Model + GPU; chưa có số liệu thì hiện mờ", () => {
+    const subs = buildSubs(data(), buildFlow(data()).cards).filter((s) => s.parent === "i2v");
+    expect(subs.map((s) => s.id)).toEqual(["i2v-model", "i2v-gpu"]);
+    expect(subs.every((s) => !s.ok && s.value === "—")).toBe(true);
+  });
+  it("có số liệu thật thì hiện model và GPU · phút", () => {
+    const d = data();
+    d.video.progress = { steps: {}, i2v: { model: "LTX-Video 0.9.8 2B distilled", gpu: "Tesla T4", gpuMinutes: 14, clips: [] } };
+    const subs = buildSubs(d, buildFlow(d).cards).filter((s) => s.parent === "i2v");
+    expect(subs.map((s) => s.value)).toEqual(["LTX-Video 0.9.8 2B distilled", "Tesla T4 · 14p"]);
+    expect(subs.every((s) => s.ok)).toBe(true);
+  });
+});

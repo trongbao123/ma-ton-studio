@@ -1,5 +1,6 @@
 import type { SourceDay, SourceId } from "@/lib/ai/sources";
 import type { FlowData } from "@/lib/flow/model";
+import type { KaggleNow } from "@/lib/flow/progress";
 
 /** Số liệu một video YouTube tại thời điểm `at` (ms epoch). Ẩn like/comment thì về 0. */
 export type YtStat = { views: number; likes: number; comments: number; at: number };
@@ -13,6 +14,8 @@ export type RenderingNow = { id: number; number: number; pct: number | null; liv
 
 export type LiveStatus = {
   rendering: RenderingNow | null;
+  /** Kernel Kaggle đang tạo clip động của video đang render. */
+  kaggle: KaggleNow | null;
   queued: number;
   today: Partial<Record<SourceId, SourceDay>>;
   /** Gói CLI đã gọi thử thành công (job ai-check ghi). */

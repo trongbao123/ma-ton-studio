@@ -6,8 +6,8 @@ const full = () => Object.fromEntries(CARD_ORDER.map((id, i) => [id, { x: i * 10
 const centerX = (id: (typeof CARD_ORDER)[number]) => DEFAULT_POSITIONS[id].x + CARD_WIDTH / 2;
 
 describe("cây mặc định", () => {
-  it("đủ 10 thẻ, mỗi thẻ đúng một hàng", () => {
-    expect(CARD_ORDER).toHaveLength(10);
+  it("đủ 11 thẻ, mỗi thẻ đúng một hàng", () => {
+    expect(CARD_ORDER).toHaveLength(11);
     expect(TREE_ROWS.flat().sort()).toEqual([...CARD_ORDER].sort());
   });
 
@@ -18,15 +18,17 @@ describe("cây mặc định", () => {
 
   it("thẻ đơn nằm giữa trục x = 0; nhánh song song đối xứng quanh trục", () => {
     for (const id of ["trends", "chapter", "seo", "video", "youtube"] as const) expect(centerX(id)).toBe(0);
-    expect(centerX("images")).toBe(0);
-    expect(centerX("tts")).toBe(-(CARD_WIDTH + CARD_GAP));
-    expect(centerX("thumbnail")).toBe(CARD_WIDTH + CARD_GAP);
+    const step = CARD_WIDTH + CARD_GAP;
+    expect(centerX("tts")).toBe(-1.5 * step);
+    expect(centerX("images")).toBe(-0.5 * step);
+    expect(centerX("i2v")).toBe(0.5 * step);
+    expect(centerX("thumbnail")).toBe(1.5 * step);
     expect(centerX("long") + centerX("short")).toBe(0);
     expect(centerX("short") - centerX("long")).toBe(CARD_WIDTH + CARD_GAP);
   });
 
-  it("3 nhánh song song cùng hàng; Video dài / Short cùng hàng", () => {
-    expect(new Set(["tts", "images", "thumbnail"].map((id) => DEFAULT_POSITIONS[id as "tts"].y)).size).toBe(1);
+  it("4 nhánh song song cùng hàng; Video dài / Short cùng hàng", () => {
+    expect(new Set(["tts", "images", "i2v", "thumbnail"].map((id) => DEFAULT_POSITIONS[id as "tts"].y)).size).toBe(1);
     expect(DEFAULT_POSITIONS.long.y).toBe(DEFAULT_POSITIONS.short.y);
   });
 });
@@ -70,9 +72,10 @@ describe("bố cục ngang", () => {
   });
   it("nhánh song song xếp chồng trong cột, đối xứng quanh y = 0", async () => {
     const { DEFAULT_POSITIONS_H, STACK_PITCH } = await import("./layout");
-    expect(DEFAULT_POSITIONS_H.images.y).toBe(0);
-    expect(DEFAULT_POSITIONS_H.tts.y).toBe(-STACK_PITCH);
-    expect(DEFAULT_POSITIONS_H.thumbnail.y).toBe(STACK_PITCH);
+    expect(DEFAULT_POSITIONS_H.tts.y).toBe(-1.5 * STACK_PITCH);
+    expect(DEFAULT_POSITIONS_H.images.y).toBe(-0.5 * STACK_PITCH);
+    expect(DEFAULT_POSITIONS_H.i2v.y).toBe(0.5 * STACK_PITCH);
+    expect(DEFAULT_POSITIONS_H.thumbnail.y).toBe(1.5 * STACK_PITCH);
     expect(DEFAULT_POSITIONS_H.long.y + DEFAULT_POSITIONS_H.short.y).toBe(0);
   });
   it("bố cục ngang hỏng thì về mặc định NGANG, không về dọc", async () => {
