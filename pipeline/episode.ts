@@ -11,7 +11,9 @@ import { buildEpisodeToc, coldOpenSceneCount, ensureEpisodeLabel, fullBadge, ful
 import { duration, ffmpeg } from "./ffmpeg";
 import { playlistUrl, seriesPlaylist } from "./playlist";
 import { scenePrompts } from "./prompts";
-import { buildVideo, musicCredit, narrate, pickMusic, splitScenes, thumbnail } from "./render";
+import { outroArgs } from "./outro";
+import { BURN_TEXT, buildVideo, FONT, musicCredit, narrate, pickMusic, splitScenes, thumbnail } from "./render";
+import { PUBLISH_HOUR_UTC } from "./schedule";
 import { conformArgs } from "./still";
 import { DEFAULT_THUMB, THUMB_IDS, THUMB_STYLE, thumbFile, type ThumbId } from "./thumb-plan";
 import { chooseTitle, generateTitles, genreSeeds, keywordResearch, scoreTitles } from "./vidiq";
@@ -97,6 +99,37 @@ async function makeColdOpen(o: EpisodeInput, m: z.infer<typeof episodeSchema>, m
   } catch (e) {
     if (e instanceof QuotaExhaustedError) console.warn("⚠ Bỏ qua đoạn mở đầu (hết quota)");
     else console.warn("⚠ Bỏ qua đoạn mở đầu:", e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
+/**
+ * Màn kết 15 giây kêu gọi thích / chia sẻ / đăng ký, ghép vào CUỐI tập.
+ * Nền lấy từ chính khung hình gần cuối video: không vẽ ảnh mới nên không tốn quota ảnh, và nhìn liền mạch với cảnh vừa xem.
+ * Chừa sẵn cột phải cho thẻ End Screen thật (đặt tay trong Studio — YouTube không cho đặt qua API), xem OUTRO_CARD_SLOTS.
+ * Lỗi gì cũng chỉ bỏ màn kết, không làm hỏng tập.
+ */
+export async function makeOutro(o: { dir: string; video: string; videoId: number; seconds: number }): Promise<{ file: string; seconds: number } | null> {
+  try {
+    const dir = path.join(o.dir, "outro");
+    await mkdir(dir, { recursive: true });
+    const bg = path.join(dir, "bg.jpg");
+    // Khung hình 3 giây trước khi hết: cuối chương mờ ra đen nên lấy đúng khung cuối sẽ ra ảnh đen.
+    await ffmpeg(["-ss", Math.max(0, o.seconds - 3).toFixed(2), "-i", o.video, "-frames:v", "1", "-q:v", "3", "-update", "1", bg]);
+    const file = path.join(dir, "outro.mp4");
+    await ffmpeg(
+      outroArgs({
+        img: bg, out: file, font: FONT, w: 1920, h: 1080, burnText: BURN_TEXT,
+        music: await pickMusic(o.videoId),
+        // PUBLISH_HOUR_UTC = 8 → 15h giờ Việt Nam; lấy từ hằng số để đổi lịch là chữ đổi theo.
+        publishHour: `${PUBLISH_HOUR_UTC + 7}h`,
+      }),
+    );
+    const seconds = await duration(file);
+    console.log(`  Màn kết: ${seconds.toFixed(1)} giây`);
+    return { file, seconds };
+  } catch (e) {
+    console.warn("⚠ Bỏ qua màn kết:", e instanceof Error ? e.message : e);
     return null;
   }
 }

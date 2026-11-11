@@ -59,6 +59,11 @@ export function filterPath(p: string) {
   return p.replace(/\\/g, "/").replace(/:/g, "\\:").replace(/'/g, "\\'");
 }
 
+/** Thoát chữ cho `drawtext`: nháy đơn đổi thành nháy cong (drawtext không thoát được nháy trong nháy). */
+export function escText(s: string) {
+  return s.replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "\u2019").replace(/%/g, "\\%");
+}
+
 /** Chạy tối đa `limit` việc song song. */
 export async function pool<T, R>(items: T[], limit: number, fn: (item: T, i: number) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array(items.length);

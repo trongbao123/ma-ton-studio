@@ -8,7 +8,7 @@ import { chapters, series, videos, type Chapter, type Series, type VideoMeta } f
 import { QuotaExhaustedError, textProvider } from "@/lib/ai";
 import { escapeHtml, notify, WEB_URL } from "@/lib/notify";
 import { drawImage, imagesReady } from "./images";
-import { duration, ffmpeg, filterPath, measureLufs, once, pool } from "./ffmpeg";
+import { duration, escText, ffmpeg, filterPath, measureLufs, once, pool } from "./ffmpeg";
 import { Tracker } from "./progress";
 import { buildClipSegment, newI2vRun, type I2vRun } from "./i2v";
 import { sfxEvents, sfxTrackArgs } from "./sfx";
@@ -31,9 +31,9 @@ import { speak } from "./tts";
 
 // Đường dẫn tương đối (ffmpeg chạy ở gốc repo): đường dẫn tuyệt đối trên Windows có "C:" làm vỡ cú pháp filter của drawtext.
 const FONT_DIR = "pipeline/fonts";
-const FONT = `${FONT_DIR}/BeVietnamPro-Bold.ttf`;
+export const FONT = `${FONT_DIR}/BeVietnamPro-Bold.ttf`;
 /** Máy local thiếu libass/drawtext thì đặt BURN_TEXT=0 để test phần còn lại. */
-const BURN_TEXT = process.env.BURN_TEXT !== "0";
+export const BURN_TEXT = process.env.BURN_TEXT !== "0";
 const FPS = 30;
 /** Parallax 2.5D mặc định TẮT (bản zoompan 2× bị giật); bật bằng PARALLAX=1 khi đã có đường dựng sub-pixel mượt. */
 const PARALLAX_ENABLED = process.env.PARALLAX === "1";
@@ -428,10 +428,6 @@ function hookText(hook: string, w: number) {
         `,drawtext=fontfile=${filterPath(FONT)}:text='${escText(line)}':fontsize=${size}:fontcolor=#FFD23F:borderw=${Math.round(size / 11)}:bordercolor=black:x=(w-tw)/2:y=${top}+${i * lineH}:alpha='if(lt(t,0.25),t/0.25,if(lt(t,1.9),1,max(0,(2.3-t)/0.4)))':enable='lt(t,2.3)'`,
     )
     .join("");
-}
-
-function escText(s: string) {
-  return s.replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "\u2019").replace(/%/g, "\\%");
 }
 
 /**

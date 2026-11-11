@@ -15,7 +15,7 @@ import { AI_NOTE, optimizeMeta } from "@/lib/seo-optimize";
 import { buildChapterMarks, collectMusicCredits, COMPILE_SIZE, compileLabel, nextCompileSlot, pickBatch, type CompileCandidate } from "./compile-plan";
 import { duration, ffmpeg, streamSignature } from "./ffmpeg";
 import { thumbnail } from "./render";
-import { buildEpisodeContent, type ThumbVariant } from "./episode";
+import { buildEpisodeContent, makeOutro, type ThumbVariant } from "./episode";
 import { episodeBacklog } from "./episode-plan";
 import { nextPublishSlot } from "./schedule";
 import { ensureRelease, uploadAsset } from "./release";
@@ -220,6 +220,16 @@ export async function compileSeries(seriesId: number) {
         await concatLongs([built.coldOpen.file, out], dir, withIntro, built.coldOpen.seconds + seconds);
         await rm(out, { force: true });
         await rename(withIntro, out);
+        seconds = await duration(out);
+      }
+      // Màn kết kêu gọi thích/chia sẻ/đăng ký ghép vào cuối. Mốc mục lục không đổi (chỉ chương cuối dài thêm 15 giây).
+      console.log("● Màn kết");
+      const outro = await makeOutro({ dir, video: out, videoId, seconds });
+      if (outro) {
+        const withOutro = path.join(dir, "long-outro.mp4");
+        await concatLongs([out, outro.file], dir, withOutro, seconds + outro.seconds);
+        await rm(out, { force: true });
+        await rename(withOutro, out);
         seconds = await duration(out);
       }
     } else {
