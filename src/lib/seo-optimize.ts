@@ -2,16 +2,17 @@ import { z } from "zod";
 import type { VideoMeta } from "@/db/schema";
 import { QuotaExhaustedError, textProvider } from "@/lib/ai";
 import { scoreMeta, SEO_TARGET, seoFeedback, totalScore } from "@/lib/flow/seo";
+import { HOOK_TITLE_RULE } from "./meta-rules";
 
 /** Dòng ghi chú AI luôn nằm cuối mô tả (pipeline thêm vào) — tách ra khi đưa AI sửa, gắn lại sau. */
 export const AI_NOTE = "(Nội dung có sử dụng AI hỗ trợ giọng đọc và hình ảnh.)";
 export { SEO_TARGET };
 
-const fixSchema = z.object({
-  title: z.string().describe("Tiêu đề YouTube 50–70 ký tự: có 1 từ khóa tìm kiếm thật (vd 'Truyện tu tiên'), móc câu gây tò mò, tên truyện, số chương; không in hoa toàn bộ"),
+export const fixSchema = z.object({
+  title: z.string().describe(`Tiêu đề YouTube 50–70 ký tự: có 1 từ khóa tìm kiếm thật (vd 'Truyện tu tiên'), móc câu gây tò mò, tên truyện, số chương; không in hoa toàn bộ; ${HOOK_TITLE_RULE}`),
   description: z.string().describe("Mô tả 220–300 từ, 3–4 đoạn, câu đầu có tên truyện, nhắc tên truyện ≥ 2 lần, lồng ≥ 1/3 số tag, kêu gọi đăng ký/like, dòng cuối 3–5 hashtag"),
   tags: z.array(z.string()).describe("15–25 tag tiếng Việt CÓ DẤU (không viết kiểu 'truyen tu tien'), ≥ 5 tag lấy nguyên văn từ khóa vidIQ, tổng 300–480 ký tự, tag đầu là từ khóa tìm kiếm điểm cao nhất, có tên truyện, có tag ngắn và tag dài, không trùng"),
-  shortTitle: z.string().describe("Tiêu đề Short ≤ 60 ký tự, có tên nhân vật hoặc tên truyện, có #shorts"),
+  shortTitle: z.string().describe(`Tiêu đề Short ≤ 60 ký tự, có tên truyện, có #shorts; ${HOOK_TITLE_RULE}`),
   shortDescription: z.string().describe("1–2 câu có tên truyện, mời xem video full, kèm #shorts"),
 });
 

@@ -25,6 +25,7 @@ import { PUBLISH_HOUR_UTC } from "./schedule";
 import { conformArgs } from "./still";
 import { DEFAULT_THUMB, THUMB_IDS, THUMB_STYLE, thumbFile, type ThumbId } from "./thumb-plan";
 import { chooseTitle, generateTitles, genreSeeds, keywordResearch, scoreTitles } from "./vidiq";
+import { COLD_OPEN_RULE, HOOK_TITLE_RULE, NO_NAME_RULE } from "@/lib/meta-rules";
 
 
 export type EpisodeInput = {
@@ -44,20 +45,20 @@ export type EpisodeInput = {
   compilation: NonNullable<VideoMeta["compilation"]>;
 };
 
-const episodeSchema = z.object({
-  title: z.string().describe("Tiêu đề YouTube 50–70 ký tự kiểu kênh truyện audio lớn: mở bằng HOOK gây sốc/tò mò về khoảnh khắc gay cấn nhất (không spoil kết), chứa 1 từ khóa tìm kiếm điểm cao, kết bằng nhãn 'FULL …H' hoặc 'Tập N (Chương X–Y)'; viết hoa chữ cái đầu như câu thường"),
+export const episodeSchema = z.object({
+  title: z.string().describe(`Tiêu đề YouTube 50–70 ký tự kiểu kênh truyện audio lớn: mở bằng HOOK gây sốc/tò mò về khoảnh khắc gay cấn nhất (không spoil kết), chứa 1 từ khóa tìm kiếm điểm cao, kết bằng nhãn 'FULL …H' hoặc 'Tập N (Chương X–Y)'; viết hoa chữ cái đầu như câu thường; ${HOOK_TITLE_RULE}`),
   titleAlternatives: z.array(z.string()).describe("2 phương án tiêu đề khác, hook khác nhau, cùng yêu cầu"),
   description: z.string().describe("Mô tả 220–300 từ, 3–4 đoạn (KHÔNG kèm mục lục, hệ thống tự thêm): câu đầu chứa tên truyện; giới thiệu hấp dẫn các chương trong tập, không spoil kết; nhắc tên truyện ≥ 2 lần; kêu gọi đăng ký/like/bật chuông"),
   tags: z.array(z.string()).describe("15–25 tag tiếng Việt CÓ DẤU viết y như người xem gõ tìm (vd 'truyện tu tiên', KHÔNG viết 'truyen tu tien'); ít nhất 5 tag lấy nguyên văn từ danh sách từ khóa vidIQ, tổng 300–480 ký tự; tag đầu là từ khóa điểm cao nhất, có tên truyện; không trùng"),
-  thumbnailText: z.string().describe("Chữ trên thumbnail 2–3 từ IN HOA, cảm xúc mạnh, KHÔNG lặp số tập"),
+  thumbnailText: z.string().describe(`Chữ trên thumbnail 2–3 từ IN HOA, cảm xúc mạnh, KHÔNG lặp số tập; ${NO_NAME_RULE}`),
   thumbnailPrompt: z.string().describe("English image prompt, thumbnail A: EXTREME close-up of the main character's face filling 50-60% of the frame at the most dramatic moment, extreme expression (roaring, killing intent, terror), glowing eyes, face on the RIGHT half, plain dark LEFT third for text, very high contrast, minimal detail"),
   thumbnailPromptConfront: z.string().describe("English image prompt, thumbnail B: the main character FACING a monster / beast / main enemy of this episode in a tense standoff, both clearly visible, high contrast, simple background, left third darker for text"),
   thumbnailPromptBurst: z.string().describe("English image prompt, thumbnail C: the main character at the moment of an explosive power surge (huge energy blast, lightning, shockwave) with a fierce expression, high contrast, saturated colors, left third darker for text"),
   characterLook: z.string().describe("English: ngoại hình nhân vật chính"),
-  shortTitle: z.string().describe("Tiêu đề Short ≤ 60 ký tự, có tên truyện, có #shorts"),
+  shortTitle: z.string().describe(`Tiêu đề Short ≤ 60 ký tự, có tên truyện, có #shorts; ${HOOK_TITLE_RULE}`),
   shortDescription: z.string().describe("1–2 câu có tên truyện, mời xem tập full trên kênh, kèm #shorts"),
-  coldOpen: z.string().describe("Lời đọc MỞ ĐẦU video 30–45 giây (85–120 từ), phát ngay giây đầu tiên để giữ người xem: kể khoảnh khắc gay cấn nhất của tập như đang diễn ra trước mắt; câu đầu tiên là biến cố/hành động cụ thể (KHÔNG chào hỏi, KHÔNG đọc tên truyện, KHÔNG nói 'trong tập này'); dừng ngay trước kết quả; câu cuối gợi tò mò để nghe từ đầu, vd 'Nhưng để hiểu vì sao mọi chuyện ra nông nỗi này, phải quay về từ đầu…'"),
-  hookText: z.string().optional().describe("Chữ HOOK in hoa 3–6 từ hiện TO 2 giây đầu video, đi cùng tiếng nổ: câu sốc/tò mò về cao trào của tập (vd 'MỘT QUYỀN PHÁ NÁT THIÊN BIA', 'PHẾ VẬT GIẾT THÁNH TỬ?'), không spoil kết, không dấu chấm"),
+  coldOpen: z.string().describe(`Lời đọc MỞ ĐẦU video 30–45 giây (85–120 từ), phát ngay giây đầu tiên để giữ người xem: kể khoảnh khắc gay cấn nhất của tập như đang diễn ra trước mắt; câu đầu tiên là biến cố/hành động cụ thể (KHÔNG chào hỏi, KHÔNG đọc tên truyện, KHÔNG nói 'trong tập này'); dừng ngay trước kết quả; câu cuối gợi tò mò để nghe từ đầu, vd 'Nhưng để hiểu vì sao mọi chuyện ra nông nỗi này, phải quay về từ đầu…'; ${COLD_OPEN_RULE}`),
+  hookText: z.string().optional().describe(`Chữ HOOK in hoa 3–6 từ hiện TO 2 giây đầu video, đi cùng tiếng nổ: câu sốc/tò mò về cao trào của tập (vd 'MỘT QUYỀN PHÁ NÁT THIÊN BIA', 'PHẾ VẬT GIẾT THÁNH TỬ?'), không spoil kết, không dấu chấm; ${NO_NAME_RULE}`),
   shortScript: z.string().describe("Lời đọc Short 15–20 giây (45–60 từ): hook cực mạnh câu đầu, kể khoảnh khắc KỊCH TÍNH nhất trong 3 chương, dừng ở cao trào, câu cuối mời xem tập full"),
 });
 

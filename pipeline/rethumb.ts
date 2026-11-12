@@ -16,9 +16,10 @@ import { ensureRelease, uploadAsset } from "./release";
 import { thumbnail } from "./render";
 import { THUMB_IDS, THUMB_STYLE, thumbFile, type ThumbId } from "./thumb-plan";
 import { chooseThumbnail, setThumbnail } from "./youtube";
+import { NO_NAME_RULE } from "@/lib/meta-rules";
 
-const schema = z.object({
-  thumbnailText: z.string().describe("Chữ trên thumbnail 2–3 từ IN HOA, cảm xúc mạnh"),
+export const rethumbSchema = z.object({
+  thumbnailText: z.string().describe(`Chữ trên thumbnail 2–3 từ IN HOA, cảm xúc mạnh; ${NO_NAME_RULE}`),
   a: z.string().describe("English prompt A: EXTREME close-up of the main character's face filling 50-60% of the frame at the most dramatic moment, extreme expression, glowing eyes, face on the RIGHT half, plain dark LEFT third for text, very high contrast"),
   b: z.string().describe("English prompt B: the main character FACING the monster / main enemy of this video in a tense standoff, both clearly visible, high contrast, simple background, left third darker for text"),
   c: z.string().describe("English prompt C: the main character at the moment of an explosive power surge (energy blast, lightning, shockwave), fierce expression, high contrast, saturated colors, left third darker for text"),
@@ -39,7 +40,7 @@ export async function rethumb(videoId: number) {
   const m = await textProvider().generateJson({
     system: "Bạn là chuyên gia thumbnail YouTube kênh truyện audio tiên hiệp, tối ưu tỉ lệ bấm ở mục Video đề xuất.",
     prompt: `Truyện: ${s.title}\nTiêu đề video: ${v.meta.title}\nNhân vật chính: ${look}\n\n${chs.map((x) => `Chương ${x.number} — ${x.title}: ${x.summary}`).join("\n")}\n\nViết chữ thumbnail và 3 prompt ảnh cho 3 phương án.`,
-    schema,
+    schema: rethumbSchema,
     temperature: 0.8,
     tier: "cheap",
     task: "meta",

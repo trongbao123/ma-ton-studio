@@ -21,6 +21,7 @@ import { nextPublishSlot } from "./schedule";
 import { ensureRelease, uploadAsset } from "./release";
 import { autoPublishEligible, publishToYoutube } from "./youtube";
 import { chooseTitle, closeVidiq, generateTitles, genreSeeds, keywordResearch, scoreTitles } from "./vidiq";
+import { HOOK_TITLE_RULE, NO_NAME_RULE } from "@/lib/meta-rules";
 
 const run = promisify(execFile);
 
@@ -31,12 +32,12 @@ const RETRY_AFTER_HOURS = 24;
 /** Tập ngày lỗi thì thử lại sau ngần này giờ (lượt daily kế tiếp) — không chờ cả ngày vì còn lịch 15h. */
 const EPISODE_RETRY_AFTER_HOURS = 5;
 
-const metaSchema = z.object({
-  title: z.string().describe("Tiêu đề YouTube 50–70 ký tự: mở đầu bằng 1 từ khóa tìm kiếm thật điểm cao (vd 'Truyện tu tiên'), có tên truyện ngắn, 'Chương X–Y', gợi ý 'trọn bộ' / 'nghe liền mạch'; viết hoa chữ cái đầu như câu thường (KHÔNG in hoa toàn bộ)"),
+export const metaSchema = z.object({
+  title: z.string().describe(`Tiêu đề YouTube 50–70 ký tự: mở đầu bằng 1 từ khóa tìm kiếm thật điểm cao (vd 'Truyện tu tiên'), có tên truyện ngắn, 'Chương X–Y', gợi ý 'trọn bộ' / 'nghe liền mạch'; viết hoa chữ cái đầu như câu thường (KHÔNG in hoa toàn bộ); ${HOOK_TITLE_RULE}`),
   titleAlternatives: z.array(z.string()).describe("2 phương án tiêu đề khác theo cùng yêu cầu"),
   description: z.string().describe("Mô tả 220–300 từ, 3–4 đoạn (KHÔNG kèm mục lục chương, hệ thống tự thêm): câu đầu chứa tên truyện; giới thiệu hấp dẫn các chương gộp, không spoil kết; nhắc tên truyện ≥ 2 lần, lồng ≥ 1/3 số tag; kêu gọi đăng ký/like/bật chuông; dòng cuối 3–5 hashtag"),
   tags: z.array(z.string()).describe("15–25 tag tiếng Việt CÓ DẤU viết y như người xem gõ tìm (vd 'truyện tu tiên', KHÔNG viết 'truyen tu tien'); ít nhất 5 tag lấy nguyên văn từ danh sách từ khóa vidIQ, tổng 300–480 ký tự; tag đầu là từ khóa tìm kiếm điểm cao nhất, có tên truyện; trộn tag ngắn và dài; không trùng"),
-  thumbnailText: z.string().describe("Chữ trên thumbnail 2–3 từ IN HOA, cảm xúc mạnh, KHÔNG lặp 'TRỌN BỘ' hay số chương (đã có nhãn riêng)"),
+  thumbnailText: z.string().describe(`Chữ trên thumbnail 2–3 từ IN HOA, cảm xúc mạnh, KHÔNG lặp 'TRỌN BỘ' hay số chương (đã có nhãn riêng); ${NO_NAME_RULE}`),
   thumbnailPrompt: z.string().describe("English image prompt for a YouTube thumbnail: extreme close-up of the main character's face and upper body at a dramatic moment, intense emotion, glowing eyes or energy, one focal point on the RIGHT half, darker simpler LEFT third for text, high contrast, saturated colors"),
   characterLook: z.string().describe("English: mô tả ngoại hình nhân vật chính"),
 });
