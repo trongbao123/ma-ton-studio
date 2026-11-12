@@ -1,3 +1,32 @@
+# HANDOFF — 2026-11-12 đêm (Windows) — "bấm vào là cuốn"
+
+Resume: `git pull` trên `main`. Spec: `docs/superpowers/specs/2026-11-12-hook-he-thong-design.md`, plan: `docs/superpowers/plans/2026-11-12-hook-he-thong.md`.
+
+## Số liệu gốc (vidIQ, kênh đã kết nối)
+CTR thumbnail 0,89–1,41% (~12k hiển thị); chương 1 còn 59% người xem ở giây 20 (rơi 40% ở giây 10–20 do đọc tên truyện/chương + tả cảnh); bàn tay vàng tới 7:23 mới xuất hiện.
+
+## Đã lên `main` hôm nay
+| Việc | Ghi chú |
+|---|---|
+| Bộ 20 tag cố định của chủ kênh luôn đứng đầu | `src/lib/youtube-tags.ts` |
+| Đổi tên kênh → Thôn Phệ Audio (code); link kênh theo ID | `src/lib/channel.ts`. Tên/handle trên YouTube chủ kênh tự đổi trong Studio |
+| Luật mở đầu mới (câu đầu là thoại/xung đột, thoại >½ 300 từ đầu, bỏ văn chồng tính từ) | `OPENING_RULES` trong `src/lib/story/prompts.ts`, áp MỌI bộ |
+| Biên tập viên AI chấm 300 từ đầu sau lượt viết đầu, viết lại ≤2 lần | `src/lib/story/editor.ts`; chỉ chạy ngoài Vercel; không đạt → Telegram |
+| Thần Ấn = hệ thống (bible series 4) | đã chạy `hethong:4` (run 43252091819): bible có mục `## THẦN ẤN — HỆ THỐNG`, 0 chương bị trả về vì chương 19–22 đã có row video |
+| Không đọc tên truyện/chương ở đầu video | `pipeline/narration.ts` |
+| Cache TTS ghi kèm văn bản (đổi văn bản → đọc lại) | `pipeline/tts-cache.ts` |
+| Tiêu đề/thumbnail: con số + bàn tay vàng + hậu quả lớn, cấm tên nhân vật; cold open nhịp 0–3/3–20 giây | `src/lib/meta-rules.ts` |
+| Thumbnail tập + `thumbs:<id>` gửi kèm ảnh mẫu nam chính | `thumbnail(..., { refs })` |
+
+## Còn dở
+- Tập #33 (Tập 4, chương 13–15): đã XOÁ bản cũ trên YouTube, CHƯA ghép lại (bị chặn bởi một bản gộp "đang làm" + TTS hết lượt). Daily tự ghép khi hết chặn; không thì chạy `render.yml` với `compile:4` sau ~15h VN.
+- Chương 19–22 viết theo luật CŨ (đã có row video chờ render). Luật mới + "Thần Ấn thức tỉnh" bắt đầu từ chương 23 (chương mở tập kế tiếp là 25).
+- Ngôi kể "Ta" (video tham khảo Panda Tu Tiên 1M view kể ngôi 1) — chờ chủ kênh quyết; đổi bằng `series.style`.
+- Đo lại sau 3 tập mới: vidIQ `audience_retention` (1%/2%/5%) + `thumbnail_ctr` 7 ngày đầu, so tập 1–3.
+- Deferred nhỏ: chạy `hethong:4` lần 2 sẽ reset cả draft mới viết; style cũ không được log trước khi ghi đè.
+
+---
+
 # HANDOFF — 2026-11-12 tối (Mac → máy khác)
 
 Resume: `git pull` trên `main` — mọi thứ đã push, không có branch dở.
