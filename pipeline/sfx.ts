@@ -102,7 +102,7 @@ function sourceChain(kind: SfxKind, s: (n: number) => number): string {
     // Không còn nhiễu dải cao (user: "xèo xèo"): mọi nguồn nhiễu đều lọc thấp ≤ 2,5 kHz; độ "đanh" lấy từ sine trượt cao độ.
     case "boom":
       // Boom trailer: sine trượt 110 → 35 Hz + ầm nâu ≤ 150 Hz, tắt dần.
-      return `aevalsrc=exprs='sin(2*PI*(35*t+12.5*(1-exp(-6*t))))':d=${d}:s=48000,volume=0.9[b0];anoisesrc=c=brown:d=${d}:r=48000:a=0.9:s=${s(1)},lowpass=f=150,lowpass=f=150[b1];[b0][b1]amix=inputs=2:normalize=0,afade=t=in:d=0.01,afade=t=out:st=0.1:d=${d - 0.1}:curve=exp`;
+      return `aevalsrc=exprs='sin(2*PI*(35*t+12.5*(1-exp(-6*t))))':d=${d}:sample_rate=48000,volume=0.9[b0];anoisesrc=c=brown:d=${d}:r=48000:a=0.9:s=${s(1)},lowpass=f=150,lowpass=f=150[b1];[b0][b1]amix=inputs=2:normalize=0,afade=t=in:d=0.01,afade=t=out:st=0.1:d=${d - 0.1}:curve=exp`;
     case "thunder":
       // Sấm: tiếng "rắc" lọc ≤ 2,5 kHz (không rè) + ầm ≤ 400 Hz lăn tăn.
       return `anoisesrc=c=pink:d=0.35:r=48000:a=0.7:s=${s(1)},lowpass=f=2500,afade=t=out:d=0.35:curve=exp,apad=whole_dur=${d}[t0];anoisesrc=c=brown:d=${d}:r=48000:a=1:s=${s(2)},lowpass=f=400,tremolo=f=5:d=0.5,afade=t=in:d=0.05,afade=t=out:st=0.4:d=${d - 0.4}:curve=exp[t1];[t0][t1]amix=inputs=2:normalize=0`;

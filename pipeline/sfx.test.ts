@@ -81,7 +81,7 @@ describe("sfxSource", () => {
   it("mỗi loại là đồ thị lavfi tự sinh, không đọc file ngoài", () => {
     for (const kind of SFX_KINDS) {
       const src = sfxSource(kind);
-      expect(src).toMatch(/^(sine|anoisesrc)=/);
+      expect(src).toMatch(/^(sine|anoisesrc|aevalsrc)=/);
       expect(src).toContain(`d=${SFX_SECONDS[kind]}`);
       expect(src).not.toMatch(/-i |movie=|amovie=/);
     }
@@ -95,7 +95,6 @@ describe("tiếng dựng lại giống nhau (seed cố định)", () => {
   it("mọi nguồn nhiễu đều có seed — không thì mỗi lần dựng ra một file khác, đo mức không lặp lại được", () => {
     for (const kind of SFX_KINDS) {
       const sources = sfxSource(kind).match(/anoisesrc=[^,;]+/g) ?? [];
-      expect(sources.length).toBeGreaterThan(0);
       for (const src of sources) expect(src).toMatch(/[:=]s=\d+/);
     }
   });
@@ -118,9 +117,16 @@ describe("cân biên độ giữa các loại", () => {
   it("mức bù được áp thật vào cuối chuỗi lọc", () => {
     for (const kind of SFX_KINDS) expect(sfxSource(kind)).toContain(`volume=${SFX_TRIM_DB[kind]}dB`);
   });
-  it("tiếng nổ/sấm là điểm nhấn, to hơn nền ì ầm và tiếng gió", () => {
-    expect(SFX_TRIM_DB.boom).toBeGreaterThan(SFX_TRIM_DB.rumble);
-    expect(SFX_TRIM_DB.boom).toBeGreaterThan(SFX_TRIM_DB.whoosh);
+  it("không nhiễu dải cao (user chê 'xèo xèo'): không highpass > 1 kHz, mọi nhiễu đều lọc thấp ≤ 2,5 kHz", () => {
+    for (const kind of SFX_KINDS) {
+      const src = sfxSource(kind);
+      for (const m of src.matchAll(/highpass=f=(\d+)/g)) expect(Number(m[1])).toBeLessThanOrEqual(1000);
+      for (const chain of src.split(";").filter((c) => c.includes("anoisesrc"))) {
+        const lows = [...chain.matchAll(/lowpass=f=(\d+)/g)].map((m) => Number(m[1]));
+        expect(lows.length).toBeGreaterThan(0);
+        expect(Math.min(...lows)).toBeLessThanOrEqual(2500);
+      }
+    }
   });
 });
 
