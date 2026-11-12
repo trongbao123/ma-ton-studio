@@ -19,6 +19,7 @@ import { PARALLAX_BUDGET, parallaxFilterGraph, parallaxInputArgs, parallaxMotion
 import { freshInsights, loadTrends, seoHints } from "@/lib/trends";
 import { metaRequest, scenePrompts, scenesRequest, videoMeta } from "./prompts";
 import { heroRef } from "./hero";
+import { chapterNarration } from "./narration";
 import { imageCount, isEpisodeOpener, planChapterScenes, planShots, shortSceneCount } from "./episode-plan";
 import { OPENER_CLIPS } from "./i2v-plan";
 import { ensureRelease, uploadAsset } from "./release";
@@ -823,8 +824,7 @@ export async function renderVideo(videoId: number) {
     await db().update(videos).set({ meta }).where(eq(videos.id, videoId));
 
     // ── Giọng đọc
-    const intro = `${s.title}. Chương ${c.number}: ${c.title}.`;
-    const longText = `${intro}\n${c.content}`;
+    const longText = chapterNarration(c.content);
     track.start("tts", { long: ttsChunks(longText).length, ...(wantShort ? { short: ttsChunks(m.shortScript).length } : {}) });
     track.log("tts", `Giọng ${s.ttsVoice}`);
     console.log("● Video dài: đọc giọng");
