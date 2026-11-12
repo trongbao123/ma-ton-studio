@@ -20,6 +20,7 @@ import { freshInsights, loadTrends, seoHints } from "@/lib/trends";
 import { metaRequest, scenePrompts, scenesRequest, videoMeta } from "./prompts";
 import { heroRef } from "./hero";
 import { chapterNarration } from "./narration";
+import { dropStaleTts, markTts } from "./tts-cache";
 import { imageCount, isEpisodeOpener, planChapterScenes, planShots, shortSceneCount } from "./episode-plan";
 import { OPENER_CLIPS } from "./i2v-plan";
 import { ensureRelease, uploadAsset } from "./release";
@@ -67,12 +68,16 @@ export async function narrate(text: string, dir: string, voice: string, onChunk?
   const chunks = ttsChunks(text);
   const files = await pool(chunks, 3, async (chunk, i) => {
     const f = path.join(dir, `tts-${voice}-${String(i).padStart(3, "0")}.wav`);
-    await speak(chunk.join(" "), f, voice);
+    const fast = f.replace(/\.wav$/, `-x${NARRATION_TEMPO}.wav`);
+    const said = chunk.join(" ");
+    // Văn bản đoạn đổi so với lần đọc trước (cache) thì đọc lại — tránh audio cũ + phụ đề chữ mới (tts-cache.ts).
+    await dropStaleTts(f, [fast], said);
+    await speak(said, f, voice);
+    await markTts(f, said);
     console.log(`  TTS ${i + 1}/${chunks.length}`);
     onChunk?.(i, chunks.length);
     // Kênh top cùng thể loại đọc 240–290 âm tiết/phút; giọng Gemini ~195 → tăng tốc giữ cao độ (atempo). Mốc câu đo trên bản đã tăng tốc.
     if (NARRATION_TEMPO === 1) return f;
-    const fast = f.replace(/\.wav$/, `-x${NARRATION_TEMPO}.wav`);
     await once(fast, (tmp) => ffmpeg(["-i", f, "-af", `atempo=${NARRATION_TEMPO}`, "-c:a", "pcm_s16le", tmp]));
     return fast;
   });
