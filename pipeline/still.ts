@@ -72,7 +72,7 @@ const segmentEncodeArgs = (o: { out: string; fps: number; still: boolean }) => [
  * Ảnh → đoạn video tĩnh `frames` khung hình, 1920×1080 (scale/crop một lần), mờ vào/ra. `logoCrop` là chuỗi filter cắt logo (có dấu phẩy cuối) hoặc rỗng.
  * Có `parallax` thì dựng 3 lớp theo độ sâu trượt khác tốc độ (thay cho zoompan/ảnh tĩnh trong `parallax.motionFrames` khung đầu).
  */
-export function stillSegmentArgs(o: { img: string; out: string; frames: number; w: number; h: number; logoCrop?: string; fps?: number; zoom?: boolean; action?: boolean; parallax?: StillParallax; subs?: string }) {
+export function stillSegmentArgs(o: { img: string; out: string; frames: number; w: number; h: number; logoCrop?: string; fps?: number; zoom?: boolean; action?: boolean; parallax?: StillParallax; subs?: string; framing?: { x: number; y: number; w: number } }) {
   const fps = o.fps ?? STILL_FPS;
   const seconds = o.frames / fps;
   const fade = Math.min(o.zoom ? ZOOM_FADE_SECONDS : STILL_FADE_SECONDS, seconds / 2);
@@ -107,8 +107,10 @@ export function stillSegmentArgs(o: { img: string; out: string; frames: number; 
       ]
     : [];
   const flash = o.action ? [`fade=t=in:st=0:d=${ACTION_FLASH_SECONDS}:color=white`] : [];
+  // Góc máy ảo: cắt một vùng của ảnh (giữ tỉ lệ) trước khi phóng → cận cảnh/trung cảnh từ cùng một ảnh. Cận thì phóng lanczos cho đỡ mềm.
+  const f = o.framing && o.framing.w < 1 ? o.framing : null;
   const vf = [
-    `${o.logoCrop ?? ""}scale=${o.w}:${o.h}:force_original_aspect_ratio=increase:flags=bicubic`,
+    `${o.logoCrop ?? ""}${f ? `crop=iw*${f.w}:ih*${f.w}:iw*${f.x}:ih*${f.y},` : ""}scale=${o.w}:${o.h}:force_original_aspect_ratio=increase:flags=${f ? "lanczos" : "bicubic"}`,
     `crop=${o.w}:${o.h}:(iw-ow)/2:(ih-oh)*0.3`,
     // Nhân khung đã scale/crop (1 khung) thay vì `-loop 1` bắt scale lại từng khung: đo local ≈ -18% thời gian đoạn, ra cùng file.
     ...motion,

@@ -18,7 +18,7 @@ import { cleanupParallax, prepareParallax } from "./parallax";
 import { PARALLAX_BUDGET, parallaxFilterGraph, parallaxInputArgs, parallaxMotionFor, parallaxWorkDir, planParallax, type ParallaxFiles } from "./parallax-plan";
 import { freshInsights, loadTrends, seoHints } from "@/lib/trends";
 import { characterLookFor, metaRequest, scenePrompts, scenesRequest, videoMeta } from "./prompts";
-import { imageCount, isEpisodeOpener, planChapterScenes, shortSceneCount } from "./episode-plan";
+import { imageCount, isEpisodeOpener, planChapterScenes, planShots, shortSceneCount } from "./episode-plan";
 import { OPENER_CLIPS } from "./i2v-plan";
 import { ensureRelease, uploadAsset } from "./release";
 import { keepOrNextSlot } from "./schedule";
@@ -185,6 +185,9 @@ async function segmentSubs(dir: string, key: string, cues: Cue[], start: number,
   await writeFile(file, toAss(part, { width: w, height: h, fontSize: 58, marginV: 60, karaoke: true }));
   return file;
 }
+
+/** Góc máy ảo nhiều shot/ảnh trong chương nội bộ (SHOT_CUTS=0 để tắt). */
+const SHOT_CUTS = process.env.SHOT_CUTS !== "0";
 
 /** Đốt phụ đề vào chương nội bộ (SEGMENT_SUBS=0 để tắt). */
 const SEGMENT_SUBS = process.env.SEGMENT_SUBS !== "0";
@@ -398,6 +401,7 @@ export async function buildStillVideo(opts: {
   }
   // Ảnh nào áp parallax và bao nhiêu giây: 2 phút đầu đủ đoạn; phần sau theo ngân sách (cảnh action trước, rồi vài giây đầu mỗi ảnh).
   const parallaxPlan = PARALLAX_ENABLED ? planParallax(scenes.map((sc, i) => ({ ...sc, action: prompts[i].action })), PARALLAX_BUDGET) : scenes.map(() => ({ seconds: 0 }));
+  const sentenceEnds = narration.cues.filter((c) => /[.!?…]["”'»)]*$/.test(c.text.trim())).map((c) => c.end);
   const buildSegment = async (sc: (typeof scenes)[number], i: number) => {
     const img = imgOf(i);
     await drawScene(i);
@@ -406,6 +410,28 @@ export async function buildStillVideo(opts: {
     // Cảnh đánh nhau: chớp trắng + đẩy ống kính + rung tắt dần (still.ts). Ảnh vẫn tĩnh nhưng máy quay có nhịp.
     const subs = await segmentSubs(dir, `${name}-${i}`, narration.cues, sc.start, sc.end, w, h);
     const segment = { img, frames, w, h, logoCrop: LOGO_CROP, zoom: sc.zoom, action: prompts[i].action, subs };
+    // Góc máy ảo: cảnh dài cắt thành nhiều shot ~4s (đổi khung, cắt đúng lúc hết câu), shot nào cũng đẩy máy chậm (ảnh không đứng im),
+    // rồi nối copy thành 1 file đoạn.
+    const shots = SHOT_CUTS && parallaxPlan[i].seconds <= 0 ? planShots(sc.start, sc.end, sentenceEnds) : [];
+    if (shots.length > 1) {
+      await once(file, async (tmp) => {
+        const parts: string[] = [];
+        for (const [k, sh] of shots.entries()) {
+          const part = path.join(dir, `${name}-seg-${String(i).padStart(3, "0")}-${k}.mp4`);
+          const shotSubs = await segmentSubs(dir, `${name}-${i}-${k}`, narration.cues, sh.start, sh.end, w, h);
+          await once(part, (t) =>
+            ffmpeg(stillSegmentArgs({ ...segment, frames: stillFrames(sh.start, sh.end), action: k === 0 && segment.action, zoom: true, subs: shotSubs, framing: sh.framing, out: t })),
+          );
+          parts.push(part);
+        }
+        const list = path.join(dir, `${name}-seg-${String(i).padStart(3, "0")}-parts.txt`);
+        await writeFile(list, parts.map((p) => `file '${p}'`).join("\n"));
+        await ffmpeg(["-f", "concat", "-safe", "0", "-i", list, "-c", "copy", tmp]);
+        for (const p of parts) await rm(p, { force: true });
+      });
+      on?.shot?.();
+      return file;
+    }
     await once(file, async (tmp) => {
       const workDir = parallaxWorkDir(img);
       const files = parallaxPlan[i].seconds > 0 ? await prepareParallax({ img, workDir, w, h, logoCrop: LOGO_CROP }) : null;

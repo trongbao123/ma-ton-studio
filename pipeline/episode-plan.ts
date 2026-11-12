@@ -173,3 +173,42 @@ export function ensureEpisodeLabel(title: string, o: { episodeNo: number; from: 
   const tag = ` | Tập ${o.episodeNo} (Chương ${o.from}–${o.to})`;
   return `${t.slice(0, 100 - tag.length).trimEnd()}${tag}`;
 }
+
+/** Khung máy quay ảo trên CÙNG một ảnh (tỉ lệ theo cạnh ảnh): toàn cảnh, cận giữa-trên (mặt), trung cảnh trái/phải. */
+export type Framing = { x: number; y: number; w: number };
+export const SHOT_FRAMINGS: Framing[] = [
+  { x: 0, y: 0, w: 1 },
+  { x: 0.18, y: 0.06, w: 0.64 },
+  { x: 0, y: 0.1, w: 0.8 },
+  { x: 0.2, y: 0.1, w: 0.8 },
+];
+/** Kênh top (Não Phẳng Tu Tiên) đổi hình ~3–4s/lần (13–15 cắt/phút); ta cắt góc máy ~4s, tối đa 4 shot/ảnh. */
+export const SHOT_TARGET_SECONDS = 4;
+const SHOT_MIN_SECONDS = 1.5;
+
+/**
+ * Chia 1 cảnh [start, end] thành các shot ~SHOT_TARGET_SECONDS, ranh giới shot dời về mốc HẾT CÂU (`sentenceEnds`) gần nhất
+ * trong ±40% độ dài shot; shot ngắn hơn SHOT_MIN_SECONDS bị gộp. Mỗi shot một khung (xoay vòng SHOT_FRAMINGS, shot đầu toàn cảnh).
+ * Thuần, để test.
+ */
+export function planShots(start: number, end: number, sentenceEnds: number[], target = SHOT_TARGET_SECONDS): { start: number; end: number; framing: Framing }[] {
+  const len = end - start;
+  const n = Math.max(1, Math.min(SHOT_FRAMINGS.length, Math.round(len / target)));
+  const step = len / n;
+  const cuts: number[] = [];
+  for (let k = 1; k < n; k++) {
+    const b = start + k * step;
+    let best = b;
+    let dist = Infinity;
+    for (const m of sentenceEnds) {
+      if (Math.abs(m - b) <= step * 0.4 && Math.abs(m - b) < dist) {
+        best = m;
+        dist = Math.abs(m - b);
+      }
+    }
+    const prev = cuts.length ? cuts[cuts.length - 1] : start;
+    if (best - prev >= SHOT_MIN_SECONDS && end - best >= SHOT_MIN_SECONDS) cuts.push(best);
+  }
+  const edges = [start, ...cuts, end];
+  return edges.slice(0, -1).map((s, k) => ({ start: s, end: edges[k + 1], framing: SHOT_FRAMINGS[k % SHOT_FRAMINGS.length] }));
+}

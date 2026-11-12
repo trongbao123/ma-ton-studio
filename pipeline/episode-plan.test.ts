@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { pickBatch } from "./compile-plan";
-import { buildEpisodeToc, chaptersToWrite, coldOpenSceneCount, fullBadge, HOOK_ZONE_SECONDS, isEpisodeOpener, planChapterScenes, shortSceneCount, ensureEpisodeLabel, episodeBacklog, fullLabel, imageCount, occupiesDailySlot, pickPublishSlot, tocText, vnDay } from "./episode-plan";
+import { buildEpisodeToc, chaptersToWrite, coldOpenSceneCount, fullBadge, HOOK_ZONE_SECONDS, isEpisodeOpener, planChapterScenes, planShots, SHOT_FRAMINGS, shortSceneCount, ensureEpisodeLabel, episodeBacklog, fullLabel, imageCount, occupiesDailySlot, pickPublishSlot, tocText, vnDay } from "./episode-plan";
 
 const row = (id: number, number: number, o: Partial<Parameters<typeof episodeBacklog>[0][number]> = {}) => ({
   id, number, status: "ready" as const, youtubeVideoId: null, publishAt: null, hasLong: true, meta: null, ...o,
@@ -201,5 +201,27 @@ describe("chương mở đầu tập: 15 phút đầu nhịp nhanh", () => {
   it("chương thường không đổi", () => {
     expect(planChapterScenes(2100, false)).toEqual(planChapterScenes(2100));
     expect(planChapterScenes(2100).filter((x) => x.zoom)).toHaveLength(20);
+  });
+});
+
+describe("planShots — góc máy ảo", () => {
+  it("cảnh 10s → ~3 shot ~4s, ranh giới về mốc hết câu, shot đầu toàn cảnh, liền nhau phủ kín", () => {
+    const got = planShots(100, 110, [103.1, 106.9, 108.5]);
+    expect(got.length).toBeGreaterThanOrEqual(2);
+    expect(got[0].start).toBe(100);
+    expect(got[got.length - 1].end).toBe(110);
+    expect(got[0].framing).toEqual(SHOT_FRAMINGS[0]);
+    for (let k = 1; k < got.length; k++) expect(got[k].start).toBe(got[k - 1].end);
+    expect(got.map((s) => s.end)).toContain(103.1);
+  });
+  it("cảnh 30s → tối đa 4 shot", () => {
+    expect(planShots(0, 30, [])).toHaveLength(4);
+  });
+  it("cảnh ngắn (≤ 6s) giữ 1 shot", () => {
+    expect(planShots(0, 5, [2.5])).toHaveLength(1);
+  });
+  it("không tạo shot ngắn hơn 1,5s", () => {
+    const got = planShots(0, 8, [0.6, 7.6]);
+    for (const s of got) expect(s.end - s.start).toBeGreaterThanOrEqual(1.5);
   });
 });

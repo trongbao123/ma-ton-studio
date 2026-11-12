@@ -216,3 +216,15 @@ describe("stillSegmentArgs · cảnh hành động", () => {
     expect(vf).not.toMatch(/sin\(/);
   });
 });
+
+describe("stillSegmentArgs · góc máy ảo", () => {
+  it("khung cận cắt vùng ảnh trước khi phóng (lanczos); toàn cảnh không cắt thêm", () => {
+    const vf = (framing?: { x: number; y: number; w: number }) => {
+      const a = stillSegmentArgs({ img: "a", out: "o", frames: 96, w: 1920, h: 1080, framing });
+      return a[a.indexOf("-vf") + 1];
+    };
+    expect(vf({ x: 0.18, y: 0.06, w: 0.64 })).toContain("crop=iw*0.64:ih*0.64:iw*0.18:ih*0.06,scale=1920:1080:force_original_aspect_ratio=increase:flags=lanczos");
+    expect(vf({ x: 0, y: 0, w: 1 })).not.toContain("crop=iw*");
+    expect(vf()).toContain("flags=bicubic");
+  });
+});
