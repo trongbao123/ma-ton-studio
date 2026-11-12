@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Chapter, Series } from "@/db/schema";
-import { RECENT_SUMMARY_WINDOW, chapterPrompt, continuePrompt, dropRepeatedParagraphs, isLongChapter, maxContinues, outlinePrompt, storyContext } from "./prompts";
+import { RECENT_SUMMARY_WINDOW, chapterPrompt, continuePrompt, dropRepeatedParagraphs, isLongChapter, maxContinues, openerLine, outlinePrompt, storyContext } from "./prompts";
 
 const s: Series = {
   id: 1,
@@ -112,5 +112,14 @@ describe("biblePrompt", () => {
     expect(p).toContain(HIT_FORMULA);
     expect(p).toContain("Kiểu Đấu La Đại Lục");
     expect(p).toContain("KHÔNG đi lại chuỗi tình tiết");
+  });
+});
+
+describe("openerLine", () => {
+  it("liệt kê đúng chương mở tập trong khoảng dàn ý (tập 3 chương)", () => {
+    expect(openerLine({ episodeChapters: 3 }, 16, 7)).toContain("Chương 16, 19, 22 là chương MỞ ĐẦU TẬP");
+  });
+  it("không chế độ tập thì rỗng", () => {
+    expect(openerLine({ episodeChapters: 0 }, 16, 7)).toBe("");
   });
 });

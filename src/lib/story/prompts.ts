@@ -18,6 +18,12 @@ Truyện dùng để đọc thành audio trên YouTube, người nghe bỏ đi n
 - Giọng kể lôi cuốn như người kể chuyện đang hào hứng, xen chút dí dỏm cho nhẹ nhàng; nhân vật chính bình tĩnh, mưu trí, ra tay quyết đoán, thoại ngắn sắc; lúc đánh nhau và lúc cảm động thì nghiêm túc, căng thẳng.
 - Tạo kích thích liên tục: úp mở bí mật, đặt câu hỏi cho người nghe ("Các vị đoán xem, hắn đã làm gì?"), đẩy nguy hiểm lên rồi mới lật kèo.
 - Câu ngắn, nhịp nhanh, dễ đọc to; không ký hiệu, chú thích, bảng, markdown.
+VIẾT CHO TAI NGHE (người nghe không lật lại được trang trước):
+- KHÔNG quay ngược thời gian ở đầu chương ("phải lùi lại một chút", hồi tưởng dài) — mạch truyện đi thẳng về phía trước; chuyện cũ chỉ nhắc 1 câu khi cần.
+- Mỗi chương tối đa 2 tên riêng MỚI (người, chiêu, bảo vật, địa danh); tên mới giới thiệu kèm một câu giải thích dễ hiểu. Tên cũ nhắc lại kèm vai trò ("Lãnh Cực, sư phụ của hắn,…") nếu lâu chưa xuất hiện.
+- Câu tả cảnh tối đa ~20 từ; mỗi đoạn tả không quá 3 câu rồi phải có hành động hoặc thoại.
+- Cứ khoảng 600–800 từ (≈ 4–5 phút nghe) phải có một biến cố: đòn đánh, lời đe doạ, bí mật lộ ra, quyết định khó — không để 2 cảnh liền nhau chỉ nói chuyện/suy nghĩ.
+- Chương nào cũng phải có đánh nhau hoặc đối đầu căng thẳng có thắng thua rõ; cảnh nói chuyện phải có xung đột ngầm (doạ, mặc cả, lừa).
 - CẢM XÚC là xương sống: tình thân (người nhà hy sinh, lời hứa bảo vệ), tình đồng đội sống chết, tình yêu day dứt, phản bội đau đớn, mối thù máu. Viết cảnh cảm động bằng chi tiết nhỏ và hành động, không sến; để người nghe nghẹn họng, nổi da gà.
 - Cao trào xây theo bậc: dồn ép nhân vật chính vào tuyệt cảnh → mất mát → bùng nổ lật ngược thế cờ trước mặt mọi người. Gieo phục bút từ sớm và thu lại bằng cú twist bất ngờ nhưng hợp lý.
 - Kết chương bằng cliffhanger buộc người nghe bấm chương sau.
@@ -74,6 +80,16 @@ export const outlineSchema = z.object({
 });
 export type OutlineDraft = z.infer<typeof outlineSchema>;
 
+/** Chương mở tập trong khoảng dàn ý (tập k chương; khớp isEpisodeOpener khi các tập bắt đầu ở chương 1 + bội k). */
+export function openerLine(s: Pick<Series, "episodeChapters">, startAt: number, count: number) {
+  const k = s.episodeChapters;
+  if (k <= 0) return "";
+  const list = Array.from({ length: count }, (_, i) => startAt + i).filter((n) => (n - 1) % k === 0);
+  return list.length
+    ? `Chương ${list.join(", ")} là chương MỞ ĐẦU TẬP (giữ chân người xem cả tập ~2 giờ): mở bằng biến cố lớn ngay câu đầu, dồn 2–3 xung đột leo thang liên tiếp, có một cú lật kèo giữa chương.`
+    : "";
+}
+
 /** `trends`: đoạn xu hướng khán giả hiện tại (trendsBrief) — có thì lồng vào, không có thì dàn ý như cũ. */
 export function outlinePrompt(s: Series, previous: Chapter[], count: number, trends?: string | null) {
   const startAt = (previous.at(-1)?.number ?? 0) + 1;
@@ -82,7 +98,9 @@ export function outlinePrompt(s: Series, previous: Chapter[], count: number, tre
     prompt: `${storyContext(s, previous)}
 
 Lên dàn ý cho ${count} chương tiếp theo, từ chương ${startAt} đến chương ${startAt + count - 1}.
-Mỗi chương đẩy truyện tiến lên, có ít nhất một điểm sướng (thăng cấp, vả mặt, đoạt bảo, thắng trận); cứ 3–5 chương có một bước ngoặt lớn hoặc trận đấu cao trào. Ghi rõ trong dàn ý cấp bậc nhân vật chính thay đổi thế nào.${
+Mỗi chương đẩy truyện tiến lên, có ít nhất một điểm sướng (thăng cấp, vả mặt, đoạt bảo, thắng trận); cứ 3–5 chương có một bước ngoặt lớn hoặc trận đấu cao trào. Ghi rõ trong dàn ý cấp bậc nhân vật chính thay đổi thế nào.
+Mỗi chương phải có ÍT NHẤT MỘT cảnh đánh nhau hoặc đối đầu căng thẳng có thắng thua rõ (ghi rõ trong dàn ý ai đánh ai, ai thắng, cái giá); KHÔNG có chương nào chỉ gồm nói chuyện, suy nghĩ hay di chuyển. Diễn biến đi thẳng về phía trước, không mở chương bằng hồi tưởng.
+${openerLine(s, startAt, count)}${
       trends ? `\n\nXu hướng khán giả hiện tại (từ YouTube) — lồng ghép tự nhiên, không phá mạch truyện:\n${trends}` : ""
     }`,
   };
