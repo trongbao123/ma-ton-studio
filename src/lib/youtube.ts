@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { appSettings } from "@/db/schema";
 import { decrypt, encrypt } from "./crypto";
 import { recordYoutubeUnits } from "./yt-units";
+import { cleanTags } from "./youtube-tags";
 
 export const YT_KEY = "youtube";
 export type YoutubeAuth = { refreshToken: string; channel: string | null; connectedAt: string };
@@ -86,19 +87,7 @@ export async function saveYoutubeAuth(auth: YoutubeAuth | null) {
 export const redirectUri = (origin: string) => `${origin}/api/youtube/callback`;
 
 /** YouTube từ chối tag tổng > 500 ký tự (tag có dấu cách tính thêm 2 dấu ngoặc) và ký tự < > trong tiêu đề/mô tả. */
-export function cleanTags(tags: string[]) {
-  const out: string[] = [];
-  let used = 0;
-  for (const raw of tags) {
-    const t = raw.replace(/[<>,]/g, "").trim();
-    if (!t) continue;
-    const cost = t.length + (t.includes(" ") ? 2 : 0) + (out.length ? 1 : 0);
-    if (used + cost > 500) break;
-    out.push(t);
-    used += cost;
-  }
-  return out;
-}
+export { cleanTags } from "./youtube-tags";
 export const noAngle = (s: string) => s.replace(/[<>]/g, "");
 
 /** Sửa tiêu đề / mô tả / tag của video đã có trên YouTube (videos.update ghi đè cả snippet nên gửi đủ trường). */
