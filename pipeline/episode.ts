@@ -238,7 +238,7 @@ async function makeThumbnails(o: EpisodeInput, m: z.infer<typeof episodeSchema>,
   const out: ThumbVariant[] = [];
   for (const [i, id] of THUMB_IDS.entries()) {
     try {
-      const file = await thumbnail(o.dir, `${prompts[id] || m.thumbnailPrompt}, ${THUMB_STYLE[id]}, ${m.characterLook}`, m.thumbnailText, badge, { name: thumbFile(id).replace(/\.jpg$/, ""), seed: 42 + i * 101 });
+      const file = await thumbnail(o.dir, `${prompts[id] || m.thumbnailPrompt}, ${THUMB_STYLE[id]}, ${m.characterLook}`, m.thumbnailText, badge, { name: thumbFile(id).replace(/\.jpg$/, ""), seed: 42 + i * 101, refs: o.heroRef ? [o.heroRef] : undefined });
       out.push({ id, file });
     } catch (e) {
       console.warn(`⚠ Thumbnail ${id.toUpperCase()} lỗi:`, e instanceof Error ? e.message : e);

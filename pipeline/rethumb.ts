@@ -11,7 +11,7 @@ import { loadSecrets } from "@/lib/secrets";
 import { accessToken, getYoutubeAuth } from "@/lib/youtube";
 import { fullBadge } from "./episode-plan";
 import { Tracker } from "./progress";
-import { characterLookFor } from "./prompts";
+import { heroRef } from "./hero";
 import { ensureRelease, uploadAsset } from "./release";
 import { thumbnail } from "./render";
 import { THUMB_IDS, THUMB_STYLE, thumbFile, type ThumbId } from "./thumb-plan";
@@ -36,7 +36,11 @@ export async function rethumb(videoId: number) {
   const chs = ids.length
     ? await db().select({ number: chapters.number, title: chapters.title, summary: chapters.summary }).from(videos).innerJoin(chapters, eq(chapters.id, videos.chapterId)).where(inArray(videos.id, ids))
     : [{ number: c.number, title: c.title, summary: c.summary }];
-  const look = v.meta.characterLook || (await characterLookFor(s)).characterLook;
+  const dir = path.resolve(`.render/rethumb-${videoId}`);
+  await mkdir(dir, { recursive: true });
+  // Ngoại hình + ảnh mẫu nam chính CỐ ĐỊNH của bộ (hero.ts) — thumbnail cùng một mặt với video.
+  const hero = await heroRef(s, dir);
+  const look = hero.look;
   const m = await textProvider().generateJson({
     system: "Bạn là chuyên gia thumbnail YouTube kênh truyện audio tiên hiệp, tối ưu tỉ lệ bấm ở mục Video đề xuất.",
     prompt: `Truyện: ${s.title}\nTiêu đề video: ${v.meta.title}\nNhân vật chính: ${look}\n\n${chs.map((x) => `Chương ${x.number} — ${x.title}: ${x.summary}`).join("\n")}\n\nViết chữ thumbnail và 3 prompt ảnh cho 3 phương án.`,
@@ -45,14 +49,12 @@ export async function rethumb(videoId: number) {
     tier: "cheap",
     task: "meta",
   });
-  const dir = path.resolve(`.render/rethumb-${videoId}`);
-  await mkdir(dir, { recursive: true });
   const badge = fullBadge(v.durationSec ?? 0);
   const releaseId = await ensureRelease(videoId, false);
   const thumbs: { id: ThumbId; file: string }[] = [];
   for (const [i, id] of THUMB_IDS.entries()) {
     try {
-      const file = await thumbnail(dir, `${m[id]}, ${THUMB_STYLE[id]}, ${look}`, m.thumbnailText, badge, { name: thumbFile(id).replace(/\.jpg$/, ""), seed: 77 + i * 101 });
+      const file = await thumbnail(dir, `${m[id]}, ${THUMB_STYLE[id]}, ${look}`, m.thumbnailText, badge, { name: thumbFile(id).replace(/\.jpg$/, ""), seed: 77 + i * 101, refs: hero.file ? [hero.file] : undefined });
       await uploadAsset(videoId, releaseId, file, thumbFile(id));
       thumbs.push({ id, file });
       console.log(`  ✔ Thumbnail ${id.toUpperCase()}`);

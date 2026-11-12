@@ -577,10 +577,10 @@ async function ambientBed(dir: string) {
 }
 
 /** `badge`: nhãn đỏ góc trên, vd "CHƯƠNG 12" hoặc "TRỌN BỘ CHƯƠNG 1–5" (bản gộp). */
-export async function thumbnail(dir: string, prompt: string, text: string, badge: string, variant: { name?: string; seed?: number } = {}) {
+export async function thumbnail(dir: string, prompt: string, text: string, badge: string, variant: { name?: string; seed?: number; refs?: string[] } = {}) {
   const name = variant.name ?? "thumbnail";
   const img = path.join(dir, `${name}-src.jpg`);
-  await drawImage(`${prompt}, YouTube thumbnail, 16:9`, img, { width: 1280, height: 720, seed: variant.seed ?? 42 });
+  await drawImage(`${prompt}, YouTube thumbnail, 16:9`, img, { width: 1280, height: 720, seed: variant.seed ?? 42, refs: variant.refs });
   const out = path.join(dir, `${name}.jpg`);
   // Chữ to 2 dòng bên TRÁI (ảnh chừa trống bên trái), nền tối dần để chữ nổi; nhãn chương góc trên.
   const lines = splitThumbText(text.toUpperCase());
