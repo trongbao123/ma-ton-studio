@@ -11,9 +11,15 @@ import { buildEpisodeToc, coldOpenSceneCount, ensureEpisodeLabel, fullBadge, ful
 import { duration, ffmpeg } from "./ffmpeg";
 import { playlistUrl, seriesPlaylist } from "./playlist";
 import { scenePrompts } from "./prompts";
+
+type ScenePrompt = Awaited<ReturnType<typeof scenePrompts>>[number];
+import { drawImage } from "./images";
+import { motionPrompts, prepareClipImage } from "./i2v";
+import { kaggleAuth, runI2v } from "./kaggle";
+import { pool } from "./ffmpeg";
 import { outroArgs } from "./outro";
-import { sfxCutEvents, sfxTrackArgs } from "./sfx";
-import { BURN_TEXT, buildVideo, FONT, musicCredit, narrate, pickMusic, splitScenes, thumbnail } from "./render";
+import { sfxCutEvents, sfxTrackArgs, type SfxEvent } from "./sfx";
+import { BURN_TEXT, buildVideo, FONT, LOGO_CROP, musicCredit, narrate, pickMusic, splitScenes, thumbnail } from "./render";
 import { PUBLISH_HOUR_UTC } from "./schedule";
 import { conformArgs } from "./still";
 import { DEFAULT_THUMB, THUMB_IDS, THUMB_STYLE, thumbFile, type ThumbId } from "./thumb-plan";
@@ -48,6 +54,7 @@ const episodeSchema = z.object({
   shortTitle: z.string().describe("Tiêu đề Short ≤ 60 ký tự, có tên truyện, có #shorts"),
   shortDescription: z.string().describe("1–2 câu có tên truyện, mời xem tập full trên kênh, kèm #shorts"),
   coldOpen: z.string().describe("Lời đọc MỞ ĐẦU video 30–45 giây (85–120 từ), phát ngay giây đầu tiên để giữ người xem: kể khoảnh khắc gay cấn nhất của tập như đang diễn ra trước mắt; câu đầu tiên là biến cố/hành động cụ thể (KHÔNG chào hỏi, KHÔNG đọc tên truyện, KHÔNG nói 'trong tập này'); dừng ngay trước kết quả; câu cuối gợi tò mò để nghe từ đầu, vd 'Nhưng để hiểu vì sao mọi chuyện ra nông nỗi này, phải quay về từ đầu…'"),
+  hookText: z.string().optional().describe("Chữ HOOK in hoa 3–6 từ hiện TO 2 giây đầu video, đi cùng tiếng nổ: câu sốc/tò mò về cao trào của tập (vd 'MỘT QUYỀN PHÁ NÁT THIÊN BIA', 'PHẾ VẬT GIẾT THÁNH TỬ?'), không spoil kết, không dấu chấm"),
   shortScript: z.string().describe("Lời đọc Short 15–20 giây (45–60 từ): hook cực mạnh câu đầu, kể khoảnh khắc KỊCH TÍNH nhất trong 3 chương, dừng ở cao trào, câu cuối mời xem tập full"),
 });
 
@@ -77,8 +84,8 @@ const TITLE_CARD_SECONDS = 5;
 
 /** Track tiếng đập theo nhịp đổi ảnh của intro; lỗi (thiếu ffmpeg filter, v.v.) thì trả null, intro vẫn chạy. */
 async function buildCutSfx(dir: string, scenes: { start: number; end: number }[], seconds: number): Promise<string | null> {
-  const events = sfxCutEvents(scenes, seconds);
-  if (!events.length) return null;
+  // Cú nổ mở màn ở giây 0 đi cùng chữ hook — giật người xem ngay khung đầu; sau đó đập theo nhịp cắt.
+  const events: SfxEvent[] = [{ kind: "boom", at: 0 }, ...sfxCutEvents(scenes, seconds)];
   const file = path.join(dir, "cold-sfx.wav");
   try {
     await ffmpeg(sfxTrackArgs(events, seconds, file));
@@ -86,6 +93,33 @@ async function buildCutSfx(dir: string, scenes: { start: number; end: number }[]
   } catch (e) {
     console.warn("⚠ Bỏ tiếng hiệu ứng intro:", e instanceof Error ? e.message.slice(0, 200) : e);
     return null;
+  }
+}
+
+/**
+ * Clip động cho MỌI cảnh của đoạn mở đầu (đoạn quyết định người xem ở lại): vẽ ảnh trước (cùng tên file buildVideo dùng → không vẽ lại),
+ * đẩy Kaggle (LTX), chờ có hạn. Chỉ chạy trên Actions khi có key Kaggle; lỗi/quá hạn → Map rỗng, mở đầu dùng ảnh tĩnh như cũ.
+ */
+async function coldOpenClips(o: EpisodeInput, dir: string, scenes: { text: string }[], prompts: ScenePrompt[]): Promise<Map<number, string>> {
+  if (!kaggleAuth() || process.env.I2V === "0" || !(process.env.GITHUB_ACTIONS || process.env.I2V === "1")) return new Map();
+  try {
+    const img = (i: number) => path.join(dir, `cold-img-${i}.jpg`);
+    await pool(prompts, 3, (p, i) => drawImage(p.prompt, img(i), { width: 1280, height: 768, seed: 1000 + i * 7 }));
+    const motions = await motionPrompts(prompts.map((p, i) => ({ prompt: p.prompt, text: scenes[i].text })));
+    const work = path.join(dir, "i2v");
+    await mkdir(work, { recursive: true });
+    const jobs = await Promise.all(prompts.map(async (_, i) => {
+      const file = path.join(work, `in-${i}.jpg`);
+      await prepareClipImage(img(i), file, LOGO_CROP);
+      return { id: i, image: `in-${i}.jpg`, prompt: motions[i], file };
+    }));
+    const out = await runI2v({ videoId: o.videoId, dir: work, jobs });
+    console.log(`  Mở đầu: ${out.clips.size}/${jobs.length} clip động${out.reason ? ` (${out.reason})` : ""}`);
+    return out.clips;
+  } catch (e) {
+    if (e instanceof QuotaExhaustedError) throw e;
+    console.warn("⚠ Mở đầu không có clip động:", e instanceof Error ? e.message.slice(0, 200) : e);
+    return new Map();
   }
 }
 
@@ -100,6 +134,7 @@ async function makeColdOpen(o: EpisodeInput, m: z.infer<typeof episodeSchema>, m
     const narration = await narrate(`${m.coldOpen.trim()}${bridge}`, dir, o.s.ttsVoice);
     const scenes = splitScenes(narration.cues, coldOpenSceneCount(narration.seconds), narration.seconds);
     const prompts = await scenePrompts(m.characterLook, scenes.map((x) => x.text));
+    const clips = await coldOpenClips(o, dir, scenes, prompts);
     // Tiếng đập đúng nhịp đổi ảnh. Lỗi thì bỏ, intro vẫn có giọng + nhạc như cũ.
     const sfx = await buildCutSfx(dir, scenes, narration.seconds);
     // Thẻ tên truyện + số tập hiện ở CUỐI intro rồi mở thẳng vào chương 1 (kiểu title card của phim).
@@ -107,6 +142,7 @@ async function makeColdOpen(o: EpisodeInput, m: z.infer<typeof episodeSchema>, m
     const raw = await buildVideo({
       dir, name: "cold", narration, scenes, prompts, music, sfx,
       titleCard: card, titleCardStart: Math.max(0, narration.seconds - TITLE_CARD_SECONDS),
+      hook: m.hookText?.trim() || undefined, clips,
       w: 1920, h: 1080, imgW: 1280, imgH: 768, fontSize: 62, marginV: 70,
     });
     const file = path.join(dir, "cold-open.mp4");

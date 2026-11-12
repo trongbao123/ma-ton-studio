@@ -97,7 +97,7 @@ export function cueTextBetween(cues: Cue[], start: number, end: number) {
 
 const FADE = 0.8;
 /** Pollinations không key có logo ở đáy ảnh → cắt 7%. Ảnh Cloudflare sạch, không cần. */
-const LOGO_CROP = process.env.CLOUDFLARE_API_TOKEN ? "" : "crop=iw:ih*0.93:0:0,";
+export const LOGO_CROP = process.env.CLOUDFLARE_API_TOKEN ? "" : "crop=iw:ih*0.93:0:0,";
 const SHOT_SECONDS = 10;
 /** Cảnh hành động chỉ cắt nhanh hơn (không rung, không chớp — người xem thấy khó chịu). */
 const ACTION_SHOT_SECONDS = 5;
@@ -162,6 +162,15 @@ export async function shot(img: string, out: string, seconds: number, w: number,
   ]);
 }
 
+/** Shot từ clip động: phóng lanczos lên khung, đủ `seconds` (thiếu thì giữ khung cuối), cùng thông số mã hoá với `shot`. */
+export async function clipShot(clip: string, out: string, seconds: number, w: number, h: number, q: Quality = NORMAL) {
+  await ffmpeg([
+    "-i", clip, "-t", seconds.toFixed(3),
+    "-vf", `fps=${q.fps},scale=${w}:${h}:force_original_aspect_ratio=increase:flags=lanczos,crop=${w}:${h},${q.sharpen ? "unsharp=5:5:0.8," : ""}tpad=stop_mode=clone:stop_duration=30,format=yuv420p`,
+    "-c:v", "libx264", "-preset", "superfast", "-crf", "18", "-r", String(q.fps), out,
+  ]);
+}
+
 /** Nối các cảnh bằng crossfade theo nhóm (nhóm lớn quá ffmpeg tốn RAM); giữa các nhóm là cắt thẳng. */
 export async function crossfadeGroup(clips: { file: string; seconds: number; fade: number; fx: string }[], out: string) {
   if (clips.length === 1) return ffmpeg(["-i", clips[0].file, "-c", "copy", out]);
@@ -188,6 +197,8 @@ export async function buildVideo(opts: {
   sfx?: string | null;
   /** Short: chữ lớn 2 giây đầu để giữ người lướt; thanh tiến độ mảnh trên đỉnh. */
   hook?: string; progressBar?: boolean;
+  /** Clip động theo chỉ số ảnh (đoạn mở đầu): shot của ảnh có clip dùng clip thay ảnh tĩnh + máy quay. */
+  clips?: Map<number, string>;
   /** Mặc định NORMAL. */
   quality?: Quality;
   /** Báo tiến độ cho màn flow: ảnh vẽ xong (lần đầu), tổng số shot, từng shot xong, việc ghép. */
@@ -239,7 +250,8 @@ export async function buildVideo(opts: {
     const seconds = sh.seconds + (fadesNext ? shots[j + 1].fade : 0);
     // "shot2": đổi tên khi đổi cách mã hoá để không trộn file cũ; once() → job bị huỷ chạy lại thì bỏ qua cảnh đã dựng.
     const file = path.join(dir, `${name}-shot${q.tag}-${String(j).padStart(3, "0")}.mp4`);
-    await once(file, (tmp) => shot(img, tmp, seconds, w, h, sh.motion, q, px ? { files: px, index: sh.image + sh.k } : undefined));
+    const clip = opts.clips?.get(sh.image);
+    await once(file, (tmp) => (clip ? clipShot(clip, tmp, seconds, w, h, q) : shot(img, tmp, seconds, w, h, sh.motion, q, px ? { files: px, index: sh.image + sh.k } : undefined)));
     if (j % 10 === 0) console.log(`  ${name} cảnh ${j + 1}/${shots.length}`);
     on?.shot?.();
     return { file, seconds, fade: sh.fade, fx: sh.fx };
