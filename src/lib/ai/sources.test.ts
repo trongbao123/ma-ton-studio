@@ -58,3 +58,9 @@ describe("lampOf", () => {
     expect(lampOf({ calls: 4, limited: false, partial: true, models: [] }, true)).toBe("partial");
   });
 });
+
+describe("classifyModel — Z-Image", () => {
+  it("Z-Image-Turbo là nguồn miễn phí riêng, không phải ảnh trả phí", () => {
+    expect(classifyModel("Z-Image-Turbo")).toBe("zimage");
+  });
+});

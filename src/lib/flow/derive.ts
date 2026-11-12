@@ -81,6 +81,7 @@ export function imageBrand(model: string): BrandId | null {
   if (/^gemini/i.test(model)) return "gemini";
   // Cloudflare ghi chữ thường "flux-1-schnell"; DeepInfra là "FLUX-1-…" (không có logo riêng).
   if (/^flux-1-/.test(model)) return "cloudflare";
+  if (/^z-image/i.test(model)) return "kaggle";
   return null;
 }
 

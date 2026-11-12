@@ -2,11 +2,11 @@
  * Gom lượt dùng (bảng ai_usage, theo tên model) về các "nguồn" người dùng hiểu: gói Claude, gói ChatGPT,
  * Gemini miễn phí, giọng đọc, ảnh Cloudflare, ảnh DeepInfra… kèm việc nó làm, cách reset và chi phí. Thuần — dùng cả server lẫn client.
  */
-export type SourceId = "claude-plan" | "chatgpt-plan" | "chatgpt-image" | "gemini-free" | "voice" | "cloudflare" | "deepinfra" | "claude-api" | "openai-api" | "image-paid";
+export type SourceId = "claude-plan" | "chatgpt-plan" | "chatgpt-image" | "gemini-free" | "voice" | "cloudflare" | "deepinfra" | "claude-api" | "openai-api" | "image-paid" | "zimage";
 export type Source = {
   id: SourceId;
   name: string;
-  brand: "claude" | "openai" | "gemini" | "cloudflare" | null;
+  brand: "claude" | "openai" | "gemini" | "cloudflare" | "kaggle" | null;
   /** Việc nguồn này làm trong app. */
   job: string;
   /** Kiểu tính: gói tháng, miễn phí theo ngày, trả theo lượng dùng. */
@@ -22,8 +22,9 @@ export const SOURCES: Source[] = [
   { id: "chatgpt-image", name: "Vẽ ảnh · gói ChatGPT Plus", brand: "openai", job: "Vẽ ảnh cảnh + thumbnail (chính)", billing: "plan", reset: "Theo khung giờ của gói, OpenAI không công bố số lượt" },
   { id: "gemini-free", name: "Gemini API miễn phí", brand: "gemini", job: "Tóm tắt, prompt ảnh, việc bấm từ web", billing: "free", reset: "Mỗi ngày lúc 15:00 (nửa đêm giờ Mỹ)" },
   { id: "voice", name: "Giọng đọc Gemini", brand: "gemini", job: "Đọc chương và Short", billing: "free", reset: "Mỗi ngày lúc 15:00 (nửa đêm giờ Mỹ)" },
-  { id: "cloudflare", name: "Cloudflare FLUX", brand: "cloudflare", job: "Vẽ ảnh cảnh (chính)", billing: "free", reset: "Mỗi ngày lúc 7:00" },
-  { id: "deepinfra", name: "DeepInfra FLUX", brand: null, job: "Vẽ ảnh khi Cloudflare hết lượt", billing: "paid", reset: "Trả theo ảnh, không giới hạn", unitUsd: 0.0019 },
+  { id: "cloudflare", name: "Cloudflare FLUX", brand: "cloudflare", job: "Đã tắt — ảnh xấu (IMAGE_ALLOW_FLUX=1 để bật)", billing: "free", reset: "Mỗi ngày lúc 7:00" },
+  { id: "zimage", name: "Z-Image · GPU Kaggle", brand: "kaggle", job: "Vẽ ảnh phụ (~16 cảnh/chương)", billing: "free", reset: "Dùng chung 30 giờ GPU/tuần với clip động" },
+  { id: "deepinfra", name: "DeepInfra FLUX", brand: null, job: "Đã tắt cùng Cloudflare FLUX", billing: "paid", reset: "Trả theo ảnh, không giới hạn", unitUsd: 0.0019 },
   { id: "claude-api", name: "Claude API", brand: "claude", job: "Dự phòng chữ", billing: "paid", reset: "Trả theo lượng dùng" },
   { id: "openai-api", name: "ChatGPT API", brand: "openai", job: "Dự phòng chữ", billing: "paid", reset: "Trả theo lượng dùng" },
   { id: "image-paid", name: "Ảnh trả phí khác", brand: null, job: "Vẽ ảnh (Nano Banana / GPT Image)", billing: "paid", reset: "Trả theo ảnh" },
@@ -44,6 +45,7 @@ export function classifyModel(model: string): SourceId | null {
   const plan = m.endsWith("(gói)");
   if (plan && m.includes("image")) return "chatgpt-image";
   if (plan) return /claude|haiku|sonnet|opus/.test(m) ? "claude-plan" : "chatgpt-plan";
+  if (m.startsWith("z-image")) return "zimage";
   if (m.startsWith("@cf/")) return "cloudflare";
   if (m.includes("black-forest-labs/")) return "deepinfra";
   if (/image|nano-banana|imagen/.test(m)) return "image-paid";
