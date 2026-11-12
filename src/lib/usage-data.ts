@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { aiUsage, chapters, series, videos } from "@/db/schema";
 import { loadCliStatus } from "@/lib/ai/cli-status";
@@ -46,7 +46,15 @@ export async function configuredSources(): Promise<Partial<Record<SourceId, bool
 /** Video gần nhất và AI đã làm từng bước (ghi trong progress khi render). */
 export async function recentAiWork(limit = 8) {
   const rows = await db()
-    .select({ id: videos.id, status: videos.status, progress: videos.progress, number: chapters.number, seriesTitle: series.title })
+    // Chỉ lấy tên model từ `progress` (cột nặng nhất: cảnh, prompt, nhật ký) thay vì kéo cả blob về.
+    .select({
+      id: videos.id,
+      status: videos.status,
+      agent: sql<string | null>`${videos.progress}#>>'{steps,agent,model}'`,
+      images: sql<string | null>`${videos.progress}#>>'{steps,images,model}'`,
+      number: chapters.number,
+      seriesTitle: series.title,
+    })
     .from(videos)
     .innerJoin(chapters, eq(chapters.id, videos.chapterId))
     .innerJoin(series, eq(series.id, chapters.seriesId))
@@ -57,8 +65,8 @@ export async function recentAiWork(limit = 8) {
     status: r.status,
     number: r.number,
     seriesTitle: r.seriesTitle,
-    agent: r.progress?.steps.agent?.model ?? null,
-    images: r.progress?.steps.images?.model ?? null,
+    agent: r.agent,
+    images: r.images,
   }));
 }
 

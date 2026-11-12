@@ -7,8 +7,7 @@ import { BrandIcon } from "@/components/brand-icons";
 import { Lamp } from "@/components/usage-lamp";
 import { LAMP_TEXT, lampOf, nextReset, SOURCES, untilText, type Source, type SourceDay, type SourceId } from "@/lib/ai/sources";
 import { LIMIT_SOURCE_TEXT, levelOf, type LimitBrand, type LimitLevel, type LimitRow, type LimitWindow } from "@/lib/limits";
-import { loadLimits } from "@/lib/limits-data";
-import { usageHistory } from "@/lib/cached";
+import { cachedLimits, usageHistory } from "@/lib/cached";
 import { configuredSources, lastQuotaDays, recentAiWork } from "@/lib/usage-data";
 
 export const metadata: Metadata = { title: "Hạn mức AI · Ma Tôn Studio" };
@@ -277,7 +276,7 @@ function LimitCard({ row, now }: { row: LimitRow; now: Date }) {
 
 async function Limits() {
   await connection();
-  const rows = await loadLimits();
+  const rows = await cachedLimits();
   const now = new Date();
   return (
     <section aria-labelledby="limits" className="space-y-4">
