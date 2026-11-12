@@ -2,7 +2,7 @@ import { and, asc, eq, lt } from "drizzle-orm";
 import { db } from "@/db";
 import { chapters, series, type Chapter, type Series } from "@/db/schema";
 import { textProvider } from "@/lib/ai";
-import { polishOpening } from "./editor";
+import { polishOpening, shouldPolishOpening } from "./editor";
 import { freshInsights, loadTrends, trendsBrief } from "@/lib/trends";
 import {
   bibleSchema,
@@ -72,16 +72,16 @@ export async function writeChapterStep(chapterId: number, mode: WriteMode) {
       temperature: 0.9,
       task: "story",
     });
-    if (mode === "start") {
+    content = mode === "start" ? part : `${content}\n\n${dropRepeatedParagraphs(content, part)}`;
+    const save = (text: string) => db().update(chapters).set({ content: text, summary: "", status: "outline", updatedAt: new Date() }).where(eq(chapters.id, chapterId));
+    // Lưu ngay bản vừa viết: bước chấm phía sau lỗi/bị cắt cũng không mất lượt viết 16k token.
+    await save(content);
+    if (mode === "start" && shouldPolishOpening()) {
       // Biên tập viên AI chấm 300 từ đầu ngay lượt đầu — viết lại lúc này rẻ nhất, trước khi tốn các lượt viết tiếp và giọng đọc.
-      const polished = await polishOpening(part, base, ai);
-      content = polished.content;
+      const polished = await polishOpening(content, base, ai);
       warning = polished.warning;
-    } else content = `${content}\n\n${dropRepeatedParagraphs(content, part)}`;
-    await db()
-      .update(chapters)
-      .set({ content, summary: "", status: "outline", updatedAt: new Date() })
-      .where(eq(chapters.id, chapterId));
+      if (polished.content !== content) await save((content = polished.content));
+    }
   }
   const words = wordCount(content);
   return { words, enough: words >= s.targetWords * 0.8, warning };

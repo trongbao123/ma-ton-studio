@@ -111,3 +111,12 @@ describe("chương xuống dòng đơn (không có dòng trống)", () => {
     expect(r.warning).toMatch(/chưa đạt/);
   });
 });
+
+describe("chỗ chạy biên tập viên", () => {
+  it("không chạy trên Vercel (giới hạn 300 giây/lượt) — daily trên Actions mới chấm", async () => {
+    const { shouldPolishOpening } = await import("./editor");
+    expect(shouldPolishOpening({ VERCEL: "1" })).toBe(false);
+    expect(shouldPolishOpening({ GITHUB_ACTIONS: "true" })).toBe(true);
+    expect(shouldPolishOpening({})).toBe(true);
+  });
+});

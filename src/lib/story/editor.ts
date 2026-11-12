@@ -87,3 +87,11 @@ export async function polishOpening(content: string, base: Prompt, ai: Ai): Prom
   const broken = best.rules.map((i) => OPENING_RULES[i]?.split(/[—;(]/)[0].trim()).filter(Boolean);
   return { content: best.content, warning: `Mở đầu chưa đạt (biên tập viên AI): ${broken.join(" | ")}` };
 }
+
+/**
+ * Trang web (Vercel) mỗi lượt chỉ 300 giây — đã tốn 1 lượt viết 16k token, thêm tới 5 lượt chấm/viết lại dễ bị cắt giữa chừng.
+ * Chỉ chấm khi chạy ngoài Vercel (daily trên GitHub Actions, máy local).
+ */
+export function shouldPolishOpening(env: Record<string, string | undefined> = process.env) {
+  return !env.VERCEL;
+}
