@@ -9,12 +9,11 @@ import { chapters, series, videos } from "@/db/schema";
 import { textProvider } from "@/lib/ai";
 import { loadSecrets } from "@/lib/secrets";
 import { accessToken, getYoutubeAuth } from "@/lib/youtube";
-import { fullBadge } from "./episode-plan";
 import { Tracker } from "./progress";
 import { heroRef } from "./hero";
 import { ensureRelease, uploadAsset } from "./release";
 import { thumbnail } from "./render";
-import { THUMB_IDS, THUMB_STYLE, thumbFile, type ThumbId } from "./thumb-plan";
+import { THUMB_IDS, THUMB_STYLE, thumbBadge, thumbFile, type ThumbId } from "./thumb-plan";
 import { chooseThumbnail, setThumbnail } from "./youtube";
 import { NO_NAME_RULE } from "@/lib/meta-rules";
 
@@ -49,7 +48,7 @@ export async function rethumb(videoId: number) {
     tier: "cheap",
     task: "meta",
   });
-  const badge = fullBadge(v.durationSec ?? 0);
+  const badge = thumbBadge({ compiled: Boolean(v.meta.compilation), seconds: v.durationSec ?? 0, chapterNumber: c.number });
   const releaseId = await ensureRelease(videoId, false);
   const thumbs: { id: ThumbId; file: string }[] = [];
   for (const [i, id] of THUMB_IDS.entries()) {

@@ -1,4 +1,5 @@
 // Phần thuần của "3 thumbnail mỗi tập": id phương án, tên file, chọn phương án điểm vidIQ cao nhất.
+import { fullBadge } from "./episode-plan";
 
 export const THUMB_IDS = ["a", "b", "c"] as const;
 export type ThumbId = (typeof THUMB_IDS)[number];
@@ -28,4 +29,12 @@ export function pickBestThumb(scores: ThumbScores, available: readonly ThumbId[]
     if (best === null || score > (scores[best] as number)) best = id;
   }
   return best ?? DEFAULT_THUMB;
+}
+
+/**
+ * Nhãn góc thumbnail khi vẽ lại: tập/bản gộp ghi thời lượng "FULL …H"; video chương lẻ ghi "CHƯƠNG N" —
+ * fullBadge tối thiểu 1H nên dùng cho chương 16 phút là hứa sai, người xem bấm vào thấy bị lừa.
+ */
+export function thumbBadge(o: { compiled: boolean; seconds: number; chapterNumber: number }) {
+  return o.compiled ? fullBadge(o.seconds) : `CHƯƠNG ${o.chapterNumber}`;
 }

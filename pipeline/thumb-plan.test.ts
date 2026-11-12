@@ -21,3 +21,14 @@ describe("pickBestThumb", () => {
   });
   it("tên file", () => expect(thumbFile("b")).toBe("thumb-b.jpg"));
 });
+
+describe("thumbBadge", () => {
+  it("video chương lẻ ghi số chương, không ghi FULL 1H (chương 1 chỉ 16 phút)", async () => {
+    const { thumbBadge } = await import("./thumb-plan");
+    expect(thumbBadge({ compiled: false, seconds: 977, chapterNumber: 1 })).toBe("CHƯƠNG 1");
+  });
+  it("tập / bản gộp ghi thời lượng FULL", async () => {
+    const { thumbBadge } = await import("./thumb-plan");
+    expect(thumbBadge({ compiled: true, seconds: 5955, chapterNumber: 12 })).toBe("FULL 1H40");
+  });
+});
