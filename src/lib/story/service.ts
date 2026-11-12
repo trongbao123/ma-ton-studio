@@ -2,6 +2,7 @@ import { and, asc, eq, lt } from "drizzle-orm";
 import { db } from "@/db";
 import { chapters, series, type Chapter, type Series } from "@/db/schema";
 import { textProvider } from "@/lib/ai";
+import { polishOpening } from "./editor";
 import { freshInsights, loadTrends, trendsBrief } from "@/lib/trends";
 import {
   bibleSchema,
@@ -58,6 +59,7 @@ export async function writeChapterStep(chapterId: number, mode: WriteMode) {
   const s = await getSeries(chapter.seriesId);
   const ai = textProvider();
   let content = chapter.content;
+  let warning: string | null = null;
 
   if (mode === "finish") {
     const summary = await ai.generateText({ ...summaryPrompt(chapter, content), temperature: 0.3, tier: "cheap", task: "summary" });
@@ -70,14 +72,19 @@ export async function writeChapterStep(chapterId: number, mode: WriteMode) {
       temperature: 0.9,
       task: "story",
     });
-    content = mode === "start" ? part : `${content}\n\n${dropRepeatedParagraphs(content, part)}`;
+    if (mode === "start") {
+      // Biên tập viên AI chấm 300 từ đầu ngay lượt đầu — viết lại lúc này rẻ nhất, trước khi tốn các lượt viết tiếp và giọng đọc.
+      const polished = await polishOpening(part, base, ai);
+      content = polished.content;
+      warning = polished.warning;
+    } else content = `${content}\n\n${dropRepeatedParagraphs(content, part)}`;
     await db()
       .update(chapters)
       .set({ content, summary: "", status: "outline", updatedAt: new Date() })
       .where(eq(chapters.id, chapterId));
   }
   const words = wordCount(content);
-  return { words, enough: words >= s.targetWords * 0.8 };
+  return { words, enough: words >= s.targetWords * 0.8, warning };
 }
 
 /** Prompt đầy đủ để người dùng tự dán vào ChatGPT/Claude web nếu muốn. */

@@ -28,6 +28,10 @@ async function writeNext(seriesId: number, targetWords: number): Promise<{ id: n
   const next = list.find((c) => c.status === "outline")!;
   console.log(`  viết chương ${next.number}: ${next.title}`);
   let r = await writeChapterStep(next.id, next.content ? "continue" : "start");
+  if (r.warning) {
+    console.warn(`⚠ Chương ${next.number}: ${r.warning}`);
+    await notify(`⚠️ Chương ${next.number} — ${escapeHtml(next.title)}: ${escapeHtml(r.warning)}`);
+  }
   for (let i = 0; i < maxContinues(targetWords) && !r.enough; i++) r = await writeChapterStep(next.id, "continue");
   const done = await writeChapterStep(next.id, "finish");
   return { id: next.id, number: next.number, title: next.title, words: done.words };
