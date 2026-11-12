@@ -156,11 +156,11 @@ describe("splitClipSegment / clipSegmentArgs", () => {
 });
 
 describe("pickClipScenes — chương mở đầu tập", () => {
-  it("30–34 clip, phần lớn trong 15 phút đầu", () => {
+  it("40–44 clip, phần lớn trong 30 phút đầu", () => {
     const spans = planChapterScenes(2100, true);
     const got = pickClipScenes(spans, OPENER_CLIPS);
-    expect(got.length).toBeGreaterThanOrEqual(30);
-    expect(got.length).toBeLessThanOrEqual(34);
-    expect(got.filter((i) => spans[i].zoom).length).toBeGreaterThanOrEqual(26);
+    expect(got.length).toBeGreaterThanOrEqual(40);
+    expect(got.length).toBeLessThanOrEqual(44);
+    expect(got.filter((i) => spans[i].zoom).length).toBeGreaterThanOrEqual(38);
   });
 });

@@ -64,7 +64,7 @@ const FAST_OPEN_IMAGE_SECONDS = 6;
 export function planChapterScenes(seconds: number, opener = false) {
   const head = Math.min(FAST_OPEN_SECONDS, seconds);
   const headCount = Math.max(1, Math.round(head / FAST_OPEN_IMAGE_SECONDS));
-  // Chương MỞ ĐẦU tập: 2 phút → phút 15 vẫn nhịp nhanh (~10 giây/ảnh, zoom) — 10–15 phút đầu tập quyết định giữ chân.
+  // Chương MỞ ĐẦU tập: 2 phút → phút 30 vẫn nhịp nhanh (~10 giây/ảnh, zoom) — 30 phút đầu tập quyết định giữ chân.
   const hookEnd = opener ? Math.min(HOOK_ZONE_SECONDS, seconds) : head;
   const mid = Math.max(0, hookEnd - head);
   const midCount = mid > 0 ? Math.max(1, Math.round(mid / HOOK_IMAGE_SECONDS)) : 0;
@@ -75,8 +75,8 @@ export function planChapterScenes(seconds: number, opener = false) {
   return [...slice(0, head, headCount, true), ...slice(head, mid, midCount, true), ...slice(head + mid, rest, restCount, false)];
 }
 
-/** Vùng "giữ chân" của tập: chương mở đầu tập giữ nhịp nhanh tới đây (giây). */
-export const HOOK_ZONE_SECONDS = 15 * 60;
+/** Vùng "giữ chân" của tập (user: 30 phút đầu phải cuốn): chương mở đầu tập giữ nhịp nhanh tới đây (giây). */
+export const HOOK_ZONE_SECONDS = 30 * 60;
 const HOOK_IMAGE_SECONDS = 10;
 
 /**

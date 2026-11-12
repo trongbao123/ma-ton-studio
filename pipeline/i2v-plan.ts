@@ -41,8 +41,8 @@ function spread(items: number[], count: number): number[] {
  * Chọn cảnh của một chương để làm clip động: vài ảnh 2 phút đầu (đều đặn, gồm ảnh đầu) + cảnh có cờ `action`,
  * bù thêm cảnh đều đặn nếu chưa đủ `min`. Trả chỉ số cảnh tăng dần, không quá `max`.
  */
-/** Chương mở đầu tập: nhiều clip hơn, dồn vào 15 phút đầu (vùng zoom). ~34 clip ≈ 35 phút GPU T4. */
-export const OPENER_CLIPS = { min: 30, max: 34, head: 26 } as const;
+/** Chương mở đầu tập: nhiều clip hơn, dồn vào 30 phút đầu (vùng zoom). ~44 clip ≈ 45 phút GPU T4 (kernel tối đa 60). */
+export const OPENER_CLIPS = { min: 40, max: 44, head: 38 } as const;
 
 export function pickClipScenes(scenes: SceneSpan[], limits: { min: number; max: number; head?: number } = CLIPS_PER_CHAPTER): number[] {
   const usable = scenes.map((_, i) => i).filter((i) => scenes[i].end - scenes[i].start >= MIN_SCENE_SECONDS);

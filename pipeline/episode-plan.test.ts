@@ -190,12 +190,12 @@ describe("chương mở đầu tập: 15 phút đầu nhịp nhanh", () => {
     expect(isEpisodeOpener(15, 15, 3)).toBe(false);
     expect(isEpisodeOpener(16, 15, 0)).toBe(false);
   });
-  it("chương mở tập 35 phút: tới phút 15 đều zoom, ~10 giây/ảnh; sau đó 30 giây/ảnh", () => {
+  it("chương mở tập 35 phút: tới phút 30 đều zoom, ~10 giây/ảnh; sau đó 30 giây/ảnh", () => {
     const plan = planChapterScenes(2100, true);
     const zoom = plan.filter((x) => x.zoom);
     expect(zoom[zoom.length - 1].end).toBeCloseTo(HOOK_ZONE_SECONDS);
-    expect(zoom.length).toBe(20 + 78);
-    expect(plan.filter((x) => !x.zoom)).toHaveLength(40);
+    expect(zoom.length).toBe(20 + 168);
+    expect(plan.filter((x) => !x.zoom)).toHaveLength(10);
     expect(plan[plan.length - 1].end).toBe(2100);
   });
   it("chương thường không đổi", () => {
