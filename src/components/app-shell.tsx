@@ -15,7 +15,7 @@ const NAV: { href: string; label: string; icon: LucideIcon; match: (p: string) =
   { href: "/settings/ai", label: "Cài đặt AI", icon: Sparkles, match: (p) => p.startsWith("/settings") },
 ];
 
-/** Con dấu chu sa — nhận diện kênh Ma Tôn Truyện. */
+/** Con dấu chu sa — nhận diện kênh Thôn Phệ Audio. */
 export function Seal({ size = 36 }: { size?: number }) {
   return (
     <span
@@ -72,7 +72,7 @@ export function AppShell({ children, status }: { children: ReactNode; status?: R
       <Seal />
       <span className="leading-tight">
         <b className="block font-serif text-[15px]">Ma Tôn Studio</b>
-        <span className="text-xs text-muted">kênh Ma Tôn Truyện</span>
+        <span className="text-xs text-muted">kênh Thôn Phệ Audio</span>
       </span>
     </Link>
   );

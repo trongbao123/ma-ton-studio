@@ -1,6 +1,6 @@
 # Ma Tôn Studio
 
-Xưởng viết truyện tự động cho kênh YouTube "Ma Tôn Truyện". Kế hoạch tổng: `PLAN.md`.
+Xưởng viết truyện tự động cho kênh YouTube "Thôn Phệ Audio". Kế hoạch tổng: `PLAN.md`.
 
 **P1 (bản này):** ý tưởng → AI dựng story bible → lên dàn ý chương → AI viết chương (nhớ mạch qua tóm tắt) → sửa / duyệt.
 

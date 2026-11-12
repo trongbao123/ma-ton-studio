@@ -6,7 +6,7 @@ export const metadata: Metadata = { title: "Chính sách bảo mật · Ma Tôn 
 export default function PrivacyPage() {
   return (
     <PublicPage title="Chính sách bảo mật">
-      <p>Cập nhật: tháng 11/2026. Áp dụng cho công cụ Ma Tôn Studio của kênh YouTube Ma Tôn Truyện.</p>
+      <p>Cập nhật: tháng 11/2026. Áp dụng cho công cụ Ma Tôn Studio của kênh YouTube Thôn Phệ Audio.</p>
       <h2>Dữ liệu Google / YouTube mà công cụ dùng</h2>
       <ul>
         <li>Quyền tải video lên YouTube (youtube.upload) và quản lý video của chính kênh (youtube.force-ssl) để đăng video, đặt lịch công khai và ảnh thumbnail.</li>

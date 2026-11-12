@@ -17,7 +17,7 @@ import { PUBLISH_HOUR_UTC } from "./schedule";
 /** Giới hạn ký tự một bình luận YouTube. */
 export const COMMENT_MAX = 10_000;
 
-const CHANNEL_URL = process.env.YOUTUBE_CHANNEL_URL ?? "https://www.youtube.com/@MaTonTruyen";
+import { CHANNEL_URL } from "@/lib/channel";
 
 /** Short đăng sau video dài 2 tiếng (publishToYoutube) — bình luận cũng phải đợi tới lúc đó. */
 export const SHORT_DELAY_MS = 2 * 3600_000;

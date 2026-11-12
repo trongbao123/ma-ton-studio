@@ -4,7 +4,7 @@ import { COMMENT_MAX, commentTargets, ctaComment, SHORT_DELAY_MS } from "./comme
 const base = {
   seriesTitle: "Ma Tôn Trùng Sinh",
   playlistUrl: "https://www.youtube.com/playlist?list=PL123",
-  channelUrl: "https://www.youtube.com/@MaTonTruyen",
+  channelUrl: "https://www.youtube.com/channel/UCqhzR8PL3keqni2-kzbAoaw",
   publishHour: "15h",
 };
 

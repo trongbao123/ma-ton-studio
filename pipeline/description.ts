@@ -9,7 +9,8 @@ import { AI_NOTE } from "@/lib/seo-optimize";
 import { formatTimestamp } from "./compile-plan";
 import type { Cue } from "./text";
 
-export const CHANNEL_URL = process.env.YOUTUBE_CHANNEL_URL ?? "https://www.youtube.com/@MaTonTruyen";
+export { CHANNEL_URL } from "@/lib/channel";
+import { CHANNEL_URL } from "@/lib/channel";
 
 export type Segment = { start: number; text: string };
 

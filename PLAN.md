@@ -1,6 +1,6 @@
 # Ma Tôn Studio — kế hoạch
 
-Web tự động sản xuất video truyện tiên hiệp cho kênh YouTube "Ma Tôn Truyện".
+Web tự động sản xuất video truyện tiên hiệp cho kênh YouTube "Thôn Phệ Audio".
 Người dùng chỉ duyệt; AI làm phần còn lại.
 
 ## Quyết định đã chốt — bản FREE

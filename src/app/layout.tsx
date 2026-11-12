@@ -23,7 +23,7 @@ const serif = Noto_Serif({
 
 export const metadata: Metadata = {
   title: "Ma Tôn Studio",
-  description: "Xưởng viết truyện tự động cho kênh Ma Tôn Truyện",
+  description: "Xưởng viết truyện tự động cho kênh Thôn Phệ Audio",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

@@ -7,7 +7,7 @@ import { topStatus } from "@/lib/usage-data";
 import { readStatsSnapshot } from "@/lib/youtube-stats";
 
 /** Trang kênh trên YouTube (đổi kênh thì đặt YOUTUBE_CHANNEL_URL). */
-const CHANNEL_URL = process.env.YOUTUBE_CHANNEL_URL ?? "https://www.youtube.com/@MaTonTruyen";
+import { CHANNEL_URL } from "@/lib/channel";
 
 /**
  * Thanh trên cùng: render lần đầu ở server, sau đó TopStatusLive nhận cập nhật realtime qua SSE (/api/live).

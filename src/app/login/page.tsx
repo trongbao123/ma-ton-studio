@@ -21,7 +21,7 @@ export default function LoginPage() {
             魔
           </span>
           <h1 className="mt-5 font-serif text-3xl font-extrabold tracking-tight">Ma Tôn Studio</h1>
-          <p className="mt-1.5 text-sm text-muted">Xưởng truyện tự động của kênh Ma Tôn Truyện</p>
+          <p className="mt-1.5 text-sm text-muted">Xưởng truyện tự động của kênh Thôn Phệ Audio</p>
         </div>
         <Suspense fallback={<LoginForm needUser={needUser} next="/" />}>
           <LoginForm needUser={needUser} />

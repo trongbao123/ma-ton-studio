@@ -1,5 +1,6 @@
 // Short cắt cảnh: mỗi ngày tối đa 2 Short dựng từ đoạn kịch tính nhất của các chương đã viết (cộng 1 Short của tập = 3 Short/ngày).
 // Gọi từ daily.ts (sau khi đã ưu tiên render chương cho tập kế tiếp) hoặc CLI "clips[:N]".
+import { CHANNEL_URL } from "@/lib/channel";
 import { rm } from "node:fs/promises";
 import path from "node:path";
 import { and, eq, inArray, lt, sql } from "drizzle-orm";
@@ -129,7 +130,7 @@ async function makeOne(c: Ctx): Promise<number> {
   const file = await renderShort({ dir, voice: c.s.ttsVoice, script: draft.shortScript, characterLook: c.characterLook ?? draft.characterLook, hook: draft.hook, music });
 
   const own = await seriesPlaylist(c.s.id);
-  const listUrl = own ? playlistUrl(own) : (process.env.YOUTUBE_CHANNEL_URL ?? "https://www.youtube.com/@MaTonTruyen");
+  const listUrl = own ? playlistUrl(own) : CHANNEL_URL;
   const description = buildClipDescription({
     body: draft.description,
     fullUrl: fullEpisodeUrl({ episodeYoutubeId: c.src.episodeYoutubeId, episodePublishAt: c.src.episodePublishAt, clipPublishAt: c.slot, playlistUrl: listUrl }),
