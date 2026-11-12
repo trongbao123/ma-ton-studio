@@ -1015,6 +1015,8 @@ if (process.argv[1]?.endsWith("render.ts")) {
       const [, ep, ids] = arg.split(":");
       return import("./promote").then((x) => x.promoteEpisode(Number(ep), ids.split(",").map(Number)));
     }
+    // hethong:<seriesId> = ghi luật "Thần Ấn là hệ thống" vào bible, trả chương chưa có video về dàn ý (xem he-thong.ts).
+    if (arg.startsWith("hethong:")) return import("./he-thong").then((x) => x.applySystem(Number(arg.slice(8))));
     if (arg.startsWith("thumbs:")) return import("./rethumb").then((x) => x.rethumb(Number(arg.slice(7))));
     if (arg === "trends") return import("./trends").then((x) => x.scanTrends());
     if (arg.startsWith("compile:")) return import("./compile").then((x) => x.compileSeries(Number(arg.slice(8))));
