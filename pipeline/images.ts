@@ -6,6 +6,7 @@ import { appSettings } from "@/db/schema";
 import { QuotaExhaustedError } from "@/lib/ai";
 import { cliReady, codexImage } from "@/lib/ai/cli";
 import { saveSecret } from "@/lib/secrets";
+import { ART_STYLE } from "./prompts";
 import { recordUsage } from "@/lib/ai/usage";
 import { DEFAULT_IMAGE_MODEL, IMAGE_PROVIDERS, IMAGE_ROUTING_KEY, normalizeImageRouting, type ImageProviderId, type ImageRoute } from "@/lib/ai/routing";
 
@@ -110,6 +111,9 @@ export const isModerationBlock = (e: unknown) => /moderation_blocked|safety_viol
 /** Từ ngữ hay làm prompt cảnh đánh nhau bị chặn — bỏ đi, giữ không khí căng thẳng mà không máu me. */
 const GRAPHIC = /\b(blood(y|ied|stained|-soaked)?|gore|gory|wounds?|wounded|bleeding|corpses?|dead bod(y|ies)|severed|dismember\w*|decapitat\w*|impal\w*|stab(bed|bing|s)?|slit|gash(es)?|mutilat\w*|carnage|massacre|torture\w*|suicid\w*|self-harm|kill(s|ed|ing)?|murder\w*|guts|entrails|skulls?|bones? (piercing|breaking)|broken bones?|crushed skull)\b/gi;
 
+/** Cảnh nền an toàn tuyệt đối (không người, không hành động) khi cả prompt gốc lẫn bản dịu đều bị chặn kiểm duyệt. */
+export const SAFE_SCENE = `${ART_STYLE}. Cinematic establishing shot of an ancient xianxia palace and mountains at night, moonlight through drifting mist, glowing lanterns, mysterious atmosphere, no people, no characters`;
+
 /** Bản prompt "dịu" để vẽ lại khi bị chặn kiểm duyệt: bỏ từ máu me, thêm ràng buộc an toàn, giữ bố cục và cảm xúc. */
 export function softenPrompt(prompt: string) {
   const clean = prompt.replace(GRAPHIC, "").replace(/\s+([,.;])/g, "$1").replace(/,\s*,+/g, ",").replace(/\s{2,}/g, " ").trim();
@@ -126,7 +130,14 @@ async function codexDraw(prompt: string, outFile: string, model: string, opts: D
       // Bị chặn kiểm duyệt: vẽ lại 1 lần bằng prompt dịu thay vì bỏ sang AI khác (Cloudflare có thể đã hết quota → cả chương phải chờ).
       if (!isModerationBlock(e)) throw e;
       console.warn("⚠ Ảnh bị OpenAI chặn kiểm duyệt — vẽ lại bằng prompt dịu hơn");
-      buf = await draw(softenPrompt(prompt));
+      try {
+        buf = await draw(softenPrompt(prompt));
+      } catch (e2) {
+        // Bản dịu vẫn bị chặn: 1 ảnh không được làm hỏng cả chương → vẽ cảnh nền không người, cùng phong cách.
+        if (!isModerationBlock(e2)) throw e2;
+        console.warn("⚠ Bản dịu vẫn bị chặn — dùng cảnh nền không có nhân vật");
+        buf = await draw(SAFE_SCENE);
+      }
     }
     await saveImage(outFile, buf);
     void recordUsage(model, false);
