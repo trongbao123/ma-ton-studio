@@ -10,7 +10,7 @@ import { WriteButton } from "@/components/write-button";
 import { db } from "@/db";
 import { series } from "@/db/schema";
 import { parseId } from "@/lib/params";
-import { listChapters } from "@/lib/story/service";
+import { listChapterRows } from "@/lib/story/service";
 
 export const maxDuration = 300;
 
@@ -25,7 +25,7 @@ export default function SeriesPage({ params }: PageProps<"/series/[id]">) {
 async function SeriesDetail({ params }: { params: Promise<{ id: string }> }) {
   await connection();
   const id = parseId((await params).id);
-  const [[s], list] = await Promise.all([db().select().from(series).where(eq(series.id, id)), listChapters(id)]);
+  const [[s], list] = await Promise.all([db().select().from(series).where(eq(series.id, id)), listChapterRows(id)]);
   if (!s) notFound();
 
   return (

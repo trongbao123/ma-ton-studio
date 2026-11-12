@@ -4,6 +4,9 @@ import type { Chapter, Series } from "@/db/schema";
 /** Số chương gần nhất đưa nguyên tóm tắt vào prompt; xa hơn thì bỏ để prompt không phình. */
 export const RECENT_SUMMARY_WINDOW = 15;
 
+/** Phần của chương trước mà prompt dùng làm trí nhớ — đủ để không phải kéo cả nội dung chương về. */
+export type RecalledChapter = Pick<Chapter, "number" | "title" | "summary">;
+
 const WRITER_SYSTEM = `Bạn là tác giả truyện mạng tiếng Việt top đầu, chuyên huyền huyễn, tiên hiệp, ma đạo — lối viết gây nghiện học từ Đấu La Đại Lục 3 (Long Vương Truyền Thuyết), Quang Âm Chi Ngoại và Thôn Phệ Tinh Không: thế giới tu tiên rộng lớn tàn khốc, nhân vật chính lý trí quyết đoán, mạnh lên từng bước có số đo rõ ràng, trận chiến hoành tráng, bí ẩn lớn hé dần.
 Truyện dùng để đọc thành audio trên YouTube, người nghe bỏ đi nếu chán 10 giây, nên:
 - 2–3 câu đầu là hook mạnh: nguy hiểm, nhục nhã, bí ẩn hoặc một lời tuyên bố gây sốc. Không mở bằng tả cảnh dài.
@@ -94,7 +97,7 @@ export const isLongChapter = (targetWords: number) => targetWords >= LONG_CHAPTE
 export const maxContinues = (targetWords: number) => (isLongChapter(targetWords) ? 5 : 2);
 
 /** `partial`: chương dài viết nhiều lượt — lượt đầu chỉ viết phần mở đầu, chưa kết chương. */
-export function chapterPrompt(s: Series, previous: Chapter[], chapter: Chapter, opts: { partial?: boolean } = {}) {
+export function chapterPrompt(s: Series, previous: RecalledChapter[], chapter: Chapter, opts: { partial?: boolean } = {}) {
   const long = isLongChapter(s.targetWords);
   const length = long
     ? `Chương DÀI khoảng ${s.targetWords} từ, chia 6–8 cảnh liền mạch.${
@@ -166,7 +169,7 @@ ${content}`,
 }
 
 /** Bối cảnh chung cho mọi prompt: bible + tóm tắt các chương đã viết gần nhất. */
-export function storyContext(s: Series, previous: Chapter[]) {
+export function storyContext(s: Series, previous: RecalledChapter[]) {
   const recalled = previous
     .filter((c) => c.summary)
     .slice(-RECENT_SUMMARY_WINDOW)

@@ -1,4 +1,5 @@
 import { cacheLife, cacheTag } from "next/cache";
+import { loadLimits } from "./limits-data";
 import { SERIES_TAG, TRENDS_TAG, USAGE_HISTORY_TAG } from "./cache-tags";
 import { seriesCards } from "./studio";
 import { loadTrends } from "./trends";
@@ -35,4 +36,15 @@ async function pastUsageByDay(days: string[]) {
 export async function usageHistory(days: string[]) {
   const [today, past] = await Promise.all([usageByDay(days.slice(0, 1)), pastUsageByDay(days.slice(1))]);
   return { ...today, ...past };
+}
+
+/**
+ * Hạn mức các nguồn ngoài (Kaggle, GitHub, Cloudflare, vidIQ, gói Claude/ChatGPT…): hàng chục giây nếu một nguồn chậm.
+ * Bản nhớ trong RAM của loadLimits mất mỗi lần Vercel khởi động instance mới; cache này dùng chung giữa các instance và
+ * trả bản cũ ngay trong lúc làm mới nền, nên mở trang Hạn mức không phải chờ gọi API ngoài.
+ */
+export async function cachedLimits() {
+  "use cache";
+  cacheLife({ stale: 120, revalidate: 300, expire: 3600 });
+  return loadLimits();
 }

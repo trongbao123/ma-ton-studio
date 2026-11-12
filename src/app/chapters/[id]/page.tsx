@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
@@ -8,7 +8,7 @@ import { ActionForm } from "@/components/action-form";
 import { CopyButton } from "@/components/copy-button";
 import { StatusBadge } from "@/components/status-badge";
 import { WriteButton } from "@/components/write-button";
-import { manualPrompt } from "@/lib/story/service";
+import { manualPromptOf, previousChapters } from "@/lib/story/service";
 import { db } from "@/db";
 import { chapters, series, videos } from "@/db/schema";
 import { parseId } from "@/lib/params";
@@ -29,13 +29,19 @@ async function ChapterDetail({ params }: { params: Promise<{ id: string }> }) {
   const [c] = await db().select().from(chapters).where(eq(chapters.id, id));
   if (!c) notFound();
   const approved = c.status === "approved";
-  const [[s], [prev], [next], [video], prompt] = await Promise.all([
-    db().select({ id: series.id, title: series.title }).from(series).where(eq(series.id, c.seriesId)),
-    neighbour(c.seriesId, c.number - 1),
-    neighbour(c.seriesId, c.number + 1),
+  // Một vòng song song: truyện, chương kề, video, và (chương chưa duyệt) các chương trước cho prompt thủ công.
+  const [[s], neighbours, [video], previous] = await Promise.all([
+    db().select().from(series).where(eq(series.id, c.seriesId)),
+    db()
+      .select({ id: chapters.id, number: chapters.number })
+      .from(chapters)
+      .where(and(eq(chapters.seriesId, c.seriesId), inArray(chapters.number, [c.number - 1, c.number + 1]))),
     db().select({ id: videos.id }).from(videos).where(and(eq(videos.chapterId, c.id), sql`${videos.meta}->'compilation' is null and ${videos.meta}->'shortClip' is null`)).orderBy(desc(videos.id)).limit(1),
-    approved ? null : manualPrompt(c),
+    approved ? [] : previousChapters(c),
   ]);
+  const prev = neighbours.find((n) => n.number === c.number - 1);
+  const next = neighbours.find((n) => n.number === c.number + 1);
+  const prompt = approved ? null : manualPromptOf(s, previous, c);
   const words = c.content.trim() ? c.content.trim().split(/\s+/).length : 0;
 
   return (
@@ -124,11 +130,4 @@ async function ChapterDetail({ params }: { params: Promise<{ id: string }> }) {
       </div>
     </div>
   );
-}
-
-function neighbour(seriesId: number, number: number) {
-  return db()
-    .select({ id: chapters.id, number: chapters.number })
-    .from(chapters)
-    .where(and(eq(chapters.seriesId, seriesId), eq(chapters.number, number)));
 }

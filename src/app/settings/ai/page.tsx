@@ -23,7 +23,7 @@ export default function AiSettingsPage() {
 
 async function Editor() {
   await connection();
-  const secrets = await secretStatus();
-  const [routing, images, cli] = await Promise.all([loadRouting(true), loadImageRouting(), loadCliStatus()]);
+  // Bốn truy vấn độc lập → một vòng song song (trước: secretStatus rồi mới tới ba cái còn lại).
+  const [secrets, routing, images, cli] = await Promise.all([secretStatus(), loadRouting(true), loadImageRouting(), loadCliStatus()]);
   return <AiRoutingEditor initial={routing} initialImages={images} available={withCliStatus(availableProviders(), cli)} secrets={secrets} cli={cli} />;
 }

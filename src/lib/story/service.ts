@@ -1,6 +1,6 @@
 import { and, asc, eq, lt } from "drizzle-orm";
 import { db } from "@/db";
-import { chapters, series, type Chapter } from "@/db/schema";
+import { chapters, series, type Chapter, type Series } from "@/db/schema";
 import { textProvider } from "@/lib/ai";
 import { freshInsights, loadTrends, trendsBrief } from "@/lib/trends";
 import {
@@ -9,6 +9,7 @@ import {
   chapterPrompt,
   outlinePrompt,
   outlineSchema,
+  type RecalledChapter,
   continuePrompt,
   dropRepeatedParagraphs,
   isLongChapter,
@@ -81,14 +82,20 @@ export async function writeChapterStep(chapterId: number, mode: WriteMode) {
 
 /** Prompt đầy đủ để người dùng tự dán vào ChatGPT/Claude web nếu muốn. */
 export async function manualPrompt(chapter: Chapter) {
-  const s = await getSeries(chapter.seriesId);
-  const p = chapterPrompt(s, await previousChapters(chapter), chapter);
+  const [s, previous] = await Promise.all([getSeries(chapter.seriesId), previousChapters(chapter)]);
+  return manualPromptOf(s, previous, chapter);
+}
+
+/** Ghép prompt thủ công từ dữ liệu đã nạp sẵn (trang chương nạp song song với các truy vấn khác). */
+export function manualPromptOf(s: Series, previous: RecalledChapter[], chapter: Chapter) {
+  const p = chapterPrompt(s, previous, chapter);
   return `${p.system}\n\n${p.prompt}`;
 }
 
-function previousChapters(chapter: Chapter) {
+/** Chỉ số, tiêu đề, tóm tắt các chương trước — prompt chỉ cần bấy nhiêu (nội dung đầy đủ ~15KB/chương không dùng tới). */
+export function previousChapters(chapter: Pick<Chapter, "seriesId" | "number">) {
   return db()
-    .select()
+    .select({ number: chapters.number, title: chapters.title, summary: chapters.summary })
     .from(chapters)
     .where(and(eq(chapters.seriesId, chapter.seriesId), lt(chapters.number, chapter.number)))
     .orderBy(asc(chapters.number));
@@ -104,6 +111,15 @@ export async function getChapter(id: number): Promise<Chapter> {
   const [row] = await db().select().from(chapters).where(eq(chapters.id, id));
   if (!row) throw new Error(`Không tìm thấy chương #${id}.`);
   return row;
+}
+
+/** Danh sách chương gọn cho trang truyện (không kéo nội dung / dàn ý / tóm tắt của từng chương). */
+export function listChapterRows(seriesId: number) {
+  return db()
+    .select({ id: chapters.id, number: chapters.number, title: chapters.title, status: chapters.status })
+    .from(chapters)
+    .where(eq(chapters.seriesId, seriesId))
+    .orderBy(asc(chapters.number));
 }
 
 export function listChapters(seriesId: number) {
