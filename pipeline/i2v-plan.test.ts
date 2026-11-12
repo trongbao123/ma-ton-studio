@@ -4,10 +4,10 @@ import { CLIP_END_STRENGTH, CLIP_FRAMES, MOTION_NEGATIVE, MOTION_SUFFIX, buildMa
 
 describe("pickClipScenes", () => {
   const spans = planChapterScenes(1800).map((s, i) => ({ ...s, action: i === 30 || i === 40 }));
-  it("chọn 5–7 cảnh, tăng dần, không trùng", () => {
+  it("chọn 20–24 cảnh, tăng dần, không trùng", () => {
     const got = pickClipScenes(spans);
-    expect(got.length).toBeGreaterThanOrEqual(5);
-    expect(got.length).toBeLessThanOrEqual(7);
+    expect(got.length).toBeGreaterThanOrEqual(20);
+    expect(got.length).toBeLessThanOrEqual(24);
     expect(got).toEqual([...new Set(got)].sort((a, b) => a - b));
   });
   it("gồm ảnh đầu tiên và các cảnh action", () => {
@@ -16,9 +16,9 @@ describe("pickClipScenes", () => {
     expect(got).toContain(30);
     expect(got).toContain(40);
   });
-  it("tối đa 3 ảnh từ 2 phút đầu", () => {
+  it("tối đa 10 ảnh từ 2 phút đầu", () => {
     const got = pickClipScenes(spans);
-    expect(got.filter((i) => spans[i].zoom).length).toBeLessThanOrEqual(3);
+    expect(got.filter((i) => spans[i].zoom).length).toBeLessThanOrEqual(10);
   });
   it("chương ngắn: ít cảnh hơn min thì lấy hết cảnh dùng được", () => {
     expect(pickClipScenes(planChapterScenes(30))).toHaveLength(5);
@@ -26,7 +26,7 @@ describe("pickClipScenes", () => {
   });
   it("nhiều action hơn chỗ trống: không vượt max", () => {
     const many = planChapterScenes(1800).map((s) => ({ ...s, action: true }));
-    expect(pickClipScenes(many).length).toBeLessThanOrEqual(7);
+    expect(pickClipScenes(many).length).toBeLessThanOrEqual(24);
   });
 });
 

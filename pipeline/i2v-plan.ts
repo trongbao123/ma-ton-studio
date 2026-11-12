@@ -2,10 +2,11 @@
 // Không gọi mạng, không chạy ffmpeg; phần chạy thật nằm ở kaggle.ts / i2v.ts.
 import { STILL_FADE_SECONDS, STILL_FPS, STILL_TIMESCALE } from "./still";
 
-/** Mỗi chương làm 5–7 clip (tập 3 chương ≈ 15–20 clip). */
-export const CLIPS_PER_CHAPTER = { min: 5, max: 7 } as const;
+/** Mỗi chương 20–24 clip (~25 phút GPU T4 gồm nạp model; tuần ~3 giờ / 30 giờ free). Tập 3 chương ≈ 60–72 clip. */
+export const CLIPS_PER_CHAPTER = { min: 20, max: 24 } as const;
 /** Trong số clip của chương, tối đa ngần này lấy từ 2 phút đầu (zoom) để mở đầu tập có chuyển động. */
-const HEAD_CLIP_SHARE = 3;
+// Cảnh 2 phút đầu ~6s, clip 4s → nửa số cảnh mở đầu có clip là gần như chuyển động liên tục.
+const HEAD_CLIP_SHARE = 10;
 /** Clip 121 khung (8k+1 theo yêu cầu LTX-Video) ở 24 fps ≈ 5,04 giây. */
 // 97 frame ≈ 4s: khung đầu khóa cứng + khung cuối khóa nhẹ (CLIP_END_STRENGTH) giữ mặt; 73 frame + khóa cứng 2 đầu thì gần như đứng yên.
 export const CLIP_FRAMES = 97;
@@ -47,7 +48,9 @@ export function pickClipScenes(scenes: SceneSpan[], limits: { min: number; max: 
   const chosen = new Set<number>(spread(head, Math.min(HEAD_CLIP_SHARE, limits.max)));
   for (const i of action) if (chosen.size < limits.max) chosen.add(i);
   if (chosen.size < limits.min) {
-    const rest = usable.filter((i) => !chosen.has(i));
+    // Bù bằng cảnh sau 2 phút đầu (đầu chương đã có HEAD_CLIP_SHARE); chương toàn cảnh đầu thì mới lấy cảnh đầu.
+    const later = usable.filter((i) => !chosen.has(i) && !scenes[i].zoom);
+    const rest = later.length ? later : usable.filter((i) => !chosen.has(i));
     for (const i of spread(rest, limits.min - chosen.size)) chosen.add(i);
   }
   return [...chosen].sort((a, b) => a - b);
