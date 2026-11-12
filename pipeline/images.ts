@@ -67,12 +67,15 @@ export async function imageRouting(): Promise<ImageRoute[]> {
     const [row] = await db().select({ value: appSettings.value }).from(appSettings).where(eq(appSettings.key, IMAGE_ROUTING_KEY)).catch(() => []);
     raw = row?.value ?? null;
   }
-  const list = normalizeImageRouting(raw).filter((r) => hasKey(r.provider));
+  // FLUX (Cloudflare/DeepInfra) vẽ xấu so với GPT → bỏ hẳn: GPT hết lượt thì video chờ lượt sau. IMAGE_ALLOW_FLUX=1 để bật lại.
+  const allowFlux = process.env.IMAGE_ALLOW_FLUX === "1";
+  const isFlux = (p: ImageProviderId) => p === "cloudflare" || p === "deepinfra";
+  const list = normalizeImageRouting(raw).filter((r) => hasKey(r.provider) && (allowFlux || !isFlux(r.provider)));
   // Có gói ChatGPT Plus (Codex) mà chưa xếp → đưa lên đầu: ảnh đẹp nhất, không tốn tiền; hết lượt gói thì sang AI sau.
   if (hasKey("codex") && !list.some((r) => r.provider === "codex")) list.unshift({ provider: "codex", model: "" });
   // Có key DeepInfra mà chưa xếp vào danh sách → tự thêm cuối làm dự phòng (Cloudflare free hết quota thì vẽ tiếp, khỏi chờ 7h sáng).
-  if (hasKey("deepinfra") && !list.some((r) => r.provider === "deepinfra")) list.push({ provider: "deepinfra", model: "" });
-  routes = list.length ? list : [{ provider: "cloudflare", model: "" }];
+  if (allowFlux && hasKey("deepinfra") && !list.some((r) => r.provider === "deepinfra")) list.push({ provider: "deepinfra", model: "" });
+  routes = list.length ? list : [{ provider: allowFlux ? "cloudflare" : "codex", model: "" }];
   return routes;
 }
 
