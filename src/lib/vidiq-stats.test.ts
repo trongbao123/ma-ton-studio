@@ -12,8 +12,8 @@ describe("đọc số liệu vidIQ", () => {
   it("parseCtr: trình duyệt chưa mở → giữ jobId để lượt sau đọc tiếp", () => {
     expect(parseCtr(JSON.stringify({ status: "waiting_for_browser", jobId: "xj_1" }))).toEqual({ job: "xj_1", rows: {} });
   });
-  it("parseCtr: chữ không phải JSON → rỗng, không ném lỗi", () => {
-    expect(parseCtr("lỗi gì đó")).toEqual({ job: null, rows: {} });
+  it("parseCtr: chữ không phải JSON → không có số, không ném lỗi, ghi lý do", () => {
+    expect(parseCtr("lỗi gì đó")).toEqual({ job: null, rows: {}, error: "lỗi gì đó" });
   });
   it("parseAnalytics: theo cột tên, không theo vị trí", () => {
     const text = JSON.stringify({
