@@ -8,7 +8,7 @@ import { chapters, series, videos, type Chapter, type Series, type VideoMeta } f
 import { QuotaExhaustedError, textProvider } from "@/lib/ai";
 import { escapeHtml, notify, WEB_URL } from "@/lib/notify";
 import { drawImage, imagesReady } from "./images";
-import { duration, escText, ffmpeg, filterPath, measureLufs, once, pool } from "./ffmpeg";
+import { duration, escText, ffmpeg, ffmpegLog, filterPath, measureLufs, once, pool } from "./ffmpeg";
 import { Tracker } from "./progress";
 import { buildClipSegment, newI2vRun, type I2vRun } from "./i2v";
 import { newZImageRun, ZIMAGE_MODEL, type ZImageRun } from "./zimage";
@@ -28,7 +28,7 @@ import { AI_NOTE, optimizeMeta } from "@/lib/seo-optimize";
 import { autoPublishEligible, publishToYoutube } from "./youtube";
 
 type ScenePrompt = Awaited<ReturnType<typeof scenePrompts>>[number];
-import { cuesForChunk, packChunks, sentences, titleCardFilter, toAss, type Cue } from "./text";
+import { cuesForChunk, packChunks, parseSilenceMids, sentences, snapToSentences, titleCardFilter, toAss, type Cue } from "./text";
 import { speak } from "./tts";
 
 // Đường dẫn tương đối (ffmpeg chạy ở gốc repo): đường dẫn tuyệt đối trên Windows có "C:" làm vỡ cú pháp filter của drawtext.
@@ -71,7 +71,9 @@ export async function narrate(text: string, dir: string, voice: string, onChunk?
   let t = 0;
   for (const [i, f] of files.entries()) {
     const d = await duration(f);
-    cues.push(...cuesForChunk(chunks[i], t, d, cueChars));
+    // Khoảng lặng thật (ngắt câu của giọng đọc) để căn phụ đề + cắt cảnh; lỗi đo thì quay về ước theo ký tự.
+    const pauses = parseSilenceMids(await ffmpegLog(["-i", f, "-af", "silencedetect=noise=-35dB:d=0.18", "-f", "null", "-"]).catch(() => ""));
+    cues.push(...cuesForChunk(chunks[i], t, d, cueChars, pauses));
     t += d;
   }
   const list = path.join(dir, "tts.txt");
@@ -84,9 +86,8 @@ export async function narrate(text: string, dir: string, voice: string, onChunk?
 /** Chia timeline thành `n` cảnh liền nhau theo cue, trả về [start, end, text]. */
 export function splitScenes(cues: Cue[], n: number, total: number) {
   const span = total / n;
-  return Array.from({ length: n }, (_, i) => {
-    const start = i * span;
-    const end = i === n - 1 ? total : (i + 1) * span;
+  const spans = snapToSentences(Array.from({ length: n }, (_, i) => ({ start: i * span, end: i === n - 1 ? total : (i + 1) * span })), cues);
+  return spans.map(({ start, end }) => {
     return { start, end, text: cueTextBetween(cues, start, end) };
   });
 }
@@ -609,7 +610,8 @@ async function renderInternalChapter(o: { videoId: number; s: Series; c: Chapter
   // Chương mở đầu tập: nhịp nhanh + dày clip tới phút 15 (vùng giữ chân của cả tập).
   const opener = s.episodeChapters > 0 && (await episodeOpener(s.id, c.number, s.episodeChapters).catch(() => false));
   if (opener) console.log("  Chương mở đầu tập — 15 phút đầu nhịp nhanh, nhiều clip động");
-  const spans = planChapterScenes(long.seconds, opener);
+  // Đổi ảnh đúng lúc HẾT CÂU (không cắt giữa câu) — hình mới đi cùng câu mới.
+  const spans = snapToSentences(planChapterScenes(long.seconds, opener), long.cues);
   const n = spans.length;
   const planTag = `fast-${n}`;
   await resetStaleScenes(dir, planTag);

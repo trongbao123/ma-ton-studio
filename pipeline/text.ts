@@ -33,11 +33,13 @@ export type Cue = { start: number; end: number; text: string };
  * Chia thời lượng một khối audio cho từng câu theo độ dài ký tự — TTS không trả timestamp.
  * `maxChars`: độ dài tối đa mỗi dòng phụ đề (Short dọc cần ngắn hơn để không tràn nhiều dòng).
  */
-export function cuesForChunk(chunk: string[], offset: number, duration: number, maxChars = 90): Cue[] {
+export function cuesForChunk(chunk: string[], offset: number, duration: number, maxChars = 90, pauses: number[] = []): Cue[] {
   const total = chunk.reduce((n, s) => n + s.length, 0) || 1;
+  // Mốc hết câu: ước theo số ký tự, rồi kéo về khoảng lặng thật trong giọng đọc (nếu đo được) → phụ đề/cắt cảnh khớp giọng.
+  const ends = alignSentenceEnds(chunk.map((s) => s.length), duration, pauses).map((e) => offset + e);
   let t = offset;
-  return chunk.flatMap((s) => {
-    const d = (s.length / total) * duration;
+  return chunk.flatMap((s, si) => {
+    const d = (si === chunk.length - 1 ? offset + duration : ends[si]) - t;
     const parts = splitLong(s, maxChars);
     const pl = parts.reduce((n, p) => n + p.length, 0) || 1;
     const cues = parts.map((p) => {
@@ -48,6 +50,72 @@ export function cuesForChunk(chunk: string[], offset: number, duration: number, 
     });
     return cues;
   });
+}
+
+/**
+ * Mốc HẾT từng câu (giây, tính từ đầu đoạn TTS): ước theo tỉ lệ ký tự rồi kéo về khoảng lặng gần nhất trong cửa sổ ±`window` giây
+ * (giữ tăng dần, mỗi khoảng lặng dùng một lần). Không có khoảng lặng hợp lệ thì giữ mốc ước. Câu cuối luôn hết ở `duration`.
+ * Thuần, để test.
+ */
+export function alignSentenceEnds(lengths: number[], duration: number, pauses: number[], window = 1.5): number[] {
+  const total = lengths.reduce((a, b) => a + b, 0) || 1;
+  const out: number[] = [];
+  let acc = 0;
+  let prev = 0;
+  let from = 0;
+  for (let i = 0; i < lengths.length; i++) {
+    acc += lengths[i];
+    if (i === lengths.length - 1) {
+      out.push(duration);
+      break;
+    }
+    const est = (acc / total) * duration;
+    let best = -1;
+    for (let k = from; k < pauses.length; k++) {
+      const p = pauses[k];
+      if (p <= prev + 0.2) continue;
+      if (p > est + window) break;
+      if (Math.abs(p - est) <= window && (best < 0 || Math.abs(p - est) < Math.abs(pauses[best] - est))) best = k;
+    }
+    const end = best >= 0 ? pauses[best] : Math.max(est, prev + 0.2);
+    if (best >= 0) from = best + 1;
+    out.push(Math.min(end, duration));
+    prev = out[out.length - 1];
+  }
+  return out;
+}
+
+/**
+ * Dời mỗi ranh giới cảnh về mốc HẾT CÂU gần nhất (cue kết thúc bằng . ! ? …), tối đa 40% độ dài cảnh hai bên; giữ thứ tự,
+ * cảnh tối thiểu 1 giây, giữ nguyên các trường khác (zoom…). Không có mốc hợp lệ thì giữ ranh giới cũ. Thuần, để test.
+ */
+export function snapToSentences<T extends { start: number; end: number }>(spans: T[], cues: Cue[], ratio = 0.4): T[] {
+  const marks = cues.filter((c) => /[.!?…]["”'»)]*$/.test(c.text.trim())).map((c) => c.end);
+  if (!marks.length || spans.length < 2) return spans;
+  const out = spans.map((s) => ({ ...s }));
+  for (let i = 0; i < out.length - 1; i++) {
+    const b = out[i].end;
+    const lo = Math.max(out[i].start + 1, b - (out[i].end - out[i].start) * ratio);
+    const hi = Math.min(spans[i + 1].end - 1, b + (spans[i + 1].end - spans[i + 1].start) * ratio);
+    let best = b;
+    let dist = Infinity;
+    for (const m of marks) {
+      if (m >= lo && m <= hi && Math.abs(m - b) < dist) {
+        best = m;
+        dist = Math.abs(m - b);
+      }
+    }
+    out[i].end = best;
+    out[i + 1].start = best;
+  }
+  return out;
+}
+
+/** Giữa các khoảng lặng từ log `silencedetect` của ffmpeg (giây). */
+export function parseSilenceMids(log: string): number[] {
+  const starts = [...log.matchAll(/silence_start: ([\d.]+)/g)].map((m) => Number(m[1]));
+  const ends = [...log.matchAll(/silence_end: ([\d.]+)/g)].map((m) => Number(m[1]));
+  return starts.flatMap((s, i) => (ends[i] != null ? [(s + ends[i]) / 2] : []));
 }
 
 /** Câu dài quá thì cắt theo dấu phẩy/khoảng trắng để phụ đề không tràn 2 dòng. */
