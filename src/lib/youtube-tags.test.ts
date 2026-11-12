@@ -31,3 +31,11 @@ describe("cleanTags", () => {
     expect(out.slice(FIXED_TAGS.length)).toEqual(["ab", "xy"]);
   });
 });
+
+describe("điểm vidIQ của bộ tag cố định", () => {
+  it("tag nào trong bộ cũng có điểm vidIQ thật (lấy từ Studio của chủ kênh)", async () => {
+    const { FIXED_TAG_SCORES } = await import("./youtube-tags");
+    for (const t of FIXED_TAGS) expect(FIXED_TAG_SCORES[t]).toBeGreaterThan(0);
+    expect(FIXED_TAG_SCORES["audio truyện"]).toBe(79);
+  });
+});

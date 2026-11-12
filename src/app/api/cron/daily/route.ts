@@ -7,6 +7,10 @@
 // Cron trong GitHub vẫn giữ làm lưới an toàn: nếu Vercel Cron hỏng thì muộn còn hơn không. Chạy trùng cũng rẻ —
 // daily tự kiểm tồn kho rồi thoát sớm nếu không có việc.
 import { cronAuth, dispatchUrl } from "@/lib/cron-auth";
+import { syncVidiqStats } from "@/lib/vidiq-stats";
+
+// Lấy số vidIQ (vài lượt gọi MCP) sau khi đã kích hoạt GitHub — cần dư thời gian.
+export const maxDuration = 300;
 
 export async function GET(req: Request) {
   const why = cronAuth(req.headers.get("authorization"), process.env.CRON_SECRET);
@@ -26,5 +30,8 @@ export async function GET(req: Request) {
   });
   // GitHub trả 204 khi nhận lệnh.
   if (!res.ok) return Response.json({ error: `GitHub ${res.status}`, detail: (await res.text()).slice(0, 300) }, { status: 502 });
-  return Response.json({ ok: true, at: new Date().toISOString() });
+  // Số liệu thật từ vidIQ (CTR, lượt xem, % xem) — đi chung cron này vì gói Hobby chỉ có 2 cron. Không bao giờ ném lỗi.
+  const vidiq = await syncVidiqStats();
+  console.log(vidiq);
+  return Response.json({ ok: true, at: new Date().toISOString(), vidiq });
 }

@@ -6,3 +6,6 @@ export const CHANNEL_NAME = "Thôn Phệ Audio";
  * để đổi handle trong Studio không làm gãy link "Đăng ký kênh" ở các video đã đăng.
  */
 export const CHANNEL_URL = process.env.YOUTUBE_CHANNEL_URL ?? "https://www.youtube.com/channel/UCqhzR8PL3keqni2-kzbAoaw";
+
+/** ID kênh YouTube (không đổi khi đổi tên/handle). */
+export const CHANNEL_ID = "UCqhzR8PL3keqni2-kzbAoaw";

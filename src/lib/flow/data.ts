@@ -14,6 +14,7 @@ import { applySecrets, secretsFresh } from "@/lib/secrets";
 import { SECRETS_KEY } from "@/lib/secret-keys";
 import { parseYoutubeAuth, YT_KEY } from "@/lib/youtube";
 import type { FlowData, TrendsView } from "./model";
+import { VIDIQ_STATS_KEY, type VidiqStats } from "@/lib/vidiq-stats";
 
 /** Rút gọn kết quả quét xu hướng cho màn flow (không gửi dữ liệu thô). */
 function trendsView(t: TrendsData | null): TrendsView | null {
@@ -56,7 +57,7 @@ function compilationOf(videoId: number, rows: Awaited<ReturnType<typeof compilat
 const PLAYLISTS_KEY = "yt_playlists";
 
 /** Mọi khoá app_settings màn flow cần — đọc MỘT lần thay vì 7 truy vấn riêng. */
-const SETTING_KEYS = [SECRETS_KEY, YT_KEY, ROUTING_KEY, IMAGE_ROUTING_KEY, CLI_STATUS_KEY, TRENDS_KEY, LAYOUT_KEY, LAYOUT_KEY_H, PLAYLISTS_KEY];
+const SETTING_KEYS = [VIDIQ_STATS_KEY, SECRETS_KEY, YT_KEY, ROUTING_KEY, IMAGE_ROUTING_KEY, CLI_STATUS_KEY, TRENDS_KEY, LAYOUT_KEY, LAYOUT_KEY_H, PLAYLISTS_KEY];
 
 /**
  * Dữ liệu màn flow + bố cục đã lưu. Đúng 2 vòng tới DB: (1) video + chương + truyện + tóm tắt chương trước;
@@ -139,6 +140,8 @@ export async function loadFlowPage(
     },
     prevSummary: row.prevSummary || null,
     youtube: { connected: Boolean(yt), channel: yt?.channel ?? null, playlistId: playlistOf(setting[PLAYLISTS_KEY], s.id) },
+    vidiq: v.youtubeVideoId ? ((setting[VIDIQ_STATS_KEY] as VidiqStats | undefined)?.videos[v.youtubeVideoId] ?? null) : null,
+    vidiqAt: (setting[VIDIQ_STATS_KEY] as VidiqStats | undefined)?.at ?? null,
     trends: trendsView(trends),
     compiledInto,
     ai: {

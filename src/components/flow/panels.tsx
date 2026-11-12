@@ -9,6 +9,7 @@ import { disconnectYoutubeAction, markPublishedAction, optimizeSeoAction, retryP
 import { BrandIcon } from "@/components/brand-icons";
 import { SmartLink } from "./smart-link";
 import { YtStats } from "@/components/yt-stats";
+import { FIXED_TAG_SCORES } from "@/lib/youtube-tags";
 import { DEFAULT_MODEL, PROVIDERS, type ProviderId, type Route } from "@/lib/ai/routing";
 import { ActionForm } from "@/components/action-form";
 import { CopyButton } from "@/components/copy-button";
@@ -73,10 +74,10 @@ function ScoredSec({ title, seo, children }: { title: string; seo: SeoScore; chi
           type="button"
           onClick={() => setOpen(!open)}
           aria-expanded={open}
-          title={seo.source === "vidiq" ? "Điểm vidIQ — bấm xem chi tiết" : "Điểm SEO — bấm xem chi tiết"}
+          title={seo.source === "vidiq" ? "Điểm vidIQ thật — bấm xem chi tiết" : "Điểm app tự chấm (KHÔNG phải vidIQ) — bấm xem chi tiết"}
           className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 hover:bg-white/5"
         >
-          <span className="text-[10px] uppercase tracking-wider text-muted">{seo.source === "vidiq" ? "vidIQ" : "SEO"}</span>
+          <span className="text-[10px] uppercase tracking-wider text-muted">{seo.source === "vidiq" ? "vidIQ" : "App"}</span>
           <span className={`text-base font-semibold tabular-nums ${tone(seo.score)}`}>{seo.score}</span>
           <ChevronDown size={12} className={`text-muted transition ${open ? "rotate-180" : ""}`} />
         </button>
@@ -389,6 +390,7 @@ function Seo({ data, tab }: PanelProps) {
             <div className="flex flex-wrap gap-1.5">
               {m.tags.map((t) => (
                 <span key={t} className="rounded-full border border-border bg-card px-2.5 py-0.5 text-[11px]">
+                  {FIXED_TAG_SCORES[t] != null && <b className={`mr-1 tabular-nums ${tone(FIXED_TAG_SCORES[t])}`}>{FIXED_TAG_SCORES[t]}</b>}
                   {t}
                 </span>
               ))}
@@ -476,9 +478,9 @@ function SeoSummary({ score, videoId }: { score: ReturnType<typeof scoreMeta>; v
           </div>
         </div>
         <div className="min-w-0 text-xs">
-          <p className="font-medium text-zinc-200">Điểm SEO</p>
+          <p className="font-medium text-zinc-200">Điểm app tự chấm</p>
           <p className="mt-0.5 text-muted">
-            {score.title.source === "vidiq" ? "Tiêu đề do vidIQ chấm, còn lại app tự chấm." : "App tự chấm theo checklist kiểu vidIQ."} Bấm số ở từng mục để xem chi tiết.
+            KHÔNG phải điểm vidIQ — số vidIQ thật có nhãn vidIQ (tiêu đề, từng tag, CTR ở thẻ YouTube). Bấm số ở từng mục để xem checklist.
           </p>
         </div>
       </div>
@@ -981,6 +983,15 @@ function ShortOut({ data, tab }: PanelProps) {
 
 const UPLOAD_TEXT = { none: "chưa đăng", uploading: "đang upload…", scheduled: "đã lên lịch", failed: "lỗi" } as const;
 
+function Stat({ label, value }: { label: string; value?: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-card/60 px-2.5 py-1.5">
+      <p className="text-[10px] uppercase tracking-wider text-muted">{label}</p>
+      <p className="text-sm font-semibold tabular-nums">{value ?? "—"}</p>
+    </div>
+  );
+}
+
 function Youtube({ data, tab }: PanelProps) {
   const auto = useSetting(data.series.id, "autoPublish", data.series.autoPublish);
   if (tab === "in") return <Empty text="Đầu vào: video dài, Short, thumbnail và tiêu đề/mô tả/tag từ thẻ SEO & Thumbnail." />;
@@ -1013,6 +1024,23 @@ function Youtube({ data, tab }: PanelProps) {
         <Sec title="Số liệu YouTube">
           <YtStats longId={v.youtubeVideoId} shortId={v.youtubeShortId} large />
           <p className="mt-1.5 text-[11px] text-muted">Cập nhật mỗi phút · YouTube báo lượt xem trễ vài phút</p>
+        </Sec>
+      )}
+
+      {v.youtubeVideoId && (
+        <Sec title="Số liệu thật (vidIQ · YouTube Studio)">
+          {data.vidiq ? (
+            <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
+              <Stat label="Lượt hiển thị" value={data.vidiq.impressions?.toLocaleString("vi-VN")} />
+              <Stat label="CTR thumbnail" value={data.vidiq.ctr != null ? `${data.vidiq.ctr.toLocaleString("vi-VN")}%` : undefined} />
+              <Stat label="Lượt xem" value={data.vidiq.views?.toLocaleString("vi-VN")} />
+              <Stat label="Xem TB" value={data.vidiq.avgViewSec != null ? clock(data.vidiq.avgViewSec) : undefined} />
+              <Stat label="% xem TB" value={data.vidiq.avgViewPct != null ? `${data.vidiq.avgViewPct.toLocaleString("vi-VN", { maximumFractionDigits: 1 })}%` : undefined} />
+            </div>
+          ) : (
+            <Empty text="Chưa có số vidIQ cho video này — cron Vercel lấy 3 ngày/lần." />
+          )}
+          {data.vidiqAt && <p className="mt-1.5 text-[11px] text-muted">Lấy lúc {new Date(data.vidiqAt).toLocaleString("vi-VN")} · CTR cần trình duyệt có extension vidIQ đang mở</p>}
         </Sec>
       )}
 

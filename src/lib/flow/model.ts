@@ -86,6 +86,9 @@ export type FlowData = {
   chapter: { id: number; number: number; title: string; words: number; content: string; outline: string; approvedAt: string };
   series: { id: number; title: string; bibleExcerpt: string; voiceStyle: string; ttsVoice: string; makeShort: boolean; autoPublish: boolean };
   prevSummary: string | null;
+  /** Số liệu thật của video lấy từ vidIQ (cron Vercel, app_settings vidiq_stats); chưa lấy = null. */
+  vidiq?: import("@/lib/vidiq-stats").VidiqVideoStat | null;
+  vidiqAt?: number | null;
   youtube: { connected: boolean; channel: string | null; /** Danh sách phát YouTube của bộ truyện (app_settings yt_playlists); chưa tạo = null. */ playlistId?: string | null };
   /** Kết quả quét xu hướng gần nhất (app_settings "trends"); null = chưa quét. */
   trends: TrendsView | null;
