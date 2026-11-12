@@ -88,3 +88,26 @@ describe("polishOpening", () => {
     expect(ai.generateJson).not.toHaveBeenCalled();
   });
 });
+
+describe("chương xuống dòng đơn (không có dòng trống)", () => {
+  const lines = Array.from({ length: 40 }, (_, i) => `Dòng ${i} ${para(20)}`).join("\n");
+  it("splitOpening vẫn cắt ~300 từ theo dòng", () => {
+    const { opening, rest } = splitOpening(lines);
+    expect(wordCount(opening)).toBeGreaterThanOrEqual(300);
+    expect(wordCount(opening)).toBeLessThan(400);
+    expect(rest.length).toBeGreaterThan(0);
+  });
+  it("replaceOpening giữ nguyên thân chương", () => {
+    const out = replaceOpening(lines, "mở đầu mới");
+    expect(out.startsWith("mở đầu mới\n\n")).toBe(true);
+    expect(out).toContain("Dòng 39");
+  });
+  it("không bao giờ viết lại khi 'mở đầu' dài bất thường (không cắt được) — chỉ cảnh báo", async () => {
+    const blob = para(2000);
+    const ai = fakeAi([{ pass: false, failed: [0] }]);
+    const r = await polishOpening(blob, base, ai);
+    expect(ai.generateText).not.toHaveBeenCalled();
+    expect(r.content).toBe(blob);
+    expect(r.warning).toMatch(/chưa đạt/);
+  });
+});

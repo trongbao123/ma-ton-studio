@@ -11,14 +11,23 @@ const MAX_REWRITES = 2;
 type Prompt = { system: string; prompt: string };
 export type Ai = { generateText(req: TextRequest): Promise<string>; generateJson<T>(req: JsonRequest<T>): Promise<T> };
 
+/** Đoạn văn: ngăn bằng dòng trống; chương AI viết chỉ xuống dòng đơn thì tính mỗi dòng là một đoạn. */
+const paragraphs = (content: string) => {
+  const byBlank = content.split(/\n{2,}/);
+  return byBlank.length > 1 ? byBlank : content.split(/\n/);
+};
+
 /** Gom các đoạn đầu tới khi đủ `words` từ; phần còn lại là thân chương (có thể rỗng). */
 export function splitOpening(content: string, words = OPENING_WORDS) {
-  const paras = content.split(/\n{2,}/);
+  const paras = paragraphs(content);
   let n = 0;
   let i = 0;
   while (i < paras.length && n < words) n += wordCount(paras[i++]);
   return { opening: paras.slice(0, i).join("\n\n").trim(), rest: paras.slice(i).join("\n\n").trim() };
 }
+
+/** "Mở đầu" dài quá mức này = không cắt được đoạn (cả chương một khối) → không viết lại, tránh thay cả chương bằng bản ngắn. */
+const MAX_REWRITE_WORDS = OPENING_WORDS * 2;
 
 export const reviewSchema = z.object({
   pass: z.boolean().describe("true nếu đạt TẤT CẢ luật"),
@@ -66,7 +75,7 @@ export async function polishOpening(content: string, base: Prompt, ai: Ai): Prom
       const r = await review(ai, splitOpening(current).opening);
       if (r.pass) return { content: current, warning: null };
       if (r.failed.length < best.failed) best = { content: current, failed: r.failed.length, rules: r.failed };
-      if (round === MAX_REWRITES) break;
+      if (round === MAX_REWRITES || wordCount(splitOpening(current).opening) > MAX_REWRITE_WORDS) break;
       const fresh = await ai.generateText({ ...rewriteOpeningPrompt(base, splitOpening(current).opening, r.failed), maxOutputTokens: 4000, temperature: 0.8, task: "story" });
       current = replaceOpening(current, fresh);
     }
@@ -76,5 +85,5 @@ export async function polishOpening(content: string, base: Prompt, ai: Ai): Prom
     return { content: Number.isFinite(best.failed) ? best.content : current, warning: null };
   }
   const broken = best.rules.map((i) => OPENING_RULES[i]?.split(/[—;(]/)[0].trim()).filter(Boolean);
-  return { content: best.content, warning: `Mở đầu chưa đạt sau ${MAX_REWRITES} lần viết lại: ${broken.join(" | ")}` };
+  return { content: best.content, warning: `Mở đầu chưa đạt (biên tập viên AI): ${broken.join(" | ")}` };
 }
