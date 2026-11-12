@@ -25,13 +25,12 @@ describe("stillSegmentArgs", () => {
     expect(vf.startsWith("crop=iw:ih*0.93:0:0,scale=1920:1080")).toBe(true);
     expect(vf.match(/scale=/g)).toHaveLength(1);
   });
-  it("mờ vào đầu và mờ ra 0,5s ở cuối (60s → bắt đầu ở 59,5s)", () => {
-    expect(vf).toContain("fade=t=in:st=0:d=0.5");
-    expect(vf).toContain("fade=t=out:st=59.500:d=0.5");
+  it("cắt THẲNG giữa các cảnh (kênh top không mờ qua đen) — không có bộ lọc fade", () => {
+    expect(vf).not.toContain("fade=");
   });
-  it("đoạn quá ngắn thì mờ tối đa nửa đoạn", () => {
-    const v = stillSegmentArgs({ img: "a", out: "o", frames: 12, w: 1920, h: 1080 });
-    expect(v[v.indexOf("-vf") + 1]).toContain("fade=t=in:st=0:d=0.25");
+  it("có phụ đề thì đốt ASS của đoạn ở cuối chuỗi lọc", () => {
+    const v = stillSegmentArgs({ img: "a", out: "o", frames: 48, w: 1920, h: 1080, subs: "/tmp/x-subs.ass" });
+    expect(v[v.indexOf("-vf") + 1]).toMatch(/,ass=.*x-subs\.ass:fontsdir=/);
   });
   it("encode libx264 tune stillimage", () => {
     expect(args).toContain("stillimage");
@@ -146,7 +145,7 @@ describe("stillSegmentArgs + parallax", () => {
     expect(args.filter((a) => a === "-i")).toHaveLength(7);
     expect(args[args.indexOf("-frames:v") + 1]).toBe("192");
     expect(args[args.indexOf("-map") + 1]).toBe("[out]");
-    expect(graph).toContain("[v]fade=t=in:st=0:d=0.5,fade=t=out:st=7.500:d=0.5[out]");
+    expect(graph).toContain("[v]null[out]");
   });
   it("chỉ motionFrames khung đầu qua đồ thị 3 lớp, phần còn lại nhân bản khung cuối để đoạn vẫn đủ 192 khung", () => {
     expect(graph).toContain("min(on,144)");
@@ -204,10 +203,11 @@ describe("stillSegmentArgs · cảnh hành động", () => {
     expect(vf).toMatch(/lt\(t,[\d.]+\)/);
   });
 
-  it("vẫn ra đúng số khung và vẫn mờ ra ở cuối để nối đoạn", () => {
+  it("vẫn ra đúng số khung, chớp trắng ở cú cắt, không mờ ra đen ở cuối (cắt thẳng)", () => {
     const a = stillSegmentArgs({ ...base, action: true });
     expect(a[a.indexOf("-frames:v") + 1]).toBe(String(base.frames));
-    expect(vfOf({ ...base, action: true })).toContain("fade=t=out");
+    expect(vfOf({ ...base, action: true })).toContain("color=white");
+    expect(vfOf({ ...base, action: true })).not.toContain("fade=t=out");
   });
 
   it("cảnh thường không đổi gì — không rung, không chớp", () => {

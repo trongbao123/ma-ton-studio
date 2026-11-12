@@ -28,7 +28,7 @@ import { AI_NOTE, optimizeMeta } from "@/lib/seo-optimize";
 import { autoPublishEligible, publishToYoutube } from "./youtube";
 
 type ScenePrompt = Awaited<ReturnType<typeof scenePrompts>>[number];
-import { cuesForChunk, packChunks, parseSilenceMids, sentences, snapToSentences, titleCardFilter, toAss, type Cue } from "./text";
+import { cuesForChunk, cuesForSegment, packChunks, parseSilenceMids, sentences, snapToSentences, titleCardFilter, toAss, type Cue } from "./text";
 import { speak } from "./tts";
 
 // Đường dẫn tương đối (ffmpeg chạy ở gốc repo): đường dẫn tuyệt đối trên Windows có "C:" làm vỡ cú pháp filter của drawtext.
@@ -58,6 +58,9 @@ const MAX_TTS_CHARS = 4000;
 const ttsChunks = (text: string) => packChunks(sentences(text), MAX_TTS_CHARS);
 
 /** Đọc toàn bộ văn bản thành 1 file WAV + cue phụ đề. File cache có tên giọng: đổi giọng thì đọc lại. */
+/** Hệ số tốc độ đọc (1 = giữ nguyên giọng TTS). Đo chương 19: 195 âm tiết/phút → ×1,2 ≈ 234. */
+export const NARRATION_TEMPO = Number(process.env.NARRATION_TEMPO ?? 1.2);
+
 export async function narrate(text: string, dir: string, voice: string, onChunk?: (i: number, total: number) => void, cueChars = 70): Promise<Narration> {
   const chunks = ttsChunks(text);
   const files = await pool(chunks, 3, async (chunk, i) => {
@@ -65,7 +68,11 @@ export async function narrate(text: string, dir: string, voice: string, onChunk?
     await speak(chunk.join(" "), f, voice);
     console.log(`  TTS ${i + 1}/${chunks.length}`);
     onChunk?.(i, chunks.length);
-    return f;
+    // Kênh top cùng thể loại đọc 240–290 âm tiết/phút; giọng Gemini ~195 → tăng tốc giữ cao độ (atempo). Mốc câu đo trên bản đã tăng tốc.
+    if (NARRATION_TEMPO === 1) return f;
+    const fast = f.replace(/\.wav$/, `-x${NARRATION_TEMPO}.wav`);
+    await once(fast, (tmp) => ffmpeg(["-i", f, "-af", `atempo=${NARRATION_TEMPO}`, "-c:a", "pcm_s16le", tmp]));
+    return fast;
   });
   const cues: Cue[] = [];
   let t = 0;
@@ -163,6 +170,24 @@ export async function shot(img: string, out: string, seconds: number, w: number,
     "-c:v", "libx264", "-preset", "superfast", "-crf", "18", "-r", String(q.fps), out,
   ]);
 }
+
+/**
+ * File ASS phụ đề của MỘT đoạn (kênh top đốt phụ đề suốt video: 1 vế câu, giữa đáy khung). Mốc theo khung đã làm tròn của đoạn.
+ * Không đốt chữ được (BURN_TEXT=0) hoặc đoạn không có câu nào → undefined.
+ */
+async function segmentSubs(dir: string, key: string, cues: Cue[], start: number, end: number, w: number, h: number) {
+  if (!BURN_TEXT || !SEGMENT_SUBS) return undefined;
+  const s0 = Math.round(start * STILL_FPS) / STILL_FPS;
+  const s1 = Math.round(end * STILL_FPS) / STILL_FPS;
+  const part = cuesForSegment(cues, s0, s1);
+  if (!part.length) return undefined;
+  const file = path.join(dir, `${key}-subs.ass`);
+  await writeFile(file, toAss(part, { width: w, height: h, fontSize: 58, marginV: 60, karaoke: true }));
+  return file;
+}
+
+/** Đốt phụ đề vào chương nội bộ (SEGMENT_SUBS=0 để tắt). */
+const SEGMENT_SUBS = process.env.SEGMENT_SUBS !== "0";
 
 /** Chương `number` có mở đầu tập kế tiếp không — theo chương cuối của tập đã ghép gần nhất (bỏ tập lỗi). */
 async function episodeOpener(seriesId: number, number: number, k: number) {
@@ -379,7 +404,8 @@ export async function buildStillVideo(opts: {
     const file = path.join(dir, `${name}-seg-${String(i).padStart(3, "0")}.mp4`);
     const frames = stillFrames(sc.start, sc.end);
     // Cảnh đánh nhau: chớp trắng + đẩy ống kính + rung tắt dần (still.ts). Ảnh vẫn tĩnh nhưng máy quay có nhịp.
-    const segment = { img, frames, w, h, logoCrop: LOGO_CROP, zoom: sc.zoom, action: prompts[i].action };
+    const subs = await segmentSubs(dir, `${name}-${i}`, narration.cues, sc.start, sc.end, w, h);
+    const segment = { img, frames, w, h, logoCrop: LOGO_CROP, zoom: sc.zoom, action: prompts[i].action, subs };
     await once(file, async (tmp) => {
       const workDir = parallaxWorkDir(img);
       const files = parallaxPlan[i].seconds > 0 ? await prepareParallax({ img, workDir, w, h, logoCrop: LOGO_CROP }) : null;
@@ -422,7 +448,8 @@ export async function buildStillVideo(opts: {
     await pool([...clips.entries()], 2, async ([scene, clip]) => {
       const seg = path.join(dir, `${name}-seg-clip-${String(scene).padStart(3, "0")}.mp4`);
       const sc = scenes[scene];
-      await buildClipSegment({ clip, img: imgOf(scene), file: seg, start: sc.start, end: sc.end, w, h, logoCrop: LOGO_CROP });
+      const subs = await segmentSubs(dir, `${name}-clip-${scene}`, narration.cues, sc.start, sc.end, w, h);
+      await buildClipSegment({ clip, img: imgOf(scene), file: seg, start: sc.start, end: sc.end, w, h, logoCrop: LOGO_CROP, subs });
       files[scene] = seg;
     });
     await on?.clips?.(clips, failure);

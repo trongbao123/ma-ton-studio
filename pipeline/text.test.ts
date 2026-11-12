@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { toWav } from "./tts";
-import { alignSentenceEnds, cuesForChunk, packChunks, parseSilenceMids, sentences, snapToSentences, titleCardFilter, titleCardFontSize } from "./text";
+import { alignSentenceEnds, cuesForChunk, cuesForSegment, packChunks, parseSilenceMids, sentences, snapToSentences, titleCardFilter, titleCardFontSize } from "./text";
 
 describe("pipeline text", () => {
   it("tách câu và gom khối theo độ dài", () => {
@@ -80,5 +80,15 @@ describe("căn mốc theo giọng đọc thật", () => {
     const cues = [{ start: 0, end: 7, text: "Hắn rút kiếm." }, { start: 7, end: 9, text: "Gió nổi lên," }, { start: 9, end: 20, text: "trời tối sầm." }];
     const got = snapToSentences([{ start: 0, end: 10, zoom: true }, { start: 10, end: 20, zoom: false }], cues);
     expect(got).toEqual([{ start: 0, end: 7, zoom: true }, { start: 7, end: 20, zoom: false }]);
+  });
+});
+
+describe("cuesForSegment", () => {
+  it("lấy câu chạm đoạn, dời mốc về 0, cắt gọn trong đoạn", () => {
+    const cues = [{ start: 0, end: 4, text: "a" }, { start: 4, end: 9, text: "b" }, { start: 9, end: 12, text: "c" }];
+    expect(cuesForSegment(cues, 5, 10)).toEqual([{ start: 0, end: 4, text: "b" }, { start: 4, end: 5, text: "c" }]);
+  });
+  it("câu chỉ chạm mép 0,05s thì bỏ", () => {
+    expect(cuesForSegment([{ start: 0, end: 5.03, text: "a" }], 5, 10)).toEqual([]);
   });
 });

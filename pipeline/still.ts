@@ -3,12 +3,14 @@
 // Lý do: hết zoompan/xfade/ass/re-encode toàn video → vừa ngân sách ~25 phút CPU cho 2 giờ video trên runner 2 vCPU.
 
 import { parallaxFilterGraph, parallaxInputArgs, type ParallaxFiles, type ParallaxMotion } from "./parallax-plan";
+import { filterPath } from "./ffmpeg";
 
 export const STILL_FPS = 24;
 /** Dip-to-black ở đầu và cuối mỗi đoạn. */
-export const STILL_FADE_SECONDS = 0.5;
+// Cắt THẲNG giữa các cảnh như kênh top (Não Phẳng Tu Tiên: cắt thẳng, không mờ qua đen); mờ qua đen mỗi lần đổi ảnh = nhấp nháy tối.
+export const STILL_FADE_SECONDS = 0;
 /** Đoạn zoom ngắn (~6 giây) nên mờ ngắn hơn để không nhấp nháy tối liên tục. */
-const ZOOM_FADE_SECONDS = 0.25;
+const ZOOM_FADE_SECONDS = 0;
 /** Phóng to tối đa trong 1 đoạn zoom (10%). */
 const ZOOM_AMOUNT = 0.1;
 /**
@@ -55,7 +57,10 @@ export function stillFrames(start: number, end: number, fps = STILL_FPS) {
 /** Parallax 2.5D của 1 đoạn: file mặt nạ (prepareParallax), kiểu máy quay và số khung có chuyển động (sau đó giữ nguyên khung cuối). */
 export type StillParallax = { files: ParallaxFiles; motion: ParallaxMotion; motionFrames: number };
 
-const fadeFilters = (fade: number, seconds: number) => [`fade=t=in:st=0:d=${fade}`, `fade=t=out:st=${(seconds - fade).toFixed(3)}:d=${fade}`];
+const fadeFilters = (fade: number, seconds: number) => (fade > 0 ? [`fade=t=in:st=0:d=${fade}`, `fade=t=out:st=${(seconds - fade).toFixed(3)}:d=${fade}`] : []);
+
+/** Bộ lọc đốt phụ đề ASS của riêng đoạn (mốc đã dời về 0) — đốt lúc dựng đoạn, bước nối vẫn copy video. */
+export const subsFilter = (subs: string, fontsDir = "pipeline/fonts") => `ass=${filterPath(subs)}:fontsdir=${filterPath(fontsDir)}`;
 
 /** Mã hoá chung cho mọi đoạn: khác nhau duy nhất ở `-tune stillimage` (chỉ hợp khi hình đứng yên). */
 const segmentEncodeArgs = (o: { out: string; fps: number; still: boolean }) => [
@@ -67,7 +72,7 @@ const segmentEncodeArgs = (o: { out: string; fps: number; still: boolean }) => [
  * Ảnh → đoạn video tĩnh `frames` khung hình, 1920×1080 (scale/crop một lần), mờ vào/ra. `logoCrop` là chuỗi filter cắt logo (có dấu phẩy cuối) hoặc rỗng.
  * Có `parallax` thì dựng 3 lớp theo độ sâu trượt khác tốc độ (thay cho zoompan/ảnh tĩnh trong `parallax.motionFrames` khung đầu).
  */
-export function stillSegmentArgs(o: { img: string; out: string; frames: number; w: number; h: number; logoCrop?: string; fps?: number; zoom?: boolean; action?: boolean; parallax?: StillParallax }) {
+export function stillSegmentArgs(o: { img: string; out: string; frames: number; w: number; h: number; logoCrop?: string; fps?: number; zoom?: boolean; action?: boolean; parallax?: StillParallax; subs?: string }) {
   const fps = o.fps ?? STILL_FPS;
   const seconds = o.frames / fps;
   const fade = Math.min(o.zoom ? ZOOM_FADE_SECONDS : STILL_FADE_SECONDS, seconds / 2);
@@ -75,7 +80,7 @@ export function stillSegmentArgs(o: { img: string; out: string; frames: number; 
     const graph = parallaxFilterGraph({ w: o.w, h: o.h, frames: o.frames, motionFrames: Math.min(o.frames, o.parallax.motionFrames), fps, motion: o.parallax.motion, logoCrop: o.logoCrop });
     return [
       "-i", o.img, ...parallaxInputArgs(o.parallax.files), "-frames:v", String(o.frames),
-      "-filter_complex", `${graph};[v]${fadeFilters(fade, seconds).join(",")}[out]`, "-map", "[out]",
+      "-filter_complex", `${graph};[v]${[...fadeFilters(fade, seconds), ...(o.subs ? [subsFilter(o.subs)] : [])].join(",") || "null"}[out]`, "-map", "[out]",
       ...segmentEncodeArgs({ out: o.out, fps, still: false }),
     ];
   }
@@ -109,7 +114,8 @@ export function stillSegmentArgs(o: { img: string; out: string; frames: number; 
     ...motion,
     ...shake,
     // Cảnh hành động: chớp trắng thay cho mờ vào từ đen; vẫn mờ ra ở cuối để nối đoạn như cũ.
-    ...(o.action ? [...flash, `fade=t=out:st=${(seconds - fade).toFixed(3)}:d=${fade}`] : fadeFilters(fade, seconds)),
+    ...(o.action ? [...flash, ...(fade > 0 ? [`fade=t=out:st=${(seconds - fade).toFixed(3)}:d=${fade}`] : [])] : fadeFilters(fade, seconds)),
+    ...(o.subs ? [subsFilter(o.subs)] : []),
   ].join(",");
   return [
     "-framerate", String(fps), "-i", o.img, "-frames:v", String(o.frames),

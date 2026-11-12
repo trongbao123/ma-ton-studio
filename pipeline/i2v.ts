@@ -39,8 +39,8 @@ export async function motionPrompts(scenes: { prompt: string; text: string }[]):
 }
 
 /** Đoạn video 1080p của cảnh có clip: clip (lanczos) → mờ chéo sang ảnh tĩnh nếu đoạn dài hơn. Dựng một lần (job chạy lại thì dùng lại). */
-export async function buildClipSegment(o: { clip: string; img: string; file: string; start: number; end: number; w: number; h: number; logoCrop: string }): Promise<void> {
-  await once(o.file, (tmp) => ffmpeg(clipSegmentArgs({ clip: o.clip, img: o.img, out: tmp, frames: stillFrames(o.start, o.end), w: o.w, h: o.h, logoCrop: o.logoCrop })));
+export async function buildClipSegment(o: { clip: string; img: string; file: string; start: number; end: number; w: number; h: number; logoCrop: string; subs?: string }): Promise<void> {
+  await once(o.file, (tmp) => ffmpeg(clipSegmentArgs({ clip: o.clip, img: o.img, out: tmp, frames: stillFrames(o.start, o.end), w: o.w, h: o.h, logoCrop: o.logoCrop, subs: o.subs })));
 }
 
 /** Sau khi dựng xong các đoạn tĩnh, chờ Kaggle thêm tối đa ngần này phút (kể từ lúc đẩy lên, trần KERNEL_TIMEOUT_MINUTES). */

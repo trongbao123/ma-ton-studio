@@ -162,6 +162,16 @@ export function karaoke(text: string, seconds: number) {
  * Phụ đề ASS: chữ trắng viền đen dày + bóng, font Be Vietnam Pro (đủ dấu tiếng Việt).
  * Có `karaoke` thì chữ đang đọc sáng vàng thếp (#FFD23F — cùng màu chữ thumbnail).
  */
+/**
+ * Câu của riêng một đoạn [start, end) (giây trên dòng thời gian chương), mốc dời về đầu đoạn và cắt gọn trong đoạn —
+ * để đốt phụ đề lúc dựng từng đoạn. Thuần, để test.
+ */
+export function cuesForSegment(cues: Cue[], start: number, end: number): Cue[] {
+  return cues
+    .filter((c) => c.end > start + 0.05 && c.start < end - 0.05)
+    .map((c) => ({ start: Math.max(0, c.start - start), end: Math.min(end, c.end) - start, text: c.text }));
+}
+
 export function toAss(cues: Cue[], opts: { width: number; height: number; fontSize: number; marginV: number; karaoke?: boolean }) {
   const header = `[Script Info]
 ScriptType: v4.00+

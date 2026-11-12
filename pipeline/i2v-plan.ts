@@ -1,6 +1,6 @@
 // Clip động (image-to-video trên GPU free của Kaggle): phần THUẦN — chọn cảnh, dựng manifest/metadata kernel, ghép clip + ảnh tĩnh.
 // Không gọi mạng, không chạy ffmpeg; phần chạy thật nằm ở kaggle.ts / i2v.ts.
-import { STILL_FADE_SECONDS, STILL_FPS, STILL_TIMESCALE } from "./still";
+import { STILL_FADE_SECONDS, STILL_FPS, STILL_TIMESCALE, subsFilter } from "./still";
 
 /** Mỗi chương 20–24 clip (~25 phút GPU T4 gồm nạp model; tuần ~3 giờ / 30 giờ free). Tập 3 chương ≈ 60–72 clip. */
 export const CLIPS_PER_CHAPTER = { min: 20, max: 24 } as const;
@@ -196,14 +196,15 @@ export function splitClipSegment(sceneFrames: number, clipFrames: number, fps = 
  * Đoạn video 1080p có clip động: đoạn dài hơn clip thì ảnh tĩnh trước rồi mờ chéo sang clip (upscale lanczos) ở cuối đoạn;
  * mờ vào/ra như đoạn tĩnh. Cùng thông số h264/24fps/timescale với `stillSegmentArgs` để nối concat copy.
  */
-export function clipSegmentArgs(o: { clip: string; img: string; out: string; frames: number; w: number; h: number; logoCrop?: string; fps?: number; clipFrames?: number }) {
+export function clipSegmentArgs(o: { clip: string; img: string; out: string; frames: number; w: number; h: number; logoCrop?: string; fps?: number; clipFrames?: number; subs?: string }) {
   const fps = o.fps ?? STILL_FPS;
   const split = splitClipSegment(o.frames, o.clipFrames ?? CLIP_FRAMES, fps);
   const seconds = o.frames / fps;
   const fade = Math.min(STILL_FADE_SECONDS, seconds / 2);
   const fit = `scale=${o.w}:${o.h}:force_original_aspect_ratio=increase:flags=lanczos,crop=${o.w}:${o.h},setsar=1,format=yuv420p`;
   const clipChain = `[0:v]fps=${fps},${fit},trim=end_frame=${split.clipFrames},setpts=PTS-STARTPTS`;
-  const tail = `fade=t=in:st=0:d=${fade},fade=t=out:st=${(seconds - fade).toFixed(3)}:d=${fade}`;
+  // Mờ vào/ra (0 = cắt thẳng như kênh top) + phụ đề của đoạn; rỗng thì "null" để đồ thị vẫn hợp lệ.
+  const tail = [...(fade > 0 ? [`fade=t=in:st=0:d=${fade}`, `fade=t=out:st=${(seconds - fade).toFixed(3)}:d=${fade}`] : []), ...(o.subs ? [subsFilter(o.subs)] : [])].join(",") || "null";
   const encode = [
     "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-g", String(fps * 5), "-r", String(fps),
     "-video_track_timescale", STILL_TIMESCALE, o.out,
