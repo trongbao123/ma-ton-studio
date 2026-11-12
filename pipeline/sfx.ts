@@ -57,9 +57,9 @@ export function sfxEvents(
 /**
  * Mức bù (dB) cân độ to CẢM NHẬN giữa các loại: đo integrated LUFS của từng tiếng bằng ebur128 (`node scripts/sfx-measure.mjs`),
  * rồi bù về mốc thiết kế — nổ/sấm là điểm nhấn (-20/-21 LUFS), nền ì ầm thấp hơn (-24), gió và hào quang chỉ là lớp đệm (-26).
- * Đo lại SAU khi bù (ffmpeg 9.0.2): thunder -21,3 · boom -20,0 · energy -26,0 · whoosh -25,9 · rumble -23,6 LUFS, đỉnh cao nhất -2,0 dBFS.
+ * 2026-11-12 bỏ nhiễu dải cao (user chê "xèo xèo"): boom = sine trượt 110→35 Hz, mọi nhiễu lọc ≤ 2,5 kHz; cân lại theo số đo mới.
  */
-export const SFX_TRIM_DB: Record<SfxKind, number> = { thunder: 1.5, boom: 7.9, energy: 4.2, whoosh: -1.5, rumble: -1 };
+export const SFX_TRIM_DB: Record<SfxKind, number> = { thunder: 1.7, boom: -4.2, energy: 6.5, whoosh: -11.2, rumble: -1 };
 
 /**
  * Tiếng va chạm vào đúng lúc mở cảnh ĐÁNH NHAU (cờ `action`), khớp với chớp trắng + rung khung của
@@ -99,14 +99,19 @@ export function sfxSource(kind: SfxKind, variant = 0): string {
 function sourceChain(kind: SfxKind, s: (n: number) => number): string {
   const d = SFX_SECONDS[kind];
   switch (kind) {
+    // Không còn nhiễu dải cao (user: "xèo xèo"): mọi nguồn nhiễu đều lọc thấp ≤ 2,5 kHz; độ "đanh" lấy từ sine trượt cao độ.
     case "boom":
-      return `sine=f=48:d=${d}:r=48000,volume=0.9[b0];anoisesrc=c=brown:d=${d}:r=48000:a=0.9:s=${s(1)},lowpass=f=180,lowpass=f=180[b1];[b0][b1]amix=inputs=2:normalize=0,afade=t=in:d=0.015,afade=t=out:st=0.08:d=${d - 0.08}:curve=exp`;
+      // Boom trailer: sine trượt 110 → 35 Hz + ầm nâu ≤ 150 Hz, tắt dần.
+      return `aevalsrc=exprs='sin(2*PI*(35*t+12.5*(1-exp(-6*t))))':d=${d}:s=48000,volume=0.9[b0];anoisesrc=c=brown:d=${d}:r=48000:a=0.9:s=${s(1)},lowpass=f=150,lowpass=f=150[b1];[b0][b1]amix=inputs=2:normalize=0,afade=t=in:d=0.01,afade=t=out:st=0.1:d=${d - 0.1}:curve=exp`;
     case "thunder":
-      return `anoisesrc=c=white:d=0.3:r=48000:a=0.6:s=${s(1)},highpass=f=1800,afade=t=out:d=0.3:curve=exp,apad=whole_dur=${d}[t0];anoisesrc=c=brown:d=${d}:r=48000:a=1:s=${s(2)},lowpass=f=320,tremolo=f=6:d=0.5,afade=t=in:d=0.05,afade=t=out:st=0.4:d=${d - 0.4}:curve=exp[t1];[t0][t1]amix=inputs=2:normalize=0`;
+      // Sấm: tiếng "rắc" lọc ≤ 2,5 kHz (không rè) + ầm ≤ 400 Hz lăn tăn.
+      return `anoisesrc=c=pink:d=0.35:r=48000:a=0.7:s=${s(1)},lowpass=f=2500,afade=t=out:d=0.35:curve=exp,apad=whole_dur=${d}[t0];anoisesrc=c=brown:d=${d}:r=48000:a=1:s=${s(2)},lowpass=f=400,tremolo=f=5:d=0.5,afade=t=in:d=0.05,afade=t=out:st=0.4:d=${d - 0.4}:curve=exp[t1];[t0][t1]amix=inputs=2:normalize=0`;
     case "energy":
-      return `sine=f=110:d=${d}:r=48000,tremolo=f=9:d=0.7,volume=0.35[e0];sine=f=165:d=${d}:r=48000,tremolo=f=5:d=0.5,volume=0.2[e1];anoisesrc=c=pink:d=${d}:r=48000:a=0.25:s=${s(1)},highpass=f=5000[e2];[e0][e1][e2]amix=inputs=3:normalize=0,afade=t=in:d=0.6:curve=qsin,afade=t=out:st=${d - 1.2}:d=1.2`;
+      // Linh khí: hợp âm trầm rung (110/165/220 Hz), không nhiễu.
+      return `sine=f=110:d=${d}:r=48000,tremolo=f=7:d=0.6,volume=0.4[e0];sine=f=165:d=${d}:r=48000,tremolo=f=5:d=0.5,volume=0.25[e1];sine=f=220:d=${d}:r=48000,vibrato=f=6:d=0.3,volume=0.12[e2];[e0][e1][e2]amix=inputs=3:normalize=0,afade=t=in:d=0.6:curve=qsin,afade=t=out:st=${d - 1.2}:d=1.2`;
     case "whoosh":
-      return `anoisesrc=c=pink:d=${d}:r=48000:a=0.8:s=${s(1)},highpass=f=350,lowpass=f=2600,afade=t=in:d=${d * 0.55}:curve=qsin,afade=t=out:st=${d * 0.55}:d=${d * 0.45}:curve=qsin`;
+      // Vút như gió: nhiễu nâu dải 250–900 Hz phồng lên rồi tắt.
+      return `anoisesrc=c=brown:d=${d}:r=48000:a=1:s=${s(1)},highpass=f=250,lowpass=f=900,volume=2.5,afade=t=in:d=${d * 0.55}:curve=qsin,afade=t=out:st=${d * 0.55}:d=${d * 0.45}:curve=qsin`;
     case "rumble":
       return `anoisesrc=c=brown:d=${d}:r=48000:a=1:s=${s(1)},lowpass=f=110,lowpass=f=110,volume=1.4,afade=t=in:d=0.8,afade=t=out:st=${d - 1.5}:d=1.5`;
   }
