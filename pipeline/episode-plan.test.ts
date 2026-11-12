@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { pickBatch } from "./compile-plan";
-import { buildEpisodeToc, chaptersToWrite, coldOpenSceneCount, fullBadge, planChapterScenes, shortSceneCount, ensureEpisodeLabel, episodeBacklog, fullLabel, imageCount, occupiesDailySlot, pickPublishSlot, tocText, vnDay } from "./episode-plan";
+import { buildEpisodeToc, chaptersToWrite, coldOpenSceneCount, fullBadge, HOOK_ZONE_SECONDS, isEpisodeOpener, planChapterScenes, shortSceneCount, ensureEpisodeLabel, episodeBacklog, fullLabel, imageCount, occupiesDailySlot, pickPublishSlot, tocText, vnDay } from "./episode-plan";
 
 const row = (id: number, number: number, o: Partial<Parameters<typeof episodeBacklog>[0][number]> = {}) => ({
   id, number, status: "ready" as const, youtubeVideoId: null, publishAt: null, hasLong: true, meta: null, ...o,
@@ -180,5 +180,26 @@ describe("tiêu đề tập", () => {
     const out = ensureEpisodeLabel("x".repeat(150), { episodeNo: 2, from: 7, to: 9 });
     expect(out.length).toBeLessThanOrEqual(100);
     expect(out.endsWith("Tập 2 (Chương 7–9)")).toBe(true);
+  });
+});
+
+describe("chương mở đầu tập: 15 phút đầu nhịp nhanh", () => {
+  it("isEpisodeOpener theo nhóm k chương sau tập gần nhất", () => {
+    expect([16, 17, 18, 19, 20, 21, 22].map((n) => isEpisodeOpener(n, 15, 3))).toEqual([true, false, false, true, false, false, true]);
+    expect(isEpisodeOpener(1, 0, 3)).toBe(true);
+    expect(isEpisodeOpener(15, 15, 3)).toBe(false);
+    expect(isEpisodeOpener(16, 15, 0)).toBe(false);
+  });
+  it("chương mở tập 35 phút: tới phút 15 đều zoom, ~10 giây/ảnh; sau đó 30 giây/ảnh", () => {
+    const plan = planChapterScenes(2100, true);
+    const zoom = plan.filter((x) => x.zoom);
+    expect(zoom[zoom.length - 1].end).toBeCloseTo(HOOK_ZONE_SECONDS);
+    expect(zoom.length).toBe(20 + 78);
+    expect(plan.filter((x) => !x.zoom)).toHaveLength(40);
+    expect(plan[plan.length - 1].end).toBe(2100);
+  });
+  it("chương thường không đổi", () => {
+    expect(planChapterScenes(2100, false)).toEqual(planChapterScenes(2100));
+    expect(planChapterScenes(2100).filter((x) => x.zoom)).toHaveLength(20);
   });
 });

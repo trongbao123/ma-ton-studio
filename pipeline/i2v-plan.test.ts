@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { planChapterScenes } from "./episode-plan";
-import { CLIP_END_STRENGTH, CLIP_FRAMES, MOTION_NEGATIVE, MOTION_SUFFIX, buildManifest, datasetFiles, manifestJobs, clipSegmentArgs, gpuMinutes, kaggleSlug, kernelFailureKind, kernelPhase, kernelPushBody, motionPrompt, parseClipLog, pickClipScenes, splitClipSegment } from "./i2v-plan";
+import { CLIP_END_STRENGTH, CLIP_FRAMES, OPENER_CLIPS, MOTION_NEGATIVE, MOTION_SUFFIX, buildManifest, datasetFiles, manifestJobs, clipSegmentArgs, gpuMinutes, kaggleSlug, kernelFailureKind, kernelPhase, kernelPushBody, motionPrompt, parseClipLog, pickClipScenes, splitClipSegment } from "./i2v-plan";
 
 describe("pickClipScenes", () => {
   const spans = planChapterScenes(1800).map((s, i) => ({ ...s, action: i === 30 || i === 40 }));
@@ -152,5 +152,15 @@ describe("splitClipSegment / clipSegmentArgs", () => {
   it("cắt logo áp lên ảnh tĩnh của đoạn mờ chéo", () => {
     const a = clipSegmentArgs({ ...base, frames: 720, logoCrop: "crop=iw:ih*0.93:0:0," });
     expect(a[a.indexOf("-filter_complex") + 1]).toContain("[1:v]crop=iw:ih*0.93:0:0,");
+  });
+});
+
+describe("pickClipScenes — chương mở đầu tập", () => {
+  it("30–34 clip, phần lớn trong 15 phút đầu", () => {
+    const spans = planChapterScenes(2100, true);
+    const got = pickClipScenes(spans, OPENER_CLIPS);
+    expect(got.length).toBeGreaterThanOrEqual(30);
+    expect(got.length).toBeLessThanOrEqual(34);
+    expect(got.filter((i) => spans[i].zoom).length).toBeGreaterThanOrEqual(26);
   });
 });

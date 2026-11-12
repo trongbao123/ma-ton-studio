@@ -18,7 +18,8 @@ import { cleanupParallax, prepareParallax } from "./parallax";
 import { PARALLAX_BUDGET, parallaxFilterGraph, parallaxInputArgs, parallaxMotionFor, parallaxWorkDir, planParallax, type ParallaxFiles } from "./parallax-plan";
 import { freshInsights, loadTrends, seoHints } from "@/lib/trends";
 import { characterLookFor, metaRequest, scenePrompts, scenesRequest, videoMeta } from "./prompts";
-import { imageCount, planChapterScenes, shortSceneCount } from "./episode-plan";
+import { imageCount, isEpisodeOpener, planChapterScenes, shortSceneCount } from "./episode-plan";
+import { OPENER_CLIPS } from "./i2v-plan";
 import { ensureRelease, uploadAsset } from "./release";
 import { keepOrNextSlot } from "./schedule";
 import { loadSecrets } from "@/lib/secrets";
@@ -160,6 +161,14 @@ export async function shot(img: string, out: string, seconds: number, w: number,
     // File tạm (còn mã hoá lại ở bước cuối) → nén nhanh hơn, crf thấp hơn để không mất chất lượng; đỡ phút GitHub Actions.
     "-c:v", "libx264", "-preset", "superfast", "-crf", "18", "-r", String(q.fps), out,
   ]);
+}
+
+/** Chương `number` có mở đầu tập kế tiếp không — theo chương cuối của tập đã ghép gần nhất (bỏ tập lỗi). */
+async function episodeOpener(seriesId: number, number: number, k: number) {
+  // Import động: compile.ts import render.ts → tránh vòng import lúc nạp module.
+  const { seriesRows } = await import("./compile");
+  const tos = (await seriesRows(seriesId)).filter((r) => r.meta?.compilation?.episode && r.status !== "failed").map((r) => r.meta!.compilation!.to);
+  return isEpisodeOpener(number, tos.length ? Math.max(...tos) : 0, k);
 }
 
 /** Shot từ clip động: phóng lanczos lên khung, đủ `seconds` (thiếu thì giữ khung cuối), cùng thông số mã hoá với `shot`. */
@@ -597,7 +606,10 @@ async function renderInternalChapter(o: { videoId: number; s: Series; c: Chapter
   track.finish("tts");
 
   // 2 phút đầu ~6 giây/ảnh (zoom nhẹ), phần sau 1 ảnh/30 giây; lời cảnh lấy theo cue đang đọc trong khoảng của ảnh.
-  const spans = planChapterScenes(long.seconds);
+  // Chương mở đầu tập: nhịp nhanh + dày clip tới phút 15 (vùng giữ chân của cả tập).
+  const opener = s.episodeChapters > 0 && (await episodeOpener(s.id, c.number, s.episodeChapters).catch(() => false));
+  if (opener) console.log("  Chương mở đầu tập — 15 phút đầu nhịp nhanh, nhiều clip động");
+  const spans = planChapterScenes(long.seconds, opener);
   const n = spans.length;
   const planTag = `fast-${n}`;
   await resetStaleScenes(dir, planTag);
@@ -611,7 +623,7 @@ async function renderInternalChapter(o: { videoId: number; s: Series; c: Chapter
   track.start("video");
   // Như video thường: ghi AI vẽ đã dùng + gửi từng ảnh lên kho để màn flow có "Ảnh từng cảnh" xem trước.
   const imageModels = new Set<string>();
-  const i2v = newI2vRun({ videoId, dir, track, scenes, prompts, logoCrop: LOGO_CROP });
+  const i2v = newI2vRun({ videoId, dir, track, scenes, prompts, logoCrop: LOGO_CROP, limits: opener ? OPENER_CLIPS : undefined });
   if (i2v) track.start("i2v", { long: i2v.picks.length });
   const zimage = newZImageRun({ videoId, dir, scenes, prompts: prompts.map((p) => p.prompt), exclude: i2v?.picks ?? [], log: (t) => track.log("images", t) });
   const video = await buildStillVideo({

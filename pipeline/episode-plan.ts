@@ -61,14 +61,30 @@ const FAST_OPEN_IMAGE_SECONDS = 6;
  * (tối đa EPISODE_MAX_IMAGES). Trả mốc [start, end] liền nhau, phủ kín [0, seconds]; `zoom` = đoạn thuộc 2 phút đầu.
  * Chương ngắn hơn 2 phút thì cả chương theo nhịp nhanh.
  */
-export function planChapterScenes(seconds: number) {
+export function planChapterScenes(seconds: number, opener = false) {
   const head = Math.min(FAST_OPEN_SECONDS, seconds);
   const headCount = Math.max(1, Math.round(head / FAST_OPEN_IMAGE_SECONDS));
-  const rest = seconds - head;
+  // Chương MỞ ĐẦU tập: 2 phút → phút 15 vẫn nhịp nhanh (~10 giây/ảnh, zoom) — 10–15 phút đầu tập quyết định giữ chân.
+  const hookEnd = opener ? Math.min(HOOK_ZONE_SECONDS, seconds) : head;
+  const mid = Math.max(0, hookEnd - head);
+  const midCount = mid > 0 ? Math.max(1, Math.round(mid / HOOK_IMAGE_SECONDS)) : 0;
+  const rest = seconds - head - mid;
   const restCount = rest > 0 ? Math.min(EPISODE_MAX_IMAGES, Math.max(1, Math.round(rest / EPISODE_IMAGE_SECONDS))) : 0;
   const slice = (from: number, span: number, count: number, zoom: boolean) =>
     Array.from({ length: count }, (_, i) => ({ start: from + (span * i) / count, end: i === count - 1 ? from + span : from + (span * (i + 1)) / count, zoom }));
-  return [...slice(0, head, headCount, true), ...slice(head, rest, restCount, false)];
+  return [...slice(0, head, headCount, true), ...slice(head, mid, midCount, true), ...slice(head + mid, rest, restCount, false)];
+}
+
+/** Vùng "giữ chân" của tập: chương mở đầu tập giữ nhịp nhanh tới đây (giây). */
+export const HOOK_ZONE_SECONDS = 15 * 60;
+const HOOK_IMAGE_SECONDS = 10;
+
+/**
+ * Chương này có mở đầu một tập không: tập gom liền nhau `k` chương sau chương cuối (`lastTo`) của tập đã ghép gần nhất.
+ * Thuần, để test. `k` ≤ 0 (không chế độ tập) → false.
+ */
+export function isEpisodeOpener(number: number, lastTo: number, k: number) {
+  return k > 0 && number > lastTo && (number - lastTo - 1) % k === 0;
 }
 
 /** Số ảnh cho video chương: nội bộ (tập) 1 ảnh/30 giây, tối đa 80; thường 1 ảnh/25 giây, tối đa 30. Luôn ≥ 6. */

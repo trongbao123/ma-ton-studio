@@ -67,11 +67,13 @@ export class I2vRun {
       scenes: (SceneSpan & { text: string })[];
       prompts: { prompt: string }[];
       logoCrop: string;
+      /** Hạn mức clip (chương mở đầu tập dùng OPENER_CLIPS). */
+      limits?: { min: number; max: number; head?: number };
       /** Báo tiến độ cho màn flow. */
       report: { progress: (patch: Partial<I2vProgress>) => void; log: (text: string) => void; total: (n: number) => void; tick: (text: string) => void; model: (m: string) => void };
     },
   ) {
-    this.picks = pickClipScenes(o.scenes);
+    this.picks = pickClipScenes(o.scenes, o.limits);
     this.stateFile = path.join(o.dir, `${o.name}-i2v-state.json`);
   }
 
@@ -172,12 +174,12 @@ export class I2vRun {
 }
 
 /** Clip động trên GPU free của Kaggle: chỉ khi có token (Actions) và chưa tắt bằng I2V=0; thiếu/lỗi thì cứ ảnh tĩnh. */
-export function newI2vRun(o: { videoId: number; dir: string; track: Tracker; scenes: { start: number; end: number; zoom?: boolean; text: string }[]; prompts: { prompt: string; action: boolean }[]; logoCrop: string }) {
+export function newI2vRun(o: { videoId: number; dir: string; track: Tracker; scenes: { start: number; end: number; zoom?: boolean; text: string }[]; prompts: { prompt: string; action: boolean }[]; logoCrop: string; limits?: { min: number; max: number; head?: number } }) {
   const enabled = Boolean(kaggleAuth()) && process.env.I2V !== "0" && Boolean(process.env.GITHUB_ACTIONS || process.env.I2V === "1");
   if (!enabled) return undefined;
   const { track } = o;
   return new I2vRun({
-    videoId: o.videoId, dir: o.dir, name: "long", logoCrop: o.logoCrop,
+    videoId: o.videoId, dir: o.dir, name: "long", logoCrop: o.logoCrop, limits: o.limits,
     scenes: o.scenes.map((x, i) => ({ start: x.start, end: x.end, zoom: x.zoom, action: o.prompts[i].action, text: x.text })),
     prompts: o.prompts,
     report: {
