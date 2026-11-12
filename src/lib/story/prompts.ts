@@ -7,9 +7,25 @@ export const RECENT_SUMMARY_WINDOW = 15;
 /** Phần của chương trước mà prompt dùng làm trí nhớ — đủ để không phải kéo cả nội dung chương về. */
 export type RecalledChapter = Pick<Chapter, "number" | "title" | "summary">;
 
-const WRITER_SYSTEM = `Bạn là tác giả truyện mạng tiếng Việt top đầu, chuyên huyền huyễn, tiên hiệp, ma đạo — lối viết gây nghiện học từ Đấu La Đại Lục 3 (Long Vương Truyền Thuyết), Quang Âm Chi Ngoại và Thôn Phệ Tinh Không: thế giới tu tiên rộng lớn tàn khốc, nhân vật chính lý trí quyết đoán, mạnh lên từng bước có số đo rõ ràng, trận chiến hoành tráng, bí ẩn lớn hé dần.
+/**
+ * Luật 300 từ đầu chương — rút từ phụ đề các video tu tiên hàng trăm nghìn view (11/2026): video hit vào thẳng thoại/xung đột,
+ * nói ra bàn tay vàng trong 20 giây; kênh mình đọc tên chương + tả cảnh nên mất 40% người nghe ở giây 10–20.
+ * Biên tập viên AI (editor.ts) chấm đúng danh sách này.
+ */
+export const OPENING_RULES = [
+  "Câu đầu tiên là lời thoại xung đột, lời thông báo của bàn tay vàng, hoặc một câu nêu điều khác biệt — dưới 20 từ; KHÔNG tả cảnh, thời tiết, tên truyện, tên chương.",
+  "Trong 300 từ đầu có xung đột trực tiếp giữa người với người (sỉ nhục, đe doạ, thách thức).",
+  "Trong 300 từ đầu nhắc tới bàn tay vàng của nhân vật chính và hứa hẹn sức mạnh của nó.",
+  "Trong 300 từ đầu có một câu hỏi tò mò nói thành lời (nhân vật hỏi, hoặc người kể hỏi người nghe).",
+  "Hai phút đầu (≈300 từ) lời thoại chiếm hơn một nửa; không quá 2 câu tả cảnh liền nhau.",
+  "Câu tả cảnh ≤ 15 từ, tối đa 1 hình ảnh so sánh (\"như…\") mỗi đoạn; không chồng tính từ.",
+];
+
+const WRITER_SYSTEM = `Bạn là tác giả truyện audio tiên hiệp tiếng Việt top đầu YouTube, lối kể của dòng truyện "hệ thống" / sảng văn hàng trăm nghìn lượt nghe: nhân vật chính có một bàn tay vàng đặc biệt được nói ra ngay từ đầu, phần thưởng đo được (con số tăng, kỹ năng mở khoá, vật phẩm) xuất hiện đều đặn, thoại nhiều, câu ngắn, xung đột liên tục, vả mặt kẻ khinh thường trước đám đông.
 Truyện dùng để đọc thành audio trên YouTube, người nghe bỏ đi nếu chán 10 giây, nên:
-- 2–3 câu đầu là hook mạnh: nguy hiểm, nhục nhã, bí ẩn hoặc một lời tuyên bố gây sốc. Không mở bằng tả cảnh dài.
+MỞ ĐẦU CHƯƠNG (300 từ đầu quyết định người nghe ở lại):
+- ${OPENING_RULES.join("\n- ")}
+- Cứ khoảng 600–800 từ có một lần nhân vật chính được thưởng (con số tăng, kỹ năng mở khoá, vật phẩm) hoặc một cú lật.
 - Mỗi chương phải có ít nhất một "điểm sướng": thăng cấp, vả mặt kẻ khinh thường, lộ bí mật, đoạt bảo vật, thắng trận trước mặt đám đông.
 - Sức mạnh đo được bằng con số và cấp bậc rõ (cảnh giới gì, tầng mấy, pháp bảo phẩm gì); người nghe phải thấy nhân vật mạnh lên từng chút.
 - Chiêu thức có tên riêng kêu, mô tả bằng âm thanh, ánh sáng, cảm giác; trận đấu có phản đòn, lật kèo, cái giá phải trả.
@@ -21,7 +37,6 @@ Truyện dùng để đọc thành audio trên YouTube, người nghe bỏ đi n
 VIẾT CHO TAI NGHE (người nghe không lật lại được trang trước):
 - KHÔNG quay ngược thời gian ở đầu chương ("phải lùi lại một chút", hồi tưởng dài) — mạch truyện đi thẳng về phía trước; chuyện cũ chỉ nhắc 1 câu khi cần.
 - Mỗi chương tối đa 2 tên riêng MỚI (người, chiêu, bảo vật, địa danh); tên mới giới thiệu kèm một câu giải thích dễ hiểu. Tên cũ nhắc lại kèm vai trò ("Lãnh Cực, sư phụ của hắn,…") nếu lâu chưa xuất hiện.
-- Câu tả cảnh tối đa ~20 từ; mỗi đoạn tả không quá 3 câu rồi phải có hành động hoặc thoại.
 - Cứ khoảng 600–800 từ (≈ 4–5 phút nghe) phải có một biến cố: đòn đánh, lời đe doạ, bí mật lộ ra, quyết định khó — không để 2 cảnh liền nhau chỉ nói chuyện/suy nghĩ.
 - Chương nào cũng phải có đánh nhau hoặc đối đầu căng thẳng có thắng thua rõ; cảnh nói chuyện phải có xung đột ngầm (doạ, mặc cả, lừa).
 - CẢM XÚC là xương sống: tình thân (người nhà hy sinh, lời hứa bảo vệ), tình đồng đội sống chết, tình yêu day dứt, phản bội đau đớn, mối thù máu. Viết cảnh cảm động bằng chi tiết nhỏ và hành động, không sến; để người nghe nghẹn họng, nổi da gà.
@@ -86,7 +101,7 @@ export function openerLine(s: Pick<Series, "episodeChapters">, startAt: number, 
   if (k <= 0) return "";
   const list = Array.from({ length: count }, (_, i) => startAt + i).filter((n) => (n - 1) % k === 0);
   return list.length
-    ? `Chương ${list.join(", ")} là chương MỞ ĐẦU TẬP (giữ chân người xem cả tập ~2 giờ): mở bằng biến cố lớn ngay câu đầu, dồn 2–3 xung đột leo thang liên tiếp, có một cú lật kèo giữa chương.`
+    ? `Chương ${list.join(", ")} là chương MỞ ĐẦU TẬP (giữ chân người xem cả tập ~2 giờ): câu đầu tiên là lời thông báo của bàn tay vàng hoặc thoại xung đột, ngay sau đó nêu điều khác biệt của nhân vật chính trong 1–2 câu, dồn 2–3 xung đột leo thang liên tiếp, có một cú lật kèo giữa chương.`
     : "";
 }
 
@@ -134,8 +149,7 @@ ${length} Chỉ trả về nội dung chương, không lặp lại tiêu đề, 
 
 Cách viết (bắt buộc):
 - ${long ? "Chia 6–8 cảnh liền mạch" : "Chia 3–4 cảnh liền mạch"}; mỗi cảnh có mục tiêu, trở ngại và một thay đổi. Không tóm tắt sự kiện — diễn ra trước mắt người nghe.
-- Tả bằng giác quan cụ thể (mùi máu, tiếng xương gãy, hơi lạnh của sát khí) thay vì tính từ chung chung "rất mạnh", "vô cùng đáng sợ".
-- Thoại chiếm khoảng 1/3: ngắn, mỗi nhân vật một giọng riêng; xen suy nghĩ nội tâm của nhân vật chính.
+- Thoại chiếm khoảng 40% cả chương, hơn một nửa ở 300 từ đầu: ngắn, mỗi nhân vật một giọng riêng; xen suy nghĩ nội tâm của nhân vật chính.
 - Ít nhất 1 khoảnh khắc cảm xúc thật (mất mát, ân tình, nhớ người thân) và 1 khoảnh khắc "sướng" (lật kèo, vả mặt, đột phá) có phản ứng đám đông.
 - Không lặp từ/câu, không sáo rỗng ("khóe miệng nhếch lên", "hít một ngụm khí lạnh") quá 1 lần mỗi chương.
 - Câu cuối là cliffhanger cụ thể (một mối nguy, một bí mật vừa lộ), không kết bằng câu tổng kết.`,

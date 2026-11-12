@@ -123,3 +123,20 @@ describe("openerLine", () => {
     expect(openerLine({ episodeChapters: 0 }, 16, 7)).toBe("");
   });
 });
+
+describe("luật mở đầu kiểu truyện hệ thống", () => {
+  it("prompt chương có đủ luật mở đầu và bỏ luật tả giác quan", async () => {
+    const { OPENING_RULES } = await import("./prompts");
+    const p = chapterPrompt(s, [ch(1)], ch(2));
+    expect(OPENING_RULES).toHaveLength(6);
+    for (const rule of OPENING_RULES) expect(p.system + p.prompt).toContain(rule);
+    expect(p.prompt).not.toContain("mùi máu, tiếng xương gãy");
+    expect(p.prompt).not.toContain("Tả bằng giác quan");
+  });
+  it("mẫu học là truyện audio hệ thống, không còn nêu tên 3 bộ truyện chữ", () => {
+    expect(chapterPrompt(s, [], ch(1)).system).not.toMatch(/Đấu La|Thôn Phệ Tinh Không|Quang Âm Chi Ngoại/);
+  });
+  it("chương mở tập: câu đầu là thông báo bàn tay vàng hoặc thoại xung đột", () => {
+    expect(openerLine({ episodeChapters: 3 }, 1, 3)).toMatch(/câu đầu tiên/i);
+  });
+});
