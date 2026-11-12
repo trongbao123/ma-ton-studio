@@ -52,7 +52,8 @@ async function saveImage(file: string, buf: Buffer) {
   }
 }
 
-type DrawOpts = { width: number; height: number; seed: number };
+/** `refs`: ảnh tham chiếu nhân vật — chỉ Codex dùng (AI vẽ khác bỏ qua). */
+type DrawOpts = { width: number; height: number; seed: number; refs?: string[] };
 
 /** Có key cho AI vẽ này không (Cloudflare không token thì vẫn chạy bằng Pollinations). */
 const hasKey = (p: ImageProviderId) =>
@@ -121,7 +122,7 @@ export function softenPrompt(prompt: string) {
 }
 
 async function codexDraw(prompt: string, outFile: string, model: string, opts: DrawOpts) {
-  const draw = (p: string) => codexImage(process.env.CODEX_AUTH_JSON!, p, aspect(opts), (fresh) => saveSecret("CODEX_AUTH_JSON", fresh));
+  const draw = (p: string) => codexImage(process.env.CODEX_AUTH_JSON!, p, aspect(opts), (fresh) => saveSecret("CODEX_AUTH_JSON", fresh), opts.refs ?? []);
   try {
     let buf: Buffer;
     try {

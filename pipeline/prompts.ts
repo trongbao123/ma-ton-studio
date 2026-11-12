@@ -51,7 +51,7 @@ export function scenesRequest(characterLook: string, scenes: string[]) {
     system: "You write prompts for an image model illustrating a Chinese xianxia audio story.",
     prompt: `Main character look (keep consistent): ${characterLook}
 
-For EACH numbered scene below write one vivid English image prompt (subject, dynamic pose, setting, mood, cinematic camera angle) and mark action=true if the scene is a fight, chase, explosion, technique release or other intense moment. Exactly ${scenes.length} items, same order.
+For EACH numbered scene below write one vivid English image prompt (subject, dynamic pose, setting, mood, cinematic camera angle) and mark action=true if the scene is a fight, chase, explosion, technique release or other intense moment; mark hero=true if the MAIN CHARACTER is visible in the image. Exactly ${scenes.length} items, same order.
 
 ${scenes.map((t, i) => `${i + 1}. ${t.slice(0, 600)}`).join("\n\n")}`,
   };
@@ -62,12 +62,12 @@ ${scenes.map((t, i) => `${i + 1}. ${t.slice(0, 600)}`).join("\n\n")}`,
 const SCENE_BATCH = 20;
 
 export async function scenePrompts(characterLook: string, scenes: string[]) {
-  const out: { prompt: string; action: boolean }[] = [];
+  const out: { prompt: string; action: boolean; hero?: boolean }[] = [];
   for (let i = 0; i < scenes.length; i += SCENE_BATCH) {
     const part = scenes.slice(i, i + SCENE_BATCH);
     const { scenes: got } = await textProvider().generateJson({
       ...scenesRequest(characterLook, part),
-      schema: z.object({ scenes: z.array(z.object({ prompt: z.string(), action: z.boolean() })) }),
+      schema: z.object({ scenes: z.array(z.object({ prompt: z.string(), action: z.boolean(), hero: z.boolean() })) }),
       temperature: 0.7,
       tier: "cheap",
       task: "scenes",
@@ -80,6 +80,7 @@ export async function scenePrompts(characterLook: string, scenes: string[]) {
     return {
       prompt: `${sc?.prompt ?? characterLook}, ${sc?.action ? "dynamic action shot, motion, glowing spiritual energy, sparks, " : ""}${ART_STYLE}`,
       action: Boolean(sc?.action),
+      hero: Boolean(sc?.hero),
     };
   });
 }
@@ -89,9 +90,9 @@ export { ART_STYLE };
 /** Mô tả ngoại hình nhân vật chính (tiếng Anh) cho prompt ảnh — video chương nội bộ chỉ cần thứ này, không cần cả bộ SEO. */
 export async function characterLookFor(s: Series) {
   return textProvider().generateJson({
-    system: "You describe fictional characters for an image model.",
-    prompt: `Truyện: ${s.title}\nNhân vật/bối cảnh:\n${s.bible.slice(0, 3000)}\n\nMô tả ngoại hình nhân vật chính để giữ nhất quán giữa các ảnh.`,
-    schema: z.object({ characterLook: z.string().describe("English: tuổi, tóc, mắt, trang phục, khí chất của nhân vật chính, 1–2 câu") }),
+    system: "You describe fictional characters for an image model. Always answer in ENGLISH, even if the story is in Vietnamese.",
+    prompt: `Truyện: ${s.title}\nNhân vật/bối cảnh:\n${s.bible.slice(0, 3000)}\n\nDescribe the MAIN CHARACTER's appearance in ENGLISH for an image model (visual only: age, face, hair, eyes, outfit colors, accessories). Ancient Chinese xianxia world: outfit is hanfu robes or ancient armor — nothing modern (no "tactical", no leather jacket). No names of techniques, no Vietnamese.`,
+    schema: z.object({ characterLook: z.string().describe("ENGLISH ONLY, visual details only: age, face, hair, eyes, outfit colors, accessories; 1–2 sentences") }),
     temperature: 0.2,
     tier: "cheap",
     task: "scenes",

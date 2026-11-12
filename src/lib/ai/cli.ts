@@ -315,6 +315,8 @@ export async function codexImage(
   prompt: string,
   aspect: "16:9" | "9:16" | "1:1",
   persist?: (cred: string) => Promise<void>,
+  /** Ảnh tham chiếu nhân vật (gửi kèm bằng `-i`): giữ đúng mặt/tóc/trang phục giữa các cảnh. */
+  refs: string[] = [],
 ): Promise<Buffer> {
   const home = await prepareHome("codex", cred, "");
   try {
@@ -325,10 +327,13 @@ export async function codexImage(
       // Model chat chỉ cần gọi công cụ vẽ 1 lần → dùng model rẻ nhất, suy nghĩ tối thiểu để đỡ tốn lượt gói.
       args: [
         "exec", "--skip-git-repo-check", "--ephemeral", "--sandbox", "read-only", "--color", "never",
-        "-m", CODEX_IMAGE_MODEL, "-c", 'model_reasoning_effort="low"', "-c", "features.image_generation=true", "-",
+        "-m", CODEX_IMAGE_MODEL, "-c", 'model_reasoning_effort="low"', "-c", "features.image_generation=true",
+        ...refs.flatMap((r) => ["-i", r]), "-",
       ],
       env: { ...baseEnv(home), CODEX_HOME: path.join(home, ".codex") },
-      stdin: `Use your image generation tool to create exactly ONE image, aspect ratio ${aspect}. Do not ask questions, do not write files, just generate it.\n\nImage prompt: ${prompt}`,
+      stdin: `Use your image generation tool to create exactly ONE image, aspect ratio ${aspect}. Do not ask questions, do not write files, just generate it.\n\n${
+        refs.length ? "CHARACTER REFERENCE: the attached image shows the main character. Wherever he appears, keep EXACTLY the same face, hairstyle, hair ornament and outfit. Do not copy the reference's pose or background.\n\n" : ""
+      }Image prompt: ${prompt}`,
     };
     const res = await runUntilImage(cmd, work, path.join(home, ".codex", "generated_images"));
     const img = await newestImage(path.join(home, ".codex", "generated_images"));

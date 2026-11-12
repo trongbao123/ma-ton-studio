@@ -17,7 +17,8 @@ import { episodeMuxArgs, SFX_GAIN, STILL_FPS, stillFrames, stillSegmentArgs, voi
 import { cleanupParallax, prepareParallax } from "./parallax";
 import { PARALLAX_BUDGET, parallaxFilterGraph, parallaxInputArgs, parallaxMotionFor, parallaxWorkDir, planParallax, type ParallaxFiles } from "./parallax-plan";
 import { freshInsights, loadTrends, seoHints } from "@/lib/trends";
-import { characterLookFor, metaRequest, scenePrompts, scenesRequest, videoMeta } from "./prompts";
+import { metaRequest, scenePrompts, scenesRequest, videoMeta } from "./prompts";
+import { heroRef } from "./hero";
 import { imageCount, isEpisodeOpener, planChapterScenes, planShots, shortSceneCount } from "./episode-plan";
 import { OPENER_CLIPS } from "./i2v-plan";
 import { ensureRelease, uploadAsset } from "./release";
@@ -362,6 +363,8 @@ export async function buildStillVideo(opts: {
   i2v?: I2vRun;
   /** AI vẽ phụ (Z-Image trên Kaggle): cảnh được giao dựng SAU, khi ảnh về; thiếu ảnh thì GPT vẽ bù. */
   zimage?: ZImageRun;
+  /** Ảnh mẫu nam chính: cảnh có `hero` vẽ kèm làm tham chiếu (giữ mặt/tóc/trang phục). */
+  heroRef?: string | null;
   on?: {
     image?: (i: number, file: string, model?: string) => Promise<void>; shots?: (n: number) => void; shot?: () => void; log?: (text: string) => void;
     /** Clip động đã tải về (hoặc lỗi → `failure`): cho phép upload clip lên kho và đóng bước. */
@@ -383,7 +386,8 @@ export async function buildStillVideo(opts: {
   const drawScene = (i: number) => {
     if (!drawn.has(i)) {
       drawn.set(i, (async () => {
-        const model = await drawImage(prompts[i].prompt, imgOf(i), { width: opts.imgW, height: opts.imgH, seed: 1000 + i * 7 });
+        const refs = opts.heroRef && prompts[i].hero ? [opts.heroRef] : undefined;
+        const model = await drawImage(prompts[i].prompt, imgOf(i), { width: opts.imgW, height: opts.imgH, seed: 1000 + i * 7, refs });
         await on?.image?.(i, imgOf(i), model);
       })());
     }
@@ -640,7 +644,9 @@ async function resetStaleScenes(dir: string, plan: string) {
 async function renderInternalChapter(o: { videoId: number; s: Series; c: Chapter; dir: string; track: Tracker; releaseId: number | null }) {
   const { videoId, s, c, dir, track, releaseId } = o;
   track.start("agent", { long: 1 });
-  const look = await cached(path.join(dir, "look-v1.json"), () => characterLookFor(s));
+  // Ngoại hình + ảnh mẫu nam chính CỐ ĐỊNH cả bộ (hero.ts) — hết cảnh nào mặt nấy.
+  const hero = await heroRef(s, dir);
+  const look = { characterLook: hero.look };
   track.model("agent", textProvider().lastModel);
   const music = await pickMusic(videoId);
   const credit = music ? `\n\n${musicCredit(music)}` : "";
@@ -682,7 +688,7 @@ async function renderInternalChapter(o: { videoId: number; s: Series; c: Chapter
   if (i2v) track.start("i2v", { long: i2v.picks.length });
   const zimage = newZImageRun({ videoId, dir, scenes, prompts: prompts.map((p) => p.prompt), exclude: i2v?.picks ?? [], log: (t) => track.log("images", t) });
   const video = await buildStillVideo({
-    dir, name: "long", narration: long, prompts, scenes, music, i2v, zimage,
+    dir, name: "long", narration: long, prompts, scenes, music, i2v, zimage, heroRef: hero.file,
     w: 1920, h: 1080, imgW: 1280, imgH: 768,
     on: {
       clips: async (clips, failure) => {
