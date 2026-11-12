@@ -34,7 +34,6 @@ export type Cue = { start: number; end: number; text: string };
  * `maxChars`: độ dài tối đa mỗi dòng phụ đề (Short dọc cần ngắn hơn để không tràn nhiều dòng).
  */
 export function cuesForChunk(chunk: string[], offset: number, duration: number, maxChars = 90, pauses: number[] = []): Cue[] {
-  const total = chunk.reduce((n, s) => n + s.length, 0) || 1;
   // Mốc hết câu: ước theo số ký tự, rồi kéo về khoảng lặng thật trong giọng đọc (nếu đo được) → phụ đề/cắt cảnh khớp giọng.
   const ends = alignSentenceEnds(chunk.map((s) => s.length), duration, pauses).map((e) => offset + e);
   let t = offset;
