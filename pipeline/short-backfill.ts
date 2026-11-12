@@ -1,5 +1,5 @@
 // Bù Short cho tập đã lên YouTube mà lúc dựng tập Short bị bỏ qua (hết quota giọng/ảnh, lỗi vẽ). Gọi từ daily.ts hoặc CLI "shorts".
-import { rm } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -9,6 +9,7 @@ import { QuotaExhaustedError, textProvider } from "@/lib/ai";
 import { escapeHtml, notify, WEB_URL } from "@/lib/notify";
 import { loadSecrets } from "@/lib/secrets";
 import { BACKFILL_PER_RUN, isYoutubeQuotaMessage, nextBackfillState, pickShortBackfill, shortPublishAt, type BackfillCandidate, type BackfillOutcome } from "@/lib/short-backfill";
+import { heroRef } from "./hero";
 import { accessToken, cleanTags, getYoutubeAuth, noAngle, YoutubeAuthError } from "@/lib/youtube";
 import { renderShort } from "./episode";
 import { pickMusic } from "./render";
@@ -64,8 +65,10 @@ async function backfillOne(v: typeof videos.$inferSelect): Promise<void> {
   }
 
   const dir = path.resolve(`.render/short-${v.id}`);
+  await mkdir(dir, { recursive: true });
+  const hero = await heroRef(row.s, dir);
   const file = await renderShort({
-    dir, voice: row.s.ttsVoice, script: meta.shortScript!, characterLook: meta.characterLook!, hook: meta.thumbnailText!, music: await pickMusic(v.id),
+    dir, voice: row.s.ttsVoice, script: meta.shortScript!, characterLook: hero.look, hook: meta.thumbnailText!, music: await pickMusic(v.id), heroRef: hero.file,
   });
 
   const auth = await getYoutubeAuth();

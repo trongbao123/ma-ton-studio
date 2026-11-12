@@ -11,6 +11,7 @@ import { buildEpisodeToc, coldOpenSceneCount, ensureEpisodeLabel, fullBadge, ful
 import { duration, ffmpeg } from "./ffmpeg";
 import { playlistUrl, seriesPlaylist } from "./playlist";
 import { scenePrompts } from "./prompts";
+import { heroRef } from "./hero";
 
 type ScenePrompt = Awaited<ReturnType<typeof scenePrompts>>[number];
 import { drawImage } from "./images";
@@ -35,6 +36,8 @@ export type EpisodeInput = {
   to: number;
   dir: string;
   videoId: number;
+  /** Ảnh mẫu nam chính (điền trong buildEpisodeContent). */
+  heroRef?: string | null;
   /** Ghi công nhạc nền gom từ các video chương. */
   credits: string[];
   previousEpisodeUrl: string | null;
@@ -104,7 +107,7 @@ async function coldOpenClips(o: EpisodeInput, dir: string, scenes: { text: strin
   if (!kaggleAuth() || process.env.I2V === "0" || !(process.env.GITHUB_ACTIONS || process.env.I2V === "1")) return new Map();
   try {
     const img = (i: number) => path.join(dir, `cold-img-${i}.jpg`);
-    await pool(prompts, 3, (p, i) => drawImage(p.prompt, img(i), { width: 1280, height: 768, seed: 1000 + i * 7 }));
+    await pool(prompts, 3, (p, i) => drawImage(p.prompt, img(i), { width: 1280, height: 768, seed: 1000 + i * 7, refs: o.heroRef && p.hero ? [o.heroRef] : undefined }));
     const motions = await motionPrompts(prompts.map((p, i) => ({ prompt: p.prompt, text: scenes[i].text })));
     const work = path.join(dir, "i2v");
     await mkdir(work, { recursive: true });
@@ -142,7 +145,7 @@ async function makeColdOpen(o: EpisodeInput, m: z.infer<typeof episodeSchema>, m
     const raw = await buildVideo({
       dir, name: "cold", narration, scenes, prompts, music, sfx,
       titleCard: card, titleCardStart: Math.max(0, narration.seconds - TITLE_CARD_SECONDS),
-      hook: m.hookText?.trim() || undefined, clips,
+      hook: m.hookText?.trim() || undefined, clips, heroRef: o.heroRef,
       w: 1920, h: 1080, imgW: 1280, imgH: 768, fontSize: 62, marginV: 70,
     });
     const file = path.join(dir, "cold-open.mp4");
@@ -193,7 +196,7 @@ export async function makeOutro(o: { dir: string; video: string; videoId: number
   }
 }
 
-export type ShortInput = { dir: string; voice: string; script: string; characterLook: string; hook: string; music: string | null };
+export type ShortInput = { dir: string; voice: string; script: string; characterLook: string; hook: string; music: string | null; heroRef?: string | null };
 
 /** Dựng Short 15–20 giây từ lời đọc; ném lỗi (kể cả QuotaExhaustedError) để người gọi quyết định. Trả đường dẫn short.mp4. */
 export async function renderShort(o: ShortInput): Promise<string> {
@@ -206,7 +209,7 @@ export async function renderShort(o: ShortInput): Promise<string> {
   const video = await buildVideo({
     dir, name: "short", narration, scenes, music: o.music,
     prompts: raw.map((p) => ({ ...p, prompt: `${p.prompt}, vertical portrait composition` })),
-    w: 1080, h: 1920, imgW: 768, imgH: 1408, fontSize: 80, marginV: 520, hook: o.hook, progressBar: true,
+    w: 1080, h: 1920, imgW: 768, imgH: 1408, fontSize: 80, marginV: 520, hook: o.hook, progressBar: true, heroRef: o.heroRef,
   });
   return video.out;
 }
@@ -214,7 +217,7 @@ export async function renderShort(o: ShortInput): Promise<string> {
 /** Short lúc dựng tập; lỗi/hết quota thì bỏ Short (tập vẫn lên, Short được bù sau bởi backfillEpisodeShorts). */
 async function makeShort(o: EpisodeInput, m: z.infer<typeof episodeSchema>, music: string | null) {
   try {
-    return await renderShort({ dir: o.dir, voice: o.s.ttsVoice, script: m.shortScript, characterLook: m.characterLook, hook: m.thumbnailText, music });
+    return await renderShort({ dir: o.dir, voice: o.s.ttsVoice, script: m.shortScript, characterLook: m.characterLook, hook: m.thumbnailText, music, heroRef: o.heroRef });
   } catch (e) {
     console.warn(`⚠ Bỏ qua Short${e instanceof QuotaExhaustedError ? " (hết quota)" : ""} — sẽ bù ở lượt daily sau:`, e instanceof Error ? e.message : e);
     return null;
@@ -253,6 +256,10 @@ export async function buildEpisodeContent(o: EpisodeInput) {
   console.log(`  Từ khóa: ${seo?.keywords.slice(0, 6).map((k) => `${k.keyword} (${k.overall})`).join(", ") ?? "không có"}`);
   const m = await writeMeta(o, seo?.text ?? null, total);
   console.log(`  Meta bởi ${textProvider().lastModel}`);
+  // Ngoại hình nam chính CỐ ĐỊNH cả bộ (hero.ts) thay cho mô tả AI viết riêng mỗi tập → mở đầu/Short/thumbnail cùng một mặt.
+  const hero = await heroRef(o.s, o.dir);
+  m.characterLook = hero.look;
+  o.heroRef = hero.file;
 
   const options = [m.title, ...(m.titleAlternatives ?? [])].filter(Boolean);
   const scores = await scoreTitles(options);

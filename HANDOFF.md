@@ -1,3 +1,51 @@
+# HANDOFF — 2026-11-12 tối (Mac → máy khác)
+
+Resume: `git pull` trên `main` — mọi thứ đã push, không có branch dở.
+
+## Hôm nay đã lên `main` (Actions chạy code từ main)
+| Việc | Commit | Ghi chú |
+|---|---|---|
+| Bỏ FLUX, ảnh chỉ GPT (codex gói Plus) | 7f4b68e | `IMAGE_ALLOW_FLUX=1` để bật lại |
+| Z-Image (Kaggle) vẽ phụ — TẮT mặc định | 9f1797b, 27676b7 | `ZIMAGE=1` bật; T4 bf16 1024×576 ~150s/ảnh; GPU để dành cho clip |
+| 20–24 clip/chương; chương mở tập 40–44 | 9b0c858, 92ff18a | |
+| Mở đầu tập: clip mọi cảnh + chữ HOOK + boom giây 0 | fdea9a5 | `coldOpenClips` trong episode.ts |
+| Vùng giữ chân 30 phút đầu tập (chương mở tập ~10s/ảnh zoom) | 06b14ce, 92ff18a | `HOOK_ZONE_SECONDS`, `isEpisodeOpener` |
+| Ảnh bị OpenAI chặn kiểm duyệt 2 lần → cảnh nền an toàn | c993964 | chương 18 từng lỗi vì việc này |
+| SFX hết "xèo xèo" (bỏ nhiễu dải cao, boom sine trượt) | 704bc38 | đo: `scripts/sfx-measure.mjs` |
+| Phụ đề/cắt cảnh khớp giọng (silencedetect) | ac247c0 | chương 19: ranh giới câu đúng khoảng lặng 10/33 → 27/33 |
+| Học kênh top: giọng ×1,2, phụ đề đốt cứng suốt chương, cắt thẳng | 296adf3 | `NARRATION_TEMPO`, `SEGMENT_SUBS=0` tắt phụ đề |
+| Góc máy ảo ~4s/shot, đẩy máy chậm | 963c875 | 14,4 cắt/phút (top 13–15); `SHOT_CUTS=0` tắt |
+| Prompt truyện "viết cho tai nghe" + dàn ý ghi chương mở tập | 6da2bff | chương đã có dàn ý vẫn theo dàn ý cũ |
+| Giữ mặt nam chính: ngoại hình + ảnh mẫu cố định cả bộ (codex `-i`) | 95004d7 + commit cuối | `hero.ts`, key `hero_ref_<seriesId>` trong app_settings; áp cả mở đầu tập, Short, thumbnail |
+| Web: perf trang chi tiết + cache hạn mức; Z-Image nguồn free riêng | 01cbb39, 39347c3 | Vercel đã có KAGGLE_* |
+
+## Nghiên cứu kênh top (10 video)
+Đối thủ gần nhất: **Não Phẳng Tu Tiên** (ảnh AI 3D donghua, 505–650k view): 13–15 cắt/phút, phụ đề đốt cứng 1 vế câu, 240–290 âm tiết/phút, cắt thẳng, mở in medias res ngôi thứ nhất, thumbnail poster (thư pháp + ruy băng "Phần x-y").
+CHƯA làm: kể ngôi thứ nhất "ta" (cần user quyết), thumbnail poster, tiêu đề 80–100 ký tự có "Phần".
+
+## Cần kiểm ở lượt render tới (chương 18 = video #32 đang queued; chương 22 chưa đọc giọng)
+- Ảnh mẫu nam chính tạo lần đầu trên Actions (máy local KHÔNG giải mã được CODEX_AUTH_JSON — SECRETS_KEY sai) → log "ảnh mẫu" + app_settings `hero_ref_4` phải có `jpg`.
+- Video phải có: phụ đề suốt chương, ~14 cắt/phút, 0 khoảng đen, giọng ~230 âm tiết/phút, nam chính 1 mặt.
+- Đo nhanh: `gh release download video-<id> -p long.mp4`, ffmpeg `select='gt(scene,0.3)'` + `blackdetect`.
+
+## Xem trước trên máy (không GPU, không tốn lượt GPT)
+`FFMPEG=<ffmpeg có drawtext+libass> pnpm exec tsx scripts/preview.mts 19 4 2600 <thư mục ảnh GPT> chapter`
+ffmpeg Homebrew 9.x thiếu drawtext/ass → dùng bản static có libass. Ảnh GPT thật: `gh release download video-26 -p "long-img-1?.jpg"`.
+
+## Giới hạn đã đo (đừng thử lại)
+- Kaggle T4 (sm75): tối đa 2 kernel GPU cùng lúc. Ngõ cụt: FramePack (branch `spike/framepack`), CogVideoX, Z-Image fp16 (đen). Nhân vật "diễn" thật cần GPU trả phí/API video — user chọn giữ free.
+- Free image API: Gemini ảnh limit 0; Cloudflare model đẹp tốn neuron; Pollinations ~2 USD/tháng.
+- Gemini TTS 10 lượt/ngày (hết thì video chờ hôm sau).
+
+## Quyết định của user
+- Giữ định dạng tập dài, free; 30 phút đầu tập phải cuốn.
+- KHÔNG dùng tài khoản Codex Pro trên máy cá nhân cho pipeline.
+- KHÔNG ghép cốt truyện 3 bộ hit (bản quyền) — chỉ học khung thể loại (HIT_FORMULA).
+
+---
+
+# Lịch sử (handoff 2026-11-11, giữ để tra)
+
 # HANDOFF — 2026-11-11 22:30 (i2v "làm như phim" + tiếng hiệu ứng + màn kết)
 
 Resume: `git pull && git checkout wip/film-mode`. Nhánh này đi trước `main`; `main` đã có hết phần i2v.

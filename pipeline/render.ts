@@ -238,6 +238,8 @@ export async function buildVideo(opts: {
   hook?: string; progressBar?: boolean;
   /** Clip động theo chỉ số ảnh (đoạn mở đầu): shot của ảnh có clip dùng clip thay ảnh tĩnh + máy quay. */
   clips?: Map<number, string>;
+  /** Ảnh mẫu nam chính (hero.ts): cảnh có `hero` vẽ kèm làm tham chiếu. */
+  heroRef?: string | null;
   /** Mặc định NORMAL. */
   quality?: Quality;
   /** Báo tiến độ cho màn flow: ảnh vẽ xong (lần đầu), tổng số shot, từng shot xong, việc ghép. */
@@ -264,7 +266,8 @@ export async function buildVideo(opts: {
   const draw = (i: number, img: string) => {
     if (!drawn.has(i)) {
       drawn.set(i, (async () => {
-        const model = await drawImage(prompts[i].prompt, img, { width: opts.imgW, height: opts.imgH, seed: 1000 + i * 7 });
+        const refs = opts.heroRef && prompts[i].hero ? [opts.heroRef] : undefined;
+        const model = await drawImage(prompts[i].prompt, img, { width: opts.imgW, height: opts.imgH, seed: 1000 + i * 7, refs });
         await on?.image?.(i, img, model);
       })());
     }
