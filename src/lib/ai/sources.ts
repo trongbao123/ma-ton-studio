@@ -23,7 +23,7 @@ export const SOURCES: Source[] = [
   { id: "gemini-free", name: "Gemini API miễn phí", brand: "gemini", job: "Tóm tắt, prompt ảnh, việc bấm từ web", billing: "free", reset: "Mỗi ngày lúc 15:00 (nửa đêm giờ Mỹ)" },
   { id: "voice", name: "Giọng đọc Gemini", brand: "gemini", job: "Đọc chương và Short", billing: "free", reset: "Mỗi ngày lúc 15:00 (nửa đêm giờ Mỹ)" },
   { id: "cloudflare", name: "Cloudflare FLUX", brand: "cloudflare", job: "Đã tắt — ảnh xấu (IMAGE_ALLOW_FLUX=1 để bật)", billing: "free", reset: "Mỗi ngày lúc 7:00" },
-  { id: "zimage", name: "Z-Image · GPU Kaggle", brand: "kaggle", job: "Vẽ ảnh phụ (~16 cảnh/chương)", billing: "free", reset: "Dùng chung 30 giờ GPU/tuần với clip động" },
+  { id: "zimage", name: "Z-Image · GPU Kaggle", brand: "kaggle", job: "Vẽ ảnh phụ — tắt mặc định (ZIMAGE=1 để bật), GPU để dành làm clip", billing: "free", reset: "Dùng chung 30 giờ GPU/tuần với clip động" },
   { id: "deepinfra", name: "DeepInfra FLUX", brand: null, job: "Đã tắt cùng Cloudflare FLUX", billing: "paid", reset: "Trả theo ảnh, không giới hạn", unitUsd: 0.0019 },
   { id: "claude-api", name: "Claude API", brand: "claude", job: "Dự phòng chữ", billing: "paid", reset: "Trả theo lượng dùng" },
   { id: "openai-api", name: "ChatGPT API", brand: "openai", job: "Dự phòng chữ", billing: "paid", reset: "Trả theo lượng dùng" },

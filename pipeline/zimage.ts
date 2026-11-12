@@ -102,9 +102,9 @@ export class ZImageRun {
   }
 }
 
-/** Bật khi có key Kaggle và đang chạy trên Actions (hoặc ZIMAGE=1); ZIMAGE=0 để tắt. */
+/** TẮT mặc định — GPU Kaggle để dành cho clip động (làm phim). ZIMAGE=1 + có key Kaggle mới bật. */
 export function newZImageRun(o: { videoId: number; dir: string; scenes: { zoom?: boolean }[]; prompts: string[]; exclude: number[]; log: (text: string) => void }) {
-  const enabled = Boolean(kaggleAuth()) && process.env.ZIMAGE !== "0" && Boolean(process.env.GITHUB_ACTIONS || process.env.ZIMAGE === "1");
+  const enabled = Boolean(kaggleAuth()) && process.env.ZIMAGE === "1";
   if (!enabled) return undefined;
   const picks = pickZImageScenes(o.scenes, o.exclude);
   return picks.length ? new ZImageRun(picks, o) : undefined;
