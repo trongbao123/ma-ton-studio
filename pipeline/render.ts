@@ -1,6 +1,6 @@
 import { enrichDescription, segmentsFromCues } from "./description";
 import { playlistUrl, seriesPlaylist } from "./playlist";
-import { access, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, copyFile, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
@@ -11,6 +11,7 @@ import { drawImage, imagesReady } from "./images";
 import { duration, escText, ffmpeg, filterPath, measureLufs, once, pool } from "./ffmpeg";
 import { Tracker } from "./progress";
 import { buildClipSegment, newI2vRun, type I2vRun } from "./i2v";
+import { newZImageRun, ZIMAGE_MODEL, type ZImageRun } from "./zimage";
 import { sfxEvents, sfxImpactEvents, sfxTrackArgs } from "./sfx";
 import { episodeMuxArgs, SFX_GAIN, STILL_FPS, stillFrames, stillSegmentArgs, voiceGainDb } from "./still";
 import { cleanupParallax, prepareParallax } from "./parallax";
@@ -309,13 +310,15 @@ export async function buildStillVideo(opts: {
   w: number; h: number; imgW: number; imgH: number;
   /** Clip động (Kaggle): cảnh được chọn dùng clip thay ảnh tĩnh; lỗi/quá hạn thì giữ ảnh tĩnh. */
   i2v?: I2vRun;
+  /** AI vẽ phụ (Z-Image trên Kaggle): cảnh được giao dựng SAU, khi ảnh về; thiếu ảnh thì GPT vẽ bù. */
+  zimage?: ZImageRun;
   on?: {
     image?: (i: number, file: string, model?: string) => Promise<void>; shots?: (n: number) => void; shot?: () => void; log?: (text: string) => void;
     /** Clip động đã tải về (hoặc lỗi → `failure`): cho phép upload clip lên kho và đóng bước. */
     clips?: (clips: Map<number, string>, failure: string | null) => Promise<void>;
   };
 }) {
-  const { dir, name, narration, prompts, scenes, w, h, on, i2v } = opts;
+  const { dir, name, narration, prompts, scenes, w, h, on, i2v, zimage } = opts;
   on?.shots?.(scenes.length);
   const out = path.join(dir, `${name}.mp4`);
   // Bản cuối đã xuất đủ dài (job trước bị huỷ ở bước sau) thì dùng lại.
@@ -336,13 +339,19 @@ export async function buildStillVideo(opts: {
     }
     return drawn.get(i)!;
   };
+  // Cảnh giao Kaggle vẽ (trừ cảnh đã có ảnh từ lần chạy trước): vòng chính bỏ qua, dựng sau khi ảnh về.
+  const deferred = new Set<number>();
+  if (zimage) {
+    for (const i of zimage.picks) if (!(await access(imgOf(i)).then(() => true, () => false))) deferred.add(i);
+    if (deferred.size) zimage.begin();
+  }
   if (i2v) {
     await pool(i2v.picks, 3, drawScene);
     i2v.begin(imgOf);
   }
   // Ảnh nào áp parallax và bao nhiêu giây: 2 phút đầu đủ đoạn; phần sau theo ngân sách (cảnh action trước, rồi vài giây đầu mỗi ảnh).
   const parallaxPlan = PARALLAX_ENABLED ? planParallax(scenes.map((sc, i) => ({ ...sc, action: prompts[i].action })), PARALLAX_BUDGET) : scenes.map(() => ({ seconds: 0 }));
-  const files = await pool(scenes, 3, async (sc, i) => {
+  const buildSegment = async (sc: (typeof scenes)[number], i: number) => {
     const img = imgOf(i);
     await drawScene(i);
     const file = path.join(dir, `${name}-seg-${String(i).padStart(3, "0")}.mp4`);
@@ -367,7 +376,22 @@ export async function buildStillVideo(opts: {
     });
     on?.shot?.();
     return file;
-  });
+  };
+  const files = await pool(scenes, 3, (sc, i) => (deferred.has(i) ? Promise.resolve("") : buildSegment(sc, i)));
+  if (zimage && deferred.size) {
+    on?.log?.("Chờ ảnh vẽ phụ từ Kaggle (Z-Image)");
+    const { images, failure } = await zimage.collect();
+    if (failure) on?.log?.(`Z-Image: ${failure} — GPT vẽ bù phần thiếu`);
+    for (const [i, file] of images) {
+      if (!deferred.has(i)) continue;
+      await copyFile(file, imgOf(i));
+      // Đánh dấu đã vẽ để buildSegment không gọi GPT; báo ảnh cho màn flow như ảnh thường.
+      drawn.set(i, on?.image?.(i, imgOf(i), ZIMAGE_MODEL) ?? Promise.resolve());
+    }
+    await pool([...deferred], 3, async (i) => {
+      files[i] = await buildSegment(scenes[i], i);
+    });
+  }
   let sfx: string | null = null;
   if (i2v) {
     // Kaggle chạy song song với dựng các đoạn tĩnh ở trên; giờ chờ nốt (có hạn) rồi thay đoạn của cảnh có clip.
@@ -577,8 +601,9 @@ async function renderInternalChapter(o: { videoId: number; s: Series; c: Chapter
   const imageModels = new Set<string>();
   const i2v = newI2vRun({ videoId, dir, track, scenes, prompts, logoCrop: LOGO_CROP });
   if (i2v) track.start("i2v", { long: i2v.picks.length });
+  const zimage = newZImageRun({ videoId, dir, scenes, prompts: prompts.map((p) => p.prompt), exclude: i2v?.picks ?? [], log: (t) => track.log("images", t) });
   const video = await buildStillVideo({
-    dir, name: "long", narration: long, prompts, scenes, music, i2v,
+    dir, name: "long", narration: long, prompts, scenes, music, i2v, zimage,
     w: 1920, h: 1080, imgW: 1280, imgH: 768,
     on: {
       clips: async (clips, failure) => {
