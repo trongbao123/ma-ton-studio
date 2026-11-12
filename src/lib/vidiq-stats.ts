@@ -23,10 +23,13 @@ const json = (text: string | null): Record<string, unknown> | null => {
 };
 
 /** Kết quả báo cáo thumbnail_ctr: số từng video, hoặc jobId nếu vidIQ đang chờ trình duyệt. */
-export function parseCtr(text: string | null): { job: string | null; rows: Record<string, VidiqVideoStat> } {
+export function parseCtr(text: string | null): { job: string | null; rows: Record<string, VidiqVideoStat>; error?: string } {
   const j = json(text);
-  if (!j) return { job: null, rows: {} };
+  if (!j) return text?.trim() ? { job: null, rows: {}, error: text.trim().slice(0, 200) } : { job: null, rows: {} };
   if (j.status === "waiting_for_browser" && typeof j.jobId === "string") return { job: j.jobId, rows: {} };
+  if (j.errorCode || (j.status && j.status !== "completed")) {
+    return { job: null, rows: {}, error: [j.errorCode ?? j.status, j.message].filter(Boolean).join(": ").slice(0, 200) };
+  }
   const list = ((j.result as { videos?: unknown[] } | undefined)?.videos ?? []) as { videoId?: string; thumbnailImpressions?: number | null; thumbnailCtrPercentage?: number | null }[];
   const rows: Record<string, VidiqVideoStat> = {};
   for (const v of list) {
@@ -104,7 +107,7 @@ export async function syncVidiqStats(now = Date.now(), force = false): Promise<s
             }).catch((e) => (console.warn("vidIQ analytics lỗi:", e instanceof Error ? e.message : e), null)),
           )
         : {};
-      const note = ctr.job ? "CTR đang chờ trình duyệt có extension vidIQ mở — lượt sau đọc tiếp" : null;
+      const note = ctr.job ? "CTR đang chờ trình duyệt có extension vidIQ mở — lượt sau đọc tiếp" : ctr.error ? `CTR: ${ctr.error}` : null;
       await save({ at: due ? now : state.at, pendingJob: ctr.job, videos: mergeStats(state.videos, ctr.rows, analytics), note });
       return `vidIQ: CTR ${Object.keys(ctr.rows).length} video, analytics ${Object.keys(analytics).length} video${note ? ` (${note})` : ""}`;
     } finally {

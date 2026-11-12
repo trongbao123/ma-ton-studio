@@ -38,3 +38,14 @@ describe("lịch lấy số", () => {
     });
   });
 });
+
+describe("vidIQ không trả số CTR", () => {
+  it("ghi lại lý do (vd extension chưa kết nối) thay vì im lặng", () => {
+    const r = parseCtr(JSON.stringify({ status: "failed", errorCode: "extension_not_connected", message: "Connect the vidIQ extension" }));
+    expect(r.rows).toEqual({});
+    expect(r.error).toBe("extension_not_connected: Connect the vidIQ extension");
+  });
+  it("chữ không phải JSON thì lý do là chính đoạn chữ đó", () => {
+    expect(parseCtr("Tool not available").error).toBe("Tool not available");
+  });
+});
