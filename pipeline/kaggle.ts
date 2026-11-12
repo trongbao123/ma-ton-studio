@@ -77,8 +77,8 @@ export async function deleteDataset(auth: KaggleAuth, slug: string): Promise<voi
   await api(auth, `dataset/${auth.username}/${slug}/delete`, { method: "POST", body: "{}" }).catch(() => {});
 }
 
-export async function pushKernel(auth: KaggleAuth, o: { slug: string; title: string; datasetSlug: string }): Promise<string> {
-  const script = await readFile(SCRIPT_PATH, "utf8");
+export async function pushKernel(auth: KaggleAuth, o: { slug: string; title: string; datasetSlug: string; scriptPath?: string }): Promise<string> {
+  const script = await readFile(o.scriptPath ?? SCRIPT_PATH, "utf8");
   const body = kernelPushBody({ username: auth.username, slug: o.slug, title: o.title, script, datasetSlug: o.datasetSlug, timeoutSeconds: KERNEL_TIMEOUT_MINUTES * 60 });
   const res = await api<{ error?: string; ref?: string; invalidDatasetSources?: string[] }>(auth, "kernels/push", { method: "POST", body: JSON.stringify(body) });
   if (res.error || res.invalidDatasetSources?.length) throw new Error(`Push kernel lỗi: ${res.error ?? `dataset không hợp lệ ${res.invalidDatasetSources}`}`);
