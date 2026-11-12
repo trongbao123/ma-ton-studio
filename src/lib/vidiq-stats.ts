@@ -74,7 +74,22 @@ async function save(value: VidiqStats) {
   await db().insert(appSettings).values({ key: VIDIQ_STATS_KEY, value }).onConflictDoUpdate({ target: appSettings.key, set: { value, updatedAt: new Date() } });
 }
 
-/** Lấy số nếu tới hạn (hoặc còn job chờ trình duyệt). Trả 1 dòng mô tả cho log cron. Không ném lỗi. */
+/** Đánh dấu "CTR chưa đọc được, lượt cron sau gửi báo cáo mới" (khác jobId: job thì đọc tiếp). */
+export const RETRY = "retry";
+
+/** Việc CTR còn treo cho lượt sau: jobId đang chờ trình duyệt, RETRY nếu chưa đọc được, null nếu xong. */
+export function nextPending(ctr: ReturnType<typeof parseCtr>) {
+  if (ctr.job) return ctr.job;
+  return Object.keys(ctr.rows).length ? null : RETRY;
+}
+
+/** Tham số gọi báo cáo CTR: đọc tiếp job đang chờ, hoặc gửi báo cáo mới 28 ngày gần nhất. */
+export function ctrArgs(pending: string | null, ids: string[], now: number) {
+  if (pending && pending !== RETRY) return { jobId: pending };
+  return { report: "thumbnail_ctr", channelId: CHANNEL_ID, videoIds: ids, startDate: day(now - 28 * 86400_000), endDate: day(now + 86400_000) };
+}
+
+/** Lấy số nếu tới hạn (hoặc CTR còn treo). Trả 1 dòng mô tả cho log cron. Không ném lỗi. */
 export async function syncVidiqStats(now = Date.now(), force = false): Promise<string> {
   try {
     const { loadSecrets } = await import("./secrets");
@@ -90,10 +105,7 @@ export async function syncVidiqStats(now = Date.now(), force = false): Promise<s
     const { callVidiq, closeVidiq } = await import("../../pipeline/vidiq");
     try {
       const ctr = parseCtr(
-        await callVidiq(
-          "vidiq_channel_analytics_extended",
-          state.pendingJob ? { jobId: state.pendingJob } : { report: "thumbnail_ctr", channelId: CHANNEL_ID, videoIds: ids, startDate: day(now - 28 * 86400_000), endDate: day(now + 86400_000) },
-        ).catch((e) => (console.warn("vidIQ CTR lỗi:", e instanceof Error ? e.message : e), null)),
+        await callVidiq("vidiq_channel_analytics_extended", ctrArgs(state.pendingJob, ids, now)).catch((e) => (console.warn("vidIQ CTR lỗi:", e instanceof Error ? e.message : e), null)),
       );
       const analytics = due
         ? parseAnalytics(
@@ -108,7 +120,7 @@ export async function syncVidiqStats(now = Date.now(), force = false): Promise<s
           )
         : {};
       const note = ctr.job ? "CTR đang chờ trình duyệt có extension vidIQ mở — lượt sau đọc tiếp" : ctr.error ? `CTR: ${ctr.error}` : null;
-      await save({ at: due ? now : state.at, pendingJob: ctr.job, videos: mergeStats(state.videos, ctr.rows, analytics), note });
+      await save({ at: due ? now : state.at, pendingJob: nextPending(ctr), videos: mergeStats(state.videos, ctr.rows, analytics), note });
       return `vidIQ: CTR ${Object.keys(ctr.rows).length} video, analytics ${Object.keys(analytics).length} video${note ? ` (${note})` : ""}`;
     } finally {
       await closeVidiq().catch(() => {});

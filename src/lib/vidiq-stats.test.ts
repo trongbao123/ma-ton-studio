@@ -49,3 +49,18 @@ describe("vidIQ không trả số CTR", () => {
     expect(parseCtr("Tool not available").error).toBe("Tool not available");
   });
 });
+
+describe("thử lại CTR", () => {
+  it("CTR chưa đọc được (trình duyệt tắt) thì lượt cron sau thử lại, không chờ 3 ngày", async () => {
+    const { nextPending, RETRY } = await import("./vidiq-stats");
+    expect(nextPending({ job: null, rows: {}, error: "extension_not_connected" })).toBe(RETRY);
+    expect(nextPending({ job: "xj_1", rows: {} })).toBe("xj_1");
+    expect(nextPending({ job: null, rows: { a: { ctr: 1 } } })).toBeNull();
+  });
+  it("ctrArgs: thử lại thì gửi báo cáo mới, còn job thì đọc tiếp job", async () => {
+    const { ctrArgs, RETRY } = await import("./vidiq-stats");
+    expect(ctrArgs("xj_1", ["a"], 0)).toEqual({ jobId: "xj_1" });
+    expect(ctrArgs(RETRY, ["a"], 0)).toMatchObject({ report: "thumbnail_ctr", videoIds: ["a"] });
+    expect(ctrArgs(null, ["a"], 0)).toMatchObject({ report: "thumbnail_ctr" });
+  });
+});
