@@ -63,3 +63,28 @@ export async function setPublishAt(videoId: number, at: Date) {
   await db().update(videos).set({ publishAt: at }).where(eq(videos.id, videoId));
   console.log(`  #${videoId} → ${at.toISOString()}`);
 }
+
+/**
+ * Giữ lại tập chưa đạt chuẩn: video + Short về riêng tư, bỏ lịch công chiếu, tập đánh dấu lỗi "chờ dựng lại"
+ * → các chương được giải phóng để ghép lại (compile tự thử lại). Không xoá gì trên YouTube.
+ */
+export async function holdEpisodes(ids: number[]) {
+  const { loadSecrets } = await import("@/lib/secrets");
+  const { holdYoutubeVideo } = await import("@/lib/youtube");
+  const { eq } = await import("drizzle-orm");
+  await loadSecrets(true);
+  for (const id of ids) {
+    const [v] = await db().select().from(videos).where(eq(videos.id, id));
+    if (!v) continue;
+    if (v.publishAt && v.publishAt < new Date()) {
+      console.log(`  #${id} đã công chiếu — bỏ qua`);
+      continue;
+    }
+    for (const yt of [v.youtubeVideoId, v.youtubeShortId]) if (yt) await holdYoutubeVideo(yt);
+    await db()
+      .update(videos)
+      .set({ publishAt: null, status: "failed", error: "Giữ lại (riêng tư): chưa đạt chuẩn — chờ dựng lại có đoạn mở đầu + nhịp mới", updatedAt: new Date() })
+      .where(eq(videos.id, id));
+    console.log(`  #${id} → riêng tư, bỏ lịch (${v.youtubeVideoId ?? "-"} / Short ${v.youtubeShortId ?? "-"})`);
+  }
+}
