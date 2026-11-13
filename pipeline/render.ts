@@ -582,7 +582,7 @@ async function ambientBed(dir: string) {
 }
 
 /** `badge`: nhãn đỏ góc trên, vd "CHƯƠNG 12" hoặc "TRỌN BỘ CHƯƠNG 1–5" (bản gộp). */
-export async function thumbnail(dir: string, prompt: string, text: string, badge: string, variant: { name?: string; seed?: number; refs?: string[] } = {}) {
+export async function thumbnail(dir: string, prompt: string, text: string, badge: string, variant: { name?: string; seed?: number; refs?: string[]; poster?: { title: string; ribbon: string } } = {}) {
   const name = variant.name ?? "thumbnail";
   const img = path.join(dir, `${name}-src.jpg`);
   await drawImage(`${prompt}, YouTube thumbnail, 16:9`, img, { width: 1280, height: 720, seed: variant.seed ?? 42, refs: variant.refs });
@@ -591,15 +591,42 @@ export async function thumbnail(dir: string, prompt: string, text: string, badge
   const lines = splitThumbText(text.toUpperCase());
   const size = thumbFontSize(lines);
   const lineH = Math.round(size * 1.18);
-  const draw = BURN_TEXT
-    ? `,drawbox=x=0:y=0:w=iw*0.58:h=ih:color=black@0.35:t=fill,` +
+  const draw = !BURN_TEXT
+    ? ""
+    : variant.poster
+      ? posterFilter(lines, size, badge, variant.poster)
+      : `,drawbox=x=0:y=0:w=iw*0.58:h=ih:color=black@0.35:t=fill,` +
       lines
         .map((l, i) => `drawtext=fontfile=${filterPath(FONT)}:text='${escText(l)}':fontsize=${size}:fontcolor=${i ? "white" : "#FFD23F"}:borderw=${Math.round(size / 10)}:bordercolor=black:x=40:y=(h/2)-${Math.round((lineH * lines.length) / 2)}+${i * lineH}`)
         .join(",") +
-      `,drawtext=fontfile=${filterPath(FONT)}:text='${escText(badge)}':fontsize=60:fontcolor=white:box=1:boxcolor=#B91C1C:boxborderw=18:x=40:y=40`
-    : "";
+      `,drawtext=fontfile=${filterPath(FONT)}:text='${escText(badge)}':fontsize=60:fontcolor=white:box=1:boxcolor=#B91C1C:boxborderw=18:x=40:y=40`;
   await ffmpeg(["-i", img, "-vf", `${LOGO_CROP}scale=1280:720:force_original_aspect_ratio=increase:flags=lanczos,crop=1280:720:(iw-ow)/2:(ih-oh)*0.3,eq=contrast=1.12:saturation=1.25,unsharp=5:5:0.8${draw}`, "-q:v", "2", out]);
   return out;
+}
+
+const TITLE_FONT = path.join(FONT_DIR, "PlayfairDisplay-Black.ttf");
+
+/** Tên truyện ngắn trên poster: phần trước dấu ":" (vd "Thần Ma Táng Cổ: Thôn Thiên Lục" → "THẦN MA TÁNG CỔ"). */
+export const posterTitle = (seriesTitle: string) => seriesTitle.split(":")[0].trim().toUpperCase();
+
+/**
+ * Thumbnail kiểu POSTER như kênh top (Não Phẳng Tu Tiên): dải đỏ sẫm nhạt dần bên trái, tên truyện vàng kim (Playfair Black),
+ * chữ hook to ở giữa, ruy băng đỏ "TẬP x · CHƯƠNG a–b" + nhãn thời lượng phía dưới. Nhân vật nằm nửa phải (prompt thumbnail đã chừa trái).
+ */
+export function posterFilter(lines: string[], size: number, badge: string, poster: { title: string; ribbon: string }) {
+  const hook = Math.round(size * 0.82);
+  const lineH = Math.round(hook * 1.16);
+  const top = 250;
+  // Lớp đỏ sẫm chuyển màu MƯỢT (geq theo X): đặc ~85% ở mép trái, nhạt dần hết ở ~62% khung — vạch bậc thang drawbox trông rẻ.
+  const shade = `split[pb][pg];[pg]format=rgba,geq=r=42:g=6:b=6:a='217*clip(1-(X/W-0.26)/0.36\\,0\\,1)'[pgr];[pb][pgr]overlay=format=auto`;
+  const title = `drawtext=fontfile=${filterPath(TITLE_FONT)}:text='${escText(poster.title)}':fontsize=74:fontcolor=#F6C744:borderw=5:bordercolor=0x3A1A00:shadowcolor=black@0.7:shadowx=4:shadowy=4:x=44:y=70`;
+  const rule = `drawbox=x=44:y=182:w=420:h=5:color=#F6C744@0.9:t=fill`;
+  const hooks = lines
+    .map((l, i) => `drawtext=fontfile=${filterPath(FONT)}:text='${escText(l)}':fontsize=${hook}:fontcolor=${i ? "white" : "#FFD23F"}:borderw=${Math.round(hook / 9)}:bordercolor=black:x=44:y=${top + i * lineH}`)
+    .join(",");
+  const ribbon = `drawtext=fontfile=${filterPath(FONT)}:text='${escText(poster.ribbon)}':fontsize=40:fontcolor=white:box=1:boxcolor=#B91C1C@0.95:boxborderw=16:x=44:y=h-110`;
+  const tag = `drawtext=fontfile=${filterPath(FONT)}:text='${escText(badge)}':fontsize=40:fontcolor=black:box=1:boxcolor=#F6C744:boxborderw=16:x=w-tw-60:y=h-110`;
+  return `,${shade},${title},${rule},${hooks},${ribbon},${tag}`;
 }
 
 /** Cỡ chữ thumbnail: to nhất có thể (tối đa 170) nhưng dòng dài nhất vẫn nằm trong ~56% khung rộng 1280 (chữ Việt hoa rộng ~0,62 cỡ chữ). */

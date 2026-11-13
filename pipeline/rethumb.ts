@@ -12,7 +12,7 @@ import { accessToken, getYoutubeAuth } from "@/lib/youtube";
 import { Tracker } from "./progress";
 import { heroRef } from "./hero";
 import { ensureRelease, uploadAsset } from "./release";
-import { thumbnail } from "./render";
+import { posterTitle, thumbnail } from "./render";
 import { THUMB_IDS, THUMB_STYLE, thumbBadge, thumbFile, type ThumbId } from "./thumb-plan";
 import { chooseThumbnail, setThumbnail } from "./youtube";
 import { NO_NAME_RULE } from "@/lib/meta-rules";
@@ -49,11 +49,14 @@ export async function rethumb(videoId: number) {
     task: "meta",
   });
   const badge = thumbBadge({ compiled: Boolean(v.meta.compilation), seconds: v.durationSec ?? 0, chapterNumber: c.number });
+  // Tập: thumbnail kiểu poster (tên truyện vàng kim + ruy băng tập/chương) như kênh top.
+  const comp = v.meta.compilation;
+  const poster = comp?.episode ? { title: posterTitle(s.title), ribbon: `TẬP ${comp.episodeNo ?? ""} · CHƯƠNG ${comp.from}–${comp.to}`.replace("TẬP  · ", "") } : undefined;
   const releaseId = await ensureRelease(videoId, false);
   const thumbs: { id: ThumbId; file: string }[] = [];
   for (const [i, id] of THUMB_IDS.entries()) {
     try {
-      const file = await thumbnail(dir, `${m[id]}, ${THUMB_STYLE[id]}, ${look}`, m.thumbnailText, badge, { name: thumbFile(id).replace(/\.jpg$/, ""), seed: 77 + i * 101, refs: hero.file ? [hero.file] : undefined });
+      const file = await thumbnail(dir, `${m[id]}, ${THUMB_STYLE[id]}, ${look}`, m.thumbnailText, badge, { name: thumbFile(id).replace(/\.jpg$/, ""), seed: 77 + i * 101, refs: hero.file ? [hero.file] : undefined, poster });
       await uploadAsset(videoId, releaseId, file, thumbFile(id));
       thumbs.push({ id, file });
       console.log(`  ✔ Thumbnail ${id.toUpperCase()}`);

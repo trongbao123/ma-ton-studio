@@ -20,7 +20,7 @@ import { kaggleAuth, runI2v } from "./kaggle";
 import { pool } from "./ffmpeg";
 import { outroArgs } from "./outro";
 import { sfxCutEvents, sfxTrackArgs, type SfxEvent } from "./sfx";
-import { BURN_TEXT, buildVideo, FONT, LOGO_CROP, musicCredit, narrate, pickMusic, splitScenes, thumbnail } from "./render";
+import { BURN_TEXT, buildVideo, FONT, LOGO_CROP, musicCredit, narrate, pickMusic, posterTitle, splitScenes, thumbnail } from "./render";
 import { PUBLISH_HOUR_UTC } from "./schedule";
 import { conformArgs } from "./still";
 import { DEFAULT_THUMB, THUMB_IDS, THUMB_STYLE, thumbFile, type ThumbId } from "./thumb-plan";
@@ -236,7 +236,7 @@ async function makeThumbnails(o: EpisodeInput, m: z.infer<typeof episodeSchema>,
   const out: ThumbVariant[] = [];
   for (const [i, id] of THUMB_IDS.entries()) {
     try {
-      const file = await thumbnail(o.dir, `${prompts[id] || m.thumbnailPrompt}, ${THUMB_STYLE[id]}, ${m.characterLook}`, m.thumbnailText, badge, { name: thumbFile(id).replace(/\.jpg$/, ""), seed: 42 + i * 101, refs: o.heroRef ? [o.heroRef] : undefined });
+      const file = await thumbnail(o.dir, `${prompts[id] || m.thumbnailPrompt}, ${THUMB_STYLE[id]}, ${m.characterLook}`, m.thumbnailText, badge, { name: thumbFile(id).replace(/\.jpg$/, ""), seed: 42 + i * 101, refs: o.heroRef ? [o.heroRef] : undefined, poster: { title: posterTitle(o.s.title), ribbon: `TẬP ${o.episodeNo} · CHƯƠNG ${o.from}–${o.to}` } });
       out.push({ id, file });
     } catch (e) {
       console.warn(`⚠ Thumbnail ${id.toUpperCase()} lỗi:`, e instanceof Error ? e.message : e);
