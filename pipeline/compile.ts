@@ -4,7 +4,7 @@ import { execFile } from "node:child_process";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { and, eq, gte, inArray, isNotNull } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { chapters, series, videos, type Series, type VideoMeta } from "@/db/schema";
@@ -19,6 +19,7 @@ import { buildEpisodeContent, makeOutro, type ThumbVariant } from "./episode";
 import { episodeBacklog } from "./episode-plan";
 import { nextPublishSlot } from "./schedule";
 import { ensureRelease, uploadAsset } from "./release";
+import { judgeQc, measureQc, QcFailedError } from "./qc";
 import { autoPublishEligible, publishToYoutube } from "./youtube";
 import { chooseTitle, closeVidiq, generateTitles, genreSeeds, keywordResearch, scoreTitles } from "./vidiq";
 import { HOOK_TITLE_RULE, NO_NAME_RULE } from "@/lib/meta-rules";
@@ -99,6 +100,29 @@ export async function compileState(s: Series, now = new Date()) {
   const legacy = rows.filter((r) => !r.meta?.compilation && (r.status === "ready" || r.status === "published") && r.assets["long.mp4"] && !used.has(r.id));
   const candidates: CompileCandidate[] = (episode ? episodeBacklog(rows, now).ready : legacy).map((r) => ({ chapterId: r.chapterId, number: r.number, title: r.title, videoId: r.id }));
   return { active, recentFailed, batch: pickBatch(candidates, episode ? s.episodeChapters : COMPILE_SIZE), rows, episodeNo };
+}
+
+/**
+ * Không đạt chuẩn → ném QcFailedError (tập bị đánh lỗi, compile thử lại sau, KHÔNG upload). Lỗi gần như luôn nằm ở chương
+ * MỞ TẬP (10 phút đầu): chương đó chưa từng render lại theo cách mới thì đánh cờ forceRerender + xếp hàng → lượt daily sau
+ * render lại (nhịp nhanh, góc máy, phụ đề) rồi ghép lại. Đã render lại mà vẫn trượt thì chỉ báo, không lặp vô hạn.
+ */
+async function qcGate(file: string, opener: Row) {
+  console.log("● Kiểm chất lượng 10 phút đầu");
+  const r = judgeQc(await measureQc(file));
+  const m = r.metrics;
+  console.log(`  ${(m.cuts / Math.max(1, m.seconds) * 60).toFixed(1)} cắt/phút · đứng im dài nhất ${m.longestFreeze.toFixed(1)}s · màn đen ${m.longestBlack.toFixed(1)}s · ${m.lufs ?? "?"} LUFS`);
+  if (r.ok) return;
+  const again = !opener.meta?.qcRerendered;
+  if (again) {
+    await db()
+      .update(videos)
+      .set({ status: "queued", error: null, updatedAt: new Date(), meta: sql`coalesce(${videos.meta}, '{}'::jsonb) || '{"forceRerender": true, "qcRerendered": true}'::jsonb` })
+      .where(eq(videos.id, opener.id));
+  }
+  throw new QcFailedError(
+    `Tập chưa đạt chuẩn (${r.problems.join("; ")}) — ${again ? `xếp hàng render lại chương mở tập #${opener.id}` : `chương #${opener.id} đã render lại mà vẫn trượt, cần xem tay`}`,
+  );
 }
 
 /** Ghép các file: cùng thông số thì concat copy (nhanh, không mất chất lượng), khác thì re-encode như render. */
@@ -262,6 +286,9 @@ export async function compileSeries(seriesId: number) {
     }
     const metaFile = path.join(dir, "youtube.txt");
     await writeFile(metaFile, `${meta.title}\n\n${meta.description}\n\nTags: ${meta.tags.join(", ")}\n`);
+
+    // Kiểm chất lượng 10 phút đầu so với kênh top TRƯỚC KHI upload (qc.ts). Chỉ áp cho tập (định dạng đang đăng).
+    if (episode) await qcGate(out, batch[0]);
 
     console.log("● Upload lên kho");
     const releaseId = await ensureRelease(videoId, true);

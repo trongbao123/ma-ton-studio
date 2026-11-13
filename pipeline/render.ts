@@ -2,7 +2,7 @@ import { enrichDescription, segmentsFromCues } from "./description";
 import { playlistUrl, seriesPlaylist } from "./playlist";
 import { access, copyFile, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { chapters, series, videos, type Chapter, type Series, type VideoMeta } from "@/db/schema";
 import { QuotaExhaustedError, textProvider } from "@/lib/ai";
@@ -771,7 +771,14 @@ export async function renderVideo(videoId: number) {
     // Video đã lên YouTube thì giữ release cũ (thay dần từng file); chưa thì làm sạch để xem tiến độ từ đầu.
     const releaseId = await ensureRelease(videoId, !v.youtubeVideoId);
     if (s.episodeChapters > 0) {
+      // QC đòi render lại từ đầu: bỏ video/đoạn/kế hoạch cảnh cũ (giọng TTS cache vẫn dùng lại) rồi dựng theo cách mới.
+      if (v.meta?.forceRerender) {
+        console.log("  Render lại từ đầu (bộ kiểm chất lượng yêu cầu)");
+        for (const f of await readdir(dir).catch(() => [] as string[])) if (/^long(\.mp4|-seg|-segments|-shot|-group|-silent)|^scene-plan\.txt$/.test(f)) await rm(path.join(dir, f), { force: true });
+      }
       await renderInternalChapter({ videoId, s, c, dir, track, releaseId });
+      // Chỉ trộn cờ vào meta hiện tại (render vừa ghi meta mới — đừng ghi đè bằng bản đọc lúc đầu).
+      if (v.meta?.forceRerender) await db().update(videos).set({ meta: sql`${videos.meta} || '{"forceRerender": false}'::jsonb` }).where(eq(videos.id, videoId));
       return;
     }
     const wantShort = s.makeShort;
