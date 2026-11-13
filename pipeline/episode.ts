@@ -128,7 +128,7 @@ async function coldOpenClips(o: EpisodeInput, dir: string, scenes: { text: strin
 }
 
 async function makeColdOpen(o: EpisodeInput, m: z.infer<typeof episodeSchema>, music: string | null): Promise<{ file: string; seconds: number } | null> {
-  if (!m.coldOpen?.trim()) return null;
+  if (!m.coldOpen?.trim()) throw new Error("Meta tập thiếu lời đoạn mở đầu (coldOpen)");
   try {
     const dir = path.join(o.dir, "cold");
     await mkdir(dir, { recursive: true });
@@ -153,16 +153,14 @@ async function makeColdOpen(o: EpisodeInput, m: z.infer<typeof episodeSchema>, m
     await ffmpeg(conformArgs({ input: raw.out, out: file, w: 1920, h: 1080 }));
     const seconds = await duration(file);
     // YouTube bỏ cả mục lục nếu có mốc < 10 giây.
-    if (seconds < 10) {
-      console.warn(`⚠ Đoạn mở đầu chỉ ${seconds.toFixed(1)} giây — bỏ.`);
-      return null;
-    }
+    if (seconds < 10) throw new Error(`đoạn mở đầu chỉ ${seconds.toFixed(1)} giây (YouTube bỏ mục lục nếu mốc < 10 giây)`);
     console.log(`  Mở đầu cao trào: ${seconds.toFixed(1)} giây, ${scenes.length} ảnh`);
     return { file, seconds };
   } catch (e) {
-    if (e instanceof QuotaExhaustedError) console.warn("⚠ Bỏ qua đoạn mở đầu (hết quota)");
-    else console.warn("⚠ Bỏ qua đoạn mở đầu:", e instanceof Error ? e.message : e);
-    return null;
+    // KHÔNG đăng tập thiếu đoạn mở đầu: tập 25/29/30/39/40 bị bỏ mở đầu vì hết quota → mở bằng 1 ảnh đứng im ~60 giây,
+    // mất 83% người xem trong phút đầu. Ném lỗi để cả tập chờ lượt sau (compile thử lại sau 5 giờ, chương giữ nguyên).
+    if (e instanceof QuotaExhaustedError) throw new QuotaExhaustedError(`Đoạn mở đầu tập hết quota — tập chờ lượt sau: ${e.message}`);
+    throw new Error(`Không dựng được đoạn mở đầu tập: ${e instanceof Error ? e.message : e}`);
   }
 }
 
