@@ -13,6 +13,7 @@ import { commentOnPublished } from "./comment";
 import { compileSeries, compileState, seriesRows, withStaleAsFailed } from "./compile";
 import { chaptersToWrite, episodeBacklog, vnDay, writtenMarker } from "./episode-plan";
 import { renderVideo } from "./render";
+import { pool } from "./ffmpeg";
 
 /** Số chương chờ duyệt tối đa khi không tự duyệt — tránh viết dồn khi người dùng chưa kịp đọc. */
 const MAX_PENDING = 3;
@@ -61,19 +62,29 @@ async function requeueStuck() {
   for (const v of stuck) console.log(`↻ Video #${v.id} kẹt "đang render" — xếp hàng render lại`);
 }
 
+/** Số chương render song song (runner trên Mac: 10 nhân/8GB Docker; mỗi chương đã chạy 3 luồng ffmpeg). */
+const RENDER_PARALLEL = Math.max(1, Number(process.env.RENDER_PARALLEL ?? 2));
+
 async function renderQueue(failures: string[]) {
   await requeueStuck();
-  for (const v of await db().select().from(videos).where(eq(videos.status, "queued")).orderBy(asc(videos.id))) {
+  const queue = await db().select().from(videos).where(eq(videos.status, "queued")).orderBy(asc(videos.id));
+  let quota: string | null = null;
+  // Nhiều luồng: RENDER_PARALLEL chương cùng lúc; hết quota thì không bắt đầu chương mới (chương đang chạy tự dừng ở quota).
+  await pool(queue, RENDER_PARALLEL, async (v) => {
+    if (quota) return;
     try {
       await renderVideo(v.id);
     } catch (e) {
       if (e instanceof QuotaExhaustedError) {
-        console.log(`⏸ ${e.message}`);
-        await notifyQuotaOnce(e.message);
+        quota = e.message;
         return;
       }
       failures.push(`video #${v.id}: ${e instanceof Error ? e.message : e}`);
     }
+  });
+  if (quota) {
+    console.log(`⏸ ${quota}`);
+    await notifyQuotaOnce(quota);
   }
 }
 
