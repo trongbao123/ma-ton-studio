@@ -1062,6 +1062,8 @@ if (process.argv[1]?.endsWith("render.ts")) {
     if (arg === "vidiq-stats") return import("@/lib/vidiq-stats").then((x) => x.syncVidiqStats(Date.now(), true)).then(console.log);
     if (arg.startsWith("thumbs:")) return import("./rethumb").then((x) => x.rethumb(Number(arg.slice(7))));
     if (arg === "trends") return import("./trends").then((x) => x.scanTrends());
+    if (arg.startsWith("newseries:")) return import("./new-series").then((x) => x.newSeries(arg.slice(10).split(",")));
+    if (arg === "series") return import("./new-series").then((x) => x.listSeries());
     if (arg.startsWith("compile:")) return import("./compile").then((x) => x.compileSeries(Number(arg.slice(8))));
     return renderVideo(Number(arg));
   };

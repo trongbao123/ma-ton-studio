@@ -46,6 +46,9 @@ for i in $(seq 1 "$N"); do
     # config.sh, run.sh, env.sh, run-helper.sh.template, safe_sleep.sh… (mọi file ở gốc, trừ script này).
     find "$HOME_DIR" -maxdepth 1 -type f ! -name start.sh ! -name '.*' -exec cp {} "$d"/ \;
   fi
+  # Máy tắt ngang (không chạy được cleanup) thì cấu hình cũ còn lại → config.sh từ chối "already configured"
+  # và container lặp khởi động lại mãi. Xoá cấu hình cục bộ; đăng ký trên GitHub đã có --replace lo.
+  rm -f "$d"/.runner "$d"/.credentials "$d"/.credentials_rsaparams
   (cd "$d" && ./config.sh --unattended --replace --url "https://github.com/$REPO" --token "$reg" \
     --name "$NAME-$i" --labels "$LABEL" --work _work >/dev/null)
   echo "✔ Runner $NAME-$i (nhãn $LABEL) đã đăng ký"
