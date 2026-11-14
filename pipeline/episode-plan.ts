@@ -212,3 +212,34 @@ export function planShots(start: number, end: number, sentenceEnds: number[], ta
   const edges = [start, ...cuts, end];
   return edges.slice(0, -1).map((s, k) => ({ start: s, end: edges[k + 1], framing: SHOT_FRAMINGS[k % SHOT_FRAMINGS.length] }));
 }
+
+export type RotationEpisode = { id: number; seriesId: number; episodeNo: number };
+
+/**
+ * Xếp lịch xoay vòng các tập chưa công chiếu: mỗi ngày (từ `firstDay`, giờ cố định) đăng tập kế tiếp của bộ kế tiếp theo vòng `order`,
+ * nối tiếp sau bộ vừa đăng `lastSeries`. Bộ hết tập thì bỏ qua lượt (không để ngày trống). Trong một bộ giữ đúng thứ tự tập.
+ * `blockedDays` (yyyy-mm-dd): ngày đã có video khác chiếm. Trả về id → giờ đăng.
+ */
+export function planRotation(o: { episodes: RotationEpisode[]; order: number[]; lastSeries: number | null; firstDay: Date; blockedDays?: Set<string> }) {
+  const order = [...new Set([...o.order, ...o.episodes.map((e) => e.seriesId)])];
+  const queues = new Map(order.map((s) => [s, o.episodes.filter((e) => e.seriesId === s).sort((a, b) => a.episodeNo - b.episodeNo || a.id - b.id)]));
+  let ptr = o.lastSeries == null ? 0 : (order.indexOf(o.lastSeries) + 1) % Math.max(1, order.length);
+  const out = new Map<number, Date>();
+  const day = new Date(o.firstDay);
+  let left = o.episodes.length;
+  while (left > 0) {
+    if (!o.blockedDays?.has(day.toISOString().slice(0, 10))) {
+      for (let k = 0; k < order.length; k++) {
+        const i = (ptr + k) % order.length;
+        const ep = queues.get(order[i])!.shift();
+        if (!ep) continue;
+        out.set(ep.id, new Date(day));
+        ptr = (i + 1) % order.length;
+        left--;
+        break;
+      }
+    }
+    day.setUTCDate(day.getUTCDate() + 1);
+  }
+  return out;
+}

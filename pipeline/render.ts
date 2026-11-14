@@ -1030,6 +1030,7 @@ if (process.argv[1]?.endsWith("render.ts")) {
       const [, id, iso] = arg.match(/^setpublish:(\d+):(.+)$/) ?? [];
       return import("./schedule").then((x) => x.setPublishAt(Number(id), new Date(iso)));
     }
+    if (arg === "rotate") return import("./schedule").then((x) => x.rotateSchedule());
     if (arg === "reschedule") return import("./schedule").then((x) => x.rescheduleToPublishHour());
     if (arg.startsWith("playlist:")) return import("./playlist").then((x) => x.backfillPlaylist(Number(arg.slice(9))));
     if (arg.startsWith("clips")) {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { pickBatch } from "./compile-plan";
-import { buildEpisodeToc, chaptersToWrite, coldOpenSceneCount, fullBadge, HOOK_ZONE_SECONDS, isEpisodeOpener, planChapterScenes, planShots, SHOT_FRAMINGS, shortSceneCount, ensureEpisodeLabel, episodeBacklog, fullLabel, imageCount, occupiesDailySlot, pickPublishSlot, tocText, vnDay } from "./episode-plan";
+import { buildEpisodeToc, chaptersToWrite, coldOpenSceneCount, fullBadge, HOOK_ZONE_SECONDS, isEpisodeOpener, planChapterScenes, planShots, SHOT_FRAMINGS, shortSceneCount, ensureEpisodeLabel, episodeBacklog, fullLabel, imageCount, occupiesDailySlot, pickPublishSlot, planRotation, tocText, vnDay } from "./episode-plan";
 
 const row = (id: number, number: number, o: Partial<Parameters<typeof episodeBacklog>[0][number]> = {}) => ({
   id, number, status: "ready" as const, youtubeVideoId: null, publishAt: null, hasLong: true, meta: null, ...o,
@@ -223,5 +223,26 @@ describe("planShots — góc máy ảo", () => {
   it("không tạo shot ngắn hơn 1,5s", () => {
     const got = planShots(0, 8, [0.6, 7.6]);
     for (const s of got) expect(s.end - s.start).toBeGreaterThanOrEqual(1.5);
+  });
+});
+
+describe("planRotation — xoay vòng mỗi ngày một bộ", () => {
+  const d0 = new Date("2026-11-15T08:00:00Z");
+  const iso = (m: Map<number, Date>, id: number) => m.get(id)!.toISOString().slice(0, 10);
+  const ep = (id: number, seriesId: number, episodeNo: number) => ({ id, seriesId, episodeNo });
+  it("đủ kho: 4 → 5 → 6 → 7 → 4, tiếp sau bộ vừa đăng", () => {
+    const m = planRotation({ episodes: [ep(1, 4, 11), ep(2, 4, 12), ep(3, 5, 1), ep(4, 6, 1), ep(5, 7, 1)], order: [4, 5, 6, 7], lastSeries: 7, firstDay: d0 });
+    expect([1, 3, 4, 5, 2].map((id) => iso(m, id))).toEqual(["2026-11-15", "2026-11-16", "2026-11-17", "2026-11-18", "2026-11-19"]);
+  });
+  it("bộ chưa có tập thì nhường lượt — không để ngày trống", () => {
+    const m = planRotation({ episodes: [ep(1, 4, 11), ep(2, 4, 12), ep(3, 6, 1)], order: [4, 5, 6, 7], lastSeries: 4, firstDay: d0 });
+    expect(iso(m, 3)).toBe("2026-11-15");
+    expect(iso(m, 1)).toBe("2026-11-16");
+    expect(iso(m, 2)).toBe("2026-11-17");
+  });
+  it("giữ thứ tự tập trong bộ dù id lộn xộn, né ngày bị chiếm", () => {
+    const m = planRotation({ episodes: [ep(9, 4, 13), ep(2, 4, 12)], order: [4], lastSeries: null, firstDay: d0, blockedDays: new Set(["2026-11-15"]) });
+    expect(iso(m, 2)).toBe("2026-11-16");
+    expect(iso(m, 9)).toBe("2026-11-17");
   });
 });

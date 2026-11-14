@@ -88,3 +88,45 @@ export async function holdEpisodes(ids: number[]) {
     console.log(`  #${id} → riêng tư, bỏ lịch (${v.youtubeVideoId ?? "-"} / Short ${v.youtubeShortId ?? "-"})`);
   }
 }
+
+/**
+ * Job "ngâm rồi lên lịch": mọi tập còn riêng tư (chưa tới giờ công chiếu) được xếp lại theo vòng xoay các bộ đang chạy
+ * (mỗi ngày một bộ, bộ chưa có tập thì nhường lượt). Chỉ đổi những tập bị lệch; tập sắp chiếu trong < 2 giờ giữ nguyên.
+ * Chạy cuối mỗi lượt daily (sau khi dựng tập mới) và CLI "rotate".
+ */
+export async function rotateSchedule(now = new Date()) {
+  const { loadSecrets } = await import("@/lib/secrets");
+  const { updateYoutubePublishAt } = await import("@/lib/youtube");
+  const { asc, eq, gt, lt, desc } = await import("drizzle-orm");
+  const { series } = await import("@/db/schema");
+  const { planRotation } = await import("./episode-plan");
+  await loadSecrets(true);
+  const firstDay = pickPublishSlot([], PUBLISH_HOUR_UTC, now);
+  const rows = await db()
+    .select({ id: videos.id, at: videos.publishAt, yt: videos.youtubeVideoId, short: videos.youtubeShortId, meta: videos.meta })
+    .from(videos)
+    .where(and(isNotNull(videos.publishAt), gte(videos.publishAt, firstDay)));
+  const episodes = rows.filter((r) => r.meta?.compilation?.episode && !r.meta.shortClip);
+  if (!episodes.length) return;
+  // Ngày đã có video khác (video chương lẻ…) chiếm thì không xếp tập vào.
+  const blockedDays = new Set(rows.filter((r) => occupiesDailySlot(r.meta) && !r.meta?.compilation?.episode).map((r) => r.at!.toISOString().slice(0, 10)));
+  const order = (
+    await db().select({ id: series.id }).from(series).where(and(eq(series.autopilot, true), gt(series.episodeChapters, 0))).orderBy(asc(series.id))
+  ).map((s) => s.id);
+  // Bộ vừa lên sóng gần nhất → lượt kế tiếp là bộ sau nó.
+  const [last] = (
+    await db().select({ at: videos.publishAt, meta: videos.meta }).from(videos).where(and(isNotNull(videos.publishAt), lt(videos.publishAt, firstDay))).orderBy(desc(videos.publishAt)).limit(20)
+  ).filter((r) => r.meta?.compilation?.episode);
+  const plan = planRotation({
+    episodes: episodes.map((e) => ({ id: e.id, seriesId: e.meta!.compilation!.seriesId, episodeNo: e.meta!.compilation!.episodeNo ?? e.meta!.compilation!.to })),
+    order, lastSeries: last?.meta?.compilation?.seriesId ?? null, firstDay, blockedDays,
+  });
+  for (const e of episodes) {
+    const at = plan.get(e.id)!;
+    if (at.getTime() === e.at!.getTime()) continue;
+    if (e.yt) await updateYoutubePublishAt(e.yt, at);
+    if (e.short) await updateYoutubePublishAt(e.short, new Date(at.getTime() + 2 * 3600_000)).catch((err) => console.warn(`  Short #${e.id}:`, err instanceof Error ? err.message : err));
+    await db().update(videos).set({ publishAt: at }).where(eq(videos.id, e.id));
+    console.log(`  🔁 tập #${e.id} (bộ #${e.meta!.compilation!.seriesId}, tập ${e.meta!.compilation!.episodeNo ?? "?"}) → ${at.toISOString()}`);
+  }
+}

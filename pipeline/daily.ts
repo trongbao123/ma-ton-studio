@@ -235,6 +235,8 @@ async function main() {
   // Chương vừa viết thì render luôn trong lượt này (không đợi 6 tiếng sau).
   if (quotaLeft) await renderQueue(failures);
   await dispatchCompilations().catch((e) => failures.push(`bản gộp: ${e instanceof Error ? e.message : e}`));
+  // Tập dựng xong lên YouTube ở chế độ riêng tư + lịch; xếp lại lịch xoay vòng các bộ (mỗi ngày một bộ). Lỗi không làm hỏng job.
+  await import("./schedule").then((x) => x.rotateSchedule()).catch((e) => console.warn("⚠ Xếp lịch xoay vòng lỗi:", e instanceof Error ? e.message : e));
   // Tập đã lên mà thiếu Short (lúc dựng hết quota/lỗi) thì bù ở đây; lỗi không làm hỏng job.
   await import("./short-backfill").then((x) => x.backfillEpisodeShorts()).catch((e) => console.warn("⚠ Bù Short lỗi:", e instanceof Error ? e.message : e));
   // Short cắt cảnh (tối đa 2/ngày) chỉ làm sau khi đã ưu tiên render chương cho tập kế tiếp; hết quota thì dừng, lượt sau làm tiếp.
