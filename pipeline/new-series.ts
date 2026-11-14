@@ -6,6 +6,7 @@ import { chapters, series } from "@/db/schema";
 import { loadSecrets } from "@/lib/secrets";
 import { draftBible } from "@/lib/story/service";
 import { seriesSettingsFrom, tropeOf } from "@/lib/story/tropes";
+import { FIRST_PERSON_STYLE } from "@/lib/story/prompts";
 import { escapeHtml, notify } from "@/lib/notify";
 
 export async function newSeries(keys: string[]) {
@@ -23,9 +24,23 @@ export async function newSeries(keys: string[]) {
     }
     console.log(`▶ ${t.genre}: viết story bible…`);
     const draft = await draftBible(t.idea, t.genre);
-    const [row] = await db().insert(series).values({ ...draft, genre: t.genre, ...seriesSettingsFrom(template) }).returning({ id: series.id });
+    const [row] = await db()
+      .insert(series)
+      .values({ ...draft, style: FIRST_PERSON_STYLE, genre: t.genre, ...seriesSettingsFrom(template) })
+      .returning({ id: series.id });
     console.log(`✔ #${row.id} ${draft.title}\n  ${draft.premise}`);
     await notify(`🆕 Bộ mới <b>${escapeHtml(draft.title)}</b> (${escapeHtml(t.genre)}) — #${row.id}, đã bật tự chạy.\n${escapeHtml(draft.premise.slice(0, 400))}`);
+  }
+  await listSeries();
+}
+
+/** Đổi ngôi kể sang "Ta" (CLI: render.ts "pov:5,6,7"). Chương đã viết giữ nguyên — chỉ áp từ chương viết sau. */
+export async function firstPerson(ids: number[]) {
+  await loadSecrets(true);
+  for (const id of ids) {
+    const done = await db().select({ n: sql<number>`count(*)::int` }).from(chapters).where(sql`${chapters.seriesId} = ${id} and ${chapters.content} <> ''`);
+    await db().update(series).set({ style: FIRST_PERSON_STYLE }).where(eq(series.id, id));
+    console.log(`✔ #${id}: kể ngôi "Ta"${done[0]?.n ? ` (đã có ${done[0].n} chương viết theo ngôi cũ — giữ nguyên)` : ""}`);
   }
   await listSeries();
 }

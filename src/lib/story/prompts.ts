@@ -21,6 +21,30 @@ export const OPENING_RULES = [
   "Câu tả cảnh ≤ 15 từ, tối đa 1 hình ảnh so sánh (\"như…\") mỗi đoạn; không chồng tính từ.",
 ];
 
+/** Ngôi kể "Ta" — mọi video top cùng ngách (Tiểu Hồ Review 50–390k view/video, Panda Tu Tiên 1M) đều kể ngôi thứ nhất. */
+export const FIRST_PERSON_STYLE =
+  "Kể ngôi thứ nhất: người kể chính là nhân vật chính, xưng 'ta' (lời kể và suy nghĩ đều là 'ta'); người khác gọi hắn bằng tên, 'ngươi', 'tiểu tử'… " +
+  "Nhịp nhanh như kể lại truyện: được nhảy thời gian ngắn ('Ba ngày sau…') để tới ngay điểm sướng kế tiếp; thoại nhiều, câu ngắn; " +
+  "lời bàn tay vàng/hệ thống là câu ngắn theo khuôn cố định, có con số.";
+
+/**
+ * Tập 1 (~1 giờ đầu) quyết định người nghe có theo bộ không. Khuôn hook rút từ phụ đề 4 phút đầu của 4 video top
+ * Tiểu Hồ Review (252–387k view): thoại cao trào → "Ta tên X" + tiền truyện nén mỗi câu một biến cố → hạn chót + chênh lệch sức mạnh bằng số.
+ */
+export const FIRST_HOUR_CHAPTERS = 3;
+export const FIRST_HOUR_RULES = [
+  "Chương 1 mở bằng 1–3 câu THOẠI ngay giữa cao trào (kẻ thù đòi giao người, cáo buộc phản bội, đám đông chế giễu kèm con số) — không lời kể, không tả cảnh.",
+  "Ngay sau đó (≈ giây 15–30): 'Ta tên …' rồi kể NÉN tiền truyện ở ngôi 'ta', 6–10 câu, MỖI CÂU MỘT BIẾN CỐ (bị vứt bỏ, bị sỉ nhục là phế vật, bị phản bội, bàn tay vàng kích hoạt, trả thù lần đầu…) — một phút đi hết một arc bi kịch, không giải thích thế giới.",
+  "Quay về hiện tại bằng một HẠN CHÓT + chênh lệch sức mạnh nói bằng con số ('ba canh giờ', 'đại đế với chuẩn đế cách một trời một vực', '10 vạn năm'), rồi hé một tia hy vọng gắn với bàn tay vàng.",
+  "Trong chương 1 phải có một màn vả mặt TRỌN VẸN kẻ sỉ nhục ban đầu trước đám đông — không để dành sang chương sau.",
+  "Chương 1–3: cứ khoảng 400 từ (≈ 3 phút nghe) một điểm sướng: phần thưởng có con số, vả mặt, lật kèo, lộ sức mạnh khiến đám đông chết lặng.",
+  "Thông tin thế giới (cảnh giới, thế lực) chỉ lộ qua thoại hoặc hành động, mỗi lần 1 câu; cấm đoạn văn giới thiệu bối cảnh.",
+  "Mỗi chương đối thủ mạnh hơn một bậc; cuối chương 3 (hết tập 1) lộ một bí ẩn lớn về bàn tay vàng hoặc thân thế để người nghe bấm tập 2.",
+];
+
+const firstHourBlock = (numbers: number[]) =>
+  numbers.length ? `TẬP 1 (chương ${numbers.join(", ")}) — 1 GIỜ ĐẦU PHẢI CUỐN, bắt buộc:\n- ${FIRST_HOUR_RULES.join("\n- ")}` : "";
+
 const WRITER_SYSTEM = `Bạn là tác giả truyện audio tiên hiệp tiếng Việt top đầu YouTube, lối kể của dòng truyện "hệ thống" / sảng văn hàng trăm nghìn lượt nghe: nhân vật chính có một bàn tay vàng đặc biệt được nói ra ngay từ đầu, phần thưởng đo được (con số tăng, kỹ năng mở khoá, vật phẩm) xuất hiện đều đặn, thoại nhiều, câu ngắn, xung đột liên tục, vả mặt kẻ khinh thường trước đám đông.
 Truyện dùng để đọc thành audio trên YouTube, người nghe bỏ đi nếu chán 10 giây, nên:
 MỞ ĐẦU CHƯƠNG (300 từ đầu quyết định người nghe ở lại):
@@ -115,7 +139,8 @@ export function outlinePrompt(s: Series, previous: Chapter[], count: number, tre
 Lên dàn ý cho ${count} chương tiếp theo, từ chương ${startAt} đến chương ${startAt + count - 1}.
 Mỗi chương đẩy truyện tiến lên, có ít nhất một điểm sướng (thăng cấp, vả mặt, đoạt bảo, thắng trận); cứ 3–5 chương có một bước ngoặt lớn hoặc trận đấu cao trào. Ghi rõ trong dàn ý cấp bậc nhân vật chính thay đổi thế nào.
 Mỗi chương phải có ÍT NHẤT MỘT cảnh đánh nhau hoặc đối đầu căng thẳng có thắng thua rõ (ghi rõ trong dàn ý ai đánh ai, ai thắng, cái giá); KHÔNG có chương nào chỉ gồm nói chuyện, suy nghĩ hay di chuyển. Diễn biến đi thẳng về phía trước, không mở chương bằng hồi tưởng.
-${openerLine(s, startAt, count)}${
+${openerLine(s, startAt, count)}
+${firstHourBlock(Array.from({ length: count }, (_, i) => startAt + i).filter((n) => n <= FIRST_HOUR_CHAPTERS))}${
       trends ? `\n\nXu hướng khán giả hiện tại (từ YouTube) — lồng ghép tự nhiên, không phá mạch truyện:\n${trends}` : ""
     }`,
   };
@@ -152,7 +177,9 @@ Cách viết (bắt buộc):
 - Thoại chiếm khoảng 40% cả chương, hơn một nửa ở 300 từ đầu: ngắn, mỗi nhân vật một giọng riêng; xen suy nghĩ nội tâm của nhân vật chính.
 - Ít nhất 1 khoảnh khắc cảm xúc thật (mất mát, ân tình, nhớ người thân) và 1 khoảnh khắc "sướng" (lật kèo, vả mặt, đột phá) có phản ứng đám đông.
 - Không lặp từ/câu, không sáo rỗng ("khóe miệng nhếch lên", "hít một ngụm khí lạnh") quá 1 lần mỗi chương.
-- Câu cuối là cliffhanger cụ thể (một mối nguy, một bí mật vừa lộ), không kết bằng câu tổng kết.`,
+- Câu cuối là cliffhanger cụ thể (một mối nguy, một bí mật vừa lộ), không kết bằng câu tổng kết.${
+      chapter.number <= FIRST_HOUR_CHAPTERS ? `\n\n${firstHourBlock([chapter.number])}` : ""
+    }`,
   };
 }
 

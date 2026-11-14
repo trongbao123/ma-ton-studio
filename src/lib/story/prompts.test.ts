@@ -140,3 +140,23 @@ describe("luật mở đầu kiểu truyện hệ thống", () => {
     expect(openerLine({ episodeChapters: 3 }, 1, 3)).toMatch(/câu đầu tiên/i);
   });
 });
+
+describe("tập 1 — 1 giờ đầu phải cuốn (khuôn hook Tiểu Hồ Review)", () => {
+  it("chương 1–3 nhận đủ luật tập 1, chương 4 thì không", async () => {
+    const { FIRST_HOUR_RULES } = await import("./prompts");
+    const p1 = chapterPrompt(s, [], ch(1)).prompt;
+    expect(p1).toContain("1 GIỜ ĐẦU PHẢI CUỐN");
+    for (const r of FIRST_HOUR_RULES) expect(p1).toContain(r);
+    expect(chapterPrompt(s, [], ch(3)).prompt).toContain("Ta tên");
+    expect(chapterPrompt(s, [], ch(4)).prompt).not.toContain("1 GIỜ ĐẦU PHẢI CUỐN");
+  });
+  it("dàn ý chỉ liệt kê chương thuộc tập 1", () => {
+    expect(outlinePrompt(s, [], 10).prompt).toContain("TẬP 1 (chương 1, 2, 3)");
+    expect(outlinePrompt(s, [ch(1), ch(2)], 10).prompt).toContain("TẬP 1 (chương 3)");
+    expect(outlinePrompt(s, [ch(1), ch(2), ch(3)], 10).prompt).not.toContain("TẬP 1 (");
+  });
+  it("ngôi 'Ta' đi vào system prompt khi bộ dùng FIRST_PERSON_STYLE", async () => {
+    const { FIRST_PERSON_STYLE } = await import("./prompts");
+    expect(chapterPrompt({ ...s, style: FIRST_PERSON_STYLE }, [], ch(5)).system).toContain("xưng 'ta'");
+  });
+});
