@@ -4,10 +4,11 @@ import type { VideoMeta } from "@/db/schema";
 import { formatTimestamp } from "./compile-plan";
 
 /**
- * Kho tập chờ đăng (đã dựng + hẹn giờ sẵn trên YouTube): 4 tập = 4 ngày dự phòng — GitHub bỏ lượt cron,
- * hết quota AI/ảnh một ngày thì lịch đăng vẫn đều. Đủ kho thì thôi viết, không đốt quota AI và phút Actions.
+ * Trần kho tập chờ đăng MỖI BỘ (đã dựng + lên YouTube riêng tư, lịch do rotateSchedule xếp xoay vòng).
+ * Chủ kênh muốn sản xuất liên tục, không chờ lịch đăng → trần cao (30 tập ≈ 4 tháng lịch khi 4 bộ xoay vòng);
+ * nút cổ chai thật là quota giọng đọc/ảnh, hết thì tự dừng. Ghi đè: biến môi trường EPISODE_BUFFER.
  */
-export const EPISODE_BUFFER = 4;
+export const EPISODE_BUFFER = Math.max(1, Number(process.env.EPISODE_BUFFER ?? 30));
 /** Kho chưa đủ thì được viết tới gấp mấy lần chỉ tiêu ngày để bù (6 chương/ngày ≈ 136 ảnh, vừa quota ảnh free). */
 export const CATCH_UP_FACTOR = 2;
 /** Ảnh tối đa mỗi video chương: 3 chương/ngày × 30 ≈ 90 ảnh, vừa quota ảnh free. */

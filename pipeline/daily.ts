@@ -65,6 +65,9 @@ async function requeueStuck() {
 /** Số chương render song song (runner trên Mac: 10 nhân/8GB Docker; mỗi chương đã chạy 3 luồng ffmpeg). */
 const RENDER_PARALLEL = Math.max(1, Number(process.env.RENDER_PARALLEL ?? 2));
 
+/** Tiến độ của lượt này: có làm được gì và có đụng trần quota không — quyết định có tự gọi lượt kế tiếp (chainNextRun). */
+const run = { rendered: 0, written: 0, quotaHit: false };
+
 async function renderQueue(failures: string[]) {
   await requeueStuck();
   const queue = await db().select().from(videos).where(eq(videos.status, "queued")).orderBy(asc(videos.id));
@@ -74,9 +77,11 @@ async function renderQueue(failures: string[]) {
     if (quota) return;
     try {
       await renderVideo(v.id);
+      run.rendered++;
     } catch (e) {
       if (e instanceof QuotaExhaustedError) {
         quota = e.message;
+        run.quotaHit = true;
         return;
       }
       failures.push(`video #${v.id}: ${e instanceof Error ? e.message : e}`);
@@ -132,6 +137,27 @@ async function dispatchCompilations() {
       if (mark) await notify(`⚠️ Đủ chương để gộp <b>${escapeHtml(s.title)}</b> (${range}) nhưng không tự kích hoạt được: ${escapeHtml(msg)}\nChạy tay: render.yml với video_id = compile:${s.id}`);
     }
   }
+}
+
+/**
+ * Sản xuất liên tục: lượt này làm được việc (viết/render) mà chưa đụng trần quota thì tự gọi lượt daily kế tiếp ngay
+ * (concurrency của workflow xếp nó chạy sau lượt này) — không chờ cron 12 tiếng. Hết quota / không còn việc thì thôi, cron đánh thức lại.
+ * Tắt: biến repo DAILY_CHAIN = 0.
+ */
+async function chainNextRun() {
+  const token = process.env.GH_TOKEN;
+  const repo = process.env.GITHUB_REPOSITORY;
+  if (!token || !repo || process.env.DAILY_CHAIN === "0") return;
+  if (run.quotaHit || run.rendered + run.written === 0) {
+    console.log(`⏹ Không gọi lượt kế tiếp (${run.quotaHit ? "đã hết quota" : "không còn việc"}) — chờ cron`);
+    return;
+  }
+  const res = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/daily.yml/dispatches`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" },
+    body: JSON.stringify({ ref: "main" }),
+  }).catch((e) => ({ ok: false, status: String(e) }) as const);
+  console.log(res.ok ? `⏭ Đã gọi lượt daily kế tiếp (lượt này: ${run.written} chương viết, ${run.rendered} video render)` : `⚠ Không gọi được lượt kế tiếp: ${res.status}`);
 }
 
 /** Quét xu hướng nếu hôm nay chưa quét (cần vidIQ). */
@@ -203,6 +229,7 @@ async function main() {
           break;
         }
         const ch = await writeNext(s.id, s.targetWords);
+        run.written++;
         // Marker ngay sau khi viết xong (không đếm theo chapters.updatedAt vì sửa SEO/duyệt cũng đổi nó).
         await db()
           .insert(aiUsage)
@@ -221,6 +248,7 @@ async function main() {
       if (e instanceof QuotaExhaustedError) {
         console.log(`⏸ ${e.message}`);
         quotaLeft = false;
+        run.quotaHit = true;
         await notifyQuotaOnce(e.message);
       } else {
         console.error(e);
@@ -244,6 +272,7 @@ async function main() {
   // có thể kéo dài nhiều ngày (giọng free), chặn hẳn thì không bao giờ có Short cắt cảnh.
   const morning = new Date().getUTCHours() < 6;
   if (quotaLeft) await import("./clips").then((x) => x.makeSceneClips({ afterRenders: morning })).catch((e) => console.warn("⚠ Short cắt cảnh lỗi:", e instanceof Error ? e.message : e));
+  await chainNextRun();
   if (failures.length) {
     await notify(`❌ <b>Job tự động có lỗi</b>\n${escapeHtml(failures.join("\n").slice(0, 800))}`);
     console.error("Lỗi:\n" + failures.join("\n"));
