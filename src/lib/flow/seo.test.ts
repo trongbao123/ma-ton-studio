@@ -18,12 +18,11 @@ describe("scoreTitle", () => {
   it("thiếu từ khóa và in hoa toàn bộ thì thấp", () => {
     expect(scoreTitle("SÁT Ý BÙNG NỔ KINH HOÀNG", kw, tags).score).toBeLessThan(40);
   });
-  it("có điểm vidIQ thì lấy mức thấp hơn giữa vidIQ và checklist", () => {
+  it("có điểm vidIQ thì lấy điểm vidIQ — tiêu đề giật tít không cần từ khóa", () => {
     const good = "Thần Ma Táng Cổ - Chương 2: Lâm Uyên rèn đúc quyết sinh";
     expect(scoreTitle(good, kw, tags, 73.4)).toMatchObject({ score: 73, source: "vidiq" });
-    // vidIQ chấm 91 (hấp dẫn) nhưng thiếu từ khóa tìm kiếm thật → không được 91.
-    const s = scoreTitle("Lâm Uyên thức tỉnh Ám Ảnh Ma Đồng: Cuộc săn sinh tử bắt đầu!", kw, tags, 91, ["truyện tu tiên"]);
-    expect(s.score).toBeLessThan(70);
+    const s = scoreTitle("Thanh niên quá ngông đòi cân cả lò team địch và cái kết ăn hành ngập mồm", kw, tags, 95, ["truyện tu tiên"]);
+    expect(s.score).toBe(95);
     expect(s.checks.length).toBeGreaterThan(0);
   });
 });

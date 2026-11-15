@@ -9,10 +9,10 @@ export const AI_NOTE = "(Nội dung có sử dụng AI hỗ trợ giọng đọc
 export { SEO_TARGET };
 
 export const fixSchema = z.object({
-  title: z.string().describe(`Tiêu đề YouTube 50–70 ký tự: có 1 từ khóa tìm kiếm thật (vd 'Truyện tu tiên'), móc câu gây tò mò, tên truyện, số chương; không in hoa toàn bộ; ${HOOK_TITLE_RULE}`),
+  title: z.string().describe(`Tiêu đề YouTube 40–75 ký tự; ${HOOK_TITLE_RULE}`),
   description: z.string().describe("Mô tả 220–300 từ, 3–4 đoạn, câu đầu có tên truyện, nhắc tên truyện ≥ 2 lần, lồng ≥ 1/3 số tag, kêu gọi đăng ký/like, dòng cuối 3–5 hashtag"),
   tags: z.array(z.string()).describe("15–25 tag tiếng Việt CÓ DẤU (không viết kiểu 'truyen tu tien'), ≥ 5 tag lấy nguyên văn từ khóa vidIQ, tổng 300–480 ký tự, tag đầu là từ khóa tìm kiếm điểm cao nhất, có tên truyện, có tag ngắn và tag dài, không trùng"),
-  shortTitle: z.string().describe(`Tiêu đề Short ≤ 60 ký tự, có tên truyện, có #shorts; ${HOOK_TITLE_RULE}`),
+  shortTitle: z.string().describe(`Tiêu đề Short ≤ 60 ký tự, có #shorts; ${HOOK_TITLE_RULE}`),
   shortDescription: z.string().describe("1–2 câu có tên truyện, mời xem video full, kèm #shorts"),
 });
 
@@ -32,9 +32,8 @@ export async function optimizeMeta(meta: VideoMeta, ctx: Ctx, opts: { target?: n
   const start = bestScore;
   let used = 0;
   // Tiêu đề do vidIQ chấm/chọn (điểm CTR thật) thì khoá lại, chỉ sửa mô tả / tag / Short.
-  // Tiêu đề thiếu từ khóa người ta tìm thật thì không khoá — để AI gắn từ khóa vào.
-  const search = meta.seo?.keywords?.slice(0, 8) ?? [];
-  const lockTitle = meta.seo?.titleScore != null && (!search.length || scoreMeta(meta, ctx.seriesTitle).title.checks.every((c) => !c.text.startsWith("Thiếu từ khóa tìm kiếm thật")));
+  // Tiêu đề giật tít cố ý KHÔNG có từ khóa (15/11/2026) — không mở khoá để AI chèn từ khóa vào nữa.
+  const lockTitle = meta.seo?.titleScore != null;
   for (let i = 0; i < (opts.rounds ?? 3) && bestScore < target; i++) {
     used++;
     const scores = scoreMeta(best, ctx.seriesTitle);

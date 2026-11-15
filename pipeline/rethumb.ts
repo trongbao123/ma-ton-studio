@@ -12,16 +12,16 @@ import { accessToken, getYoutubeAuth } from "@/lib/youtube";
 import { Tracker } from "./progress";
 import { heroRef } from "./hero";
 import { ensureRelease, uploadAsset } from "./release";
-import { posterTitle, thumbnail } from "./render";
-import { THUMB_IDS, THUMB_STYLE, thumbBadge, thumbFile, type ThumbId } from "./thumb-plan";
+import { thumbnail } from "./render";
+import { THUMB_IDS, THUMB_STYLE, thumbFile, type ThumbId } from "./thumb-plan";
 import { chooseThumbnail, setThumbnail } from "./youtube";
-import { NO_NAME_RULE } from "@/lib/meta-rules";
+import { NO_NAME_RULE, THUMB_TEXT_RULE } from "@/lib/meta-rules";
 
 export const rethumbSchema = z.object({
-  thumbnailText: z.string().describe(`Chữ trên thumbnail 2–3 từ IN HOA, cảm xúc mạnh; ${NO_NAME_RULE}`),
-  a: z.string().describe("English prompt A: EXTREME close-up of the main character's face filling 50-60% of the frame at the most dramatic moment, extreme expression, glowing eyes, face on the RIGHT half, plain dark LEFT third for text, very high contrast"),
-  b: z.string().describe("English prompt B: the main character FACING the monster / main enemy of this video in a tense standoff, both clearly visible, high contrast, simple background, left third darker for text"),
-  c: z.string().describe("English prompt C: the main character at the moment of an explosive power surge (energy blast, lightning, shockwave), fierce expression, high contrast, saturated colors, left third darker for text"),
+  thumbnailText: z.string().describe(`Chữ trên thumbnail: ${THUMB_TEXT_RULE}; ${NO_NAME_RULE}`),
+  a: z.string().describe("English prompt A: EXTREME close-up of the main character's face filling 50-60% of the frame at the most dramatic moment, extreme expression, glowing eyes, face on the LEFT half, plain dark RIGHT 40% for big text, very high contrast"),
+  b: z.string().describe("English prompt B: the main character FACING the monster / main enemy of this video in a tense standoff, both clearly visible, high contrast, simple background, right 40% darker and simpler for big text"),
+  c: z.string().describe("English prompt C: the main character at the moment of an explosive power surge (energy blast, lightning, shockwave), fierce expression, high contrast, saturated colors, right 40% darker and simpler for big text"),
 });
 
 export async function rethumb(videoId: number) {
@@ -48,15 +48,11 @@ export async function rethumb(videoId: number) {
     tier: "cheap",
     task: "meta",
   });
-  const badge = thumbBadge({ compiled: Boolean(v.meta.compilation), seconds: v.durationSec ?? 0, chapterNumber: c.number });
-  // Tập: thumbnail kiểu poster (tên truyện vàng kim + ruy băng tập/chương) như kênh top.
-  const comp = v.meta.compilation;
-  const poster = comp?.episode ? { title: posterTitle(s.title), ribbon: `TẬP ${comp.episodeNo ?? ""} · CHƯƠNG ${comp.from}–${comp.to}`.replace("TẬP  · ", "") } : undefined;
   const releaseId = await ensureRelease(videoId, false);
   const thumbs: { id: ThumbId; file: string }[] = [];
   for (const [i, id] of THUMB_IDS.entries()) {
     try {
-      const file = await thumbnail(dir, `${m[id]}, ${THUMB_STYLE[id]}, ${look}`, m.thumbnailText, badge, { name: thumbFile(id).replace(/\.jpg$/, ""), seed: 77 + i * 101, refs: hero.file ? [hero.file] : undefined, poster });
+      const file = await thumbnail(dir, `${m[id]}, ${THUMB_STYLE[id]}, ${look}`, m.thumbnailText, { name: thumbFile(id).replace(/\.jpg$/, ""), seed: 77 + i * 101, refs: hero.file ? [hero.file] : undefined });
       await uploadAsset(videoId, releaseId, file, thumbFile(id));
       thumbs.push({ id, file });
       console.log(`  ✔ Thumbnail ${id.toUpperCase()}`);

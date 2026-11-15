@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { pickBatch } from "./compile-plan";
-import { buildEpisodeToc, chaptersToWrite, coldOpenSceneCount, fullBadge, HOOK_ZONE_SECONDS, isEpisodeOpener, planChapterScenes, planShots, SHOT_FRAMINGS, shortSceneCount, ensureEpisodeLabel, episodeBacklog, fullLabel, imageCount, occupiesDailySlot, pickPublishSlot, planRotation, tocText, vnDay } from "./episode-plan";
+import { buildEpisodeToc, chaptersToWrite, coldOpenSceneCount, fullBadge, HOOK_ZONE_SECONDS, isEpisodeOpener, planChapterScenes, planShots, SHOT_FRAMINGS, shortSceneCount, episodeBacklog, fullLabel, imageCount, occupiesDailySlot, pickPublishSlot, planRotation, tocText, vnDay } from "./episode-plan";
 
 const row = (id: number, number: number, o: Partial<Parameters<typeof episodeBacklog>[0][number]> = {}) => ({
   id, number, status: "ready" as const, youtubeVideoId: null, publishAt: null, hasLong: true, meta: null, ...o,
@@ -177,13 +177,6 @@ describe("tiêu đề tập", () => {
   it("fullLabel làm tròn giờ", () => {
     expect(fullLabel(7300)).toBe("FULL 2H");
     expect(fullLabel(1000)).toBe("FULL 1H");
-  });
-  it("giữ tiêu đề đã có nhãn", () => expect(ensureEpisodeLabel("Hắn nuốt thần ma | FULL 2H", { episodeNo: 1, from: 4, to: 6 })).toBe("Hắn nuốt thần ma | FULL 2H"));
-  it("thiếu nhãn thì nối Tập N (Chương X–Y)", () => expect(ensureEpisodeLabel("Hắn nuốt thần ma", { episodeNo: 2, from: 7, to: 9 })).toBe("Hắn nuốt thần ma | Tập 2 (Chương 7–9)"));
-  it("tiêu đề quá dài vẫn ≤ 100 ký tự và còn nhãn", () => {
-    const out = ensureEpisodeLabel("x".repeat(150), { episodeNo: 2, from: 7, to: 9 });
-    expect(out.length).toBeLessThanOrEqual(100);
-    expect(out.endsWith("Tập 2 (Chương 7–9)")).toBe(true);
   });
 });
 

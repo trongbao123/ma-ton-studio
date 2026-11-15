@@ -21,8 +21,8 @@ import { nextPublishSlot } from "./schedule";
 import { ensureRelease, uploadAsset } from "./release";
 import { judgeQc, measureQc, QcFailedError } from "./qc";
 import { autoPublishEligible, publishToYoutube } from "./youtube";
-import { chooseTitle, closeVidiq, generateTitles, genreSeeds, keywordResearch, scoreTitles } from "./vidiq";
-import { HOOK_TITLE_RULE, NO_NAME_RULE } from "@/lib/meta-rules";
+import { chooseTitle, closeVidiq, genreSeeds, keywordResearch, scoreTitles } from "./vidiq";
+import { HOOK_TITLE_RULE, NO_NAME_RULE, THUMB_TEXT_RULE } from "@/lib/meta-rules";
 
 const run = promisify(execFile);
 
@@ -34,12 +34,12 @@ const RETRY_AFTER_HOURS = 24;
 const EPISODE_RETRY_AFTER_HOURS = 5;
 
 export const metaSchema = z.object({
-  title: z.string().describe(`Tiêu đề YouTube 50–70 ký tự: mở đầu bằng 1 từ khóa tìm kiếm thật điểm cao (vd 'Truyện tu tiên'), có tên truyện ngắn, 'Chương X–Y', gợi ý 'trọn bộ' / 'nghe liền mạch'; viết hoa chữ cái đầu như câu thường (KHÔNG in hoa toàn bộ); ${HOOK_TITLE_RULE}`),
-  titleAlternatives: z.array(z.string()).describe("2 phương án tiêu đề khác theo cùng yêu cầu"),
+  title: z.string().describe(`Tiêu đề YouTube 40–75 ký tự về khoảnh khắc gay cấn nhất các chương gộp; ${HOOK_TITLE_RULE}`),
+  titleAlternatives: z.array(z.string()).describe("2 phương án tiêu đề giật tít khác, góc tò mò khác nhau, cùng khuôn"),
   description: z.string().describe("Mô tả 220–300 từ, 3–4 đoạn (KHÔNG kèm mục lục chương, hệ thống tự thêm): câu đầu chứa tên truyện; giới thiệu hấp dẫn các chương gộp, không spoil kết; nhắc tên truyện ≥ 2 lần, lồng ≥ 1/3 số tag; kêu gọi đăng ký/like/bật chuông; dòng cuối 3–5 hashtag"),
   tags: z.array(z.string()).describe("15–25 tag tiếng Việt CÓ DẤU viết y như người xem gõ tìm (vd 'truyện tu tiên', KHÔNG viết 'truyen tu tien'); ít nhất 5 tag lấy nguyên văn từ danh sách từ khóa vidIQ, tổng 300–480 ký tự; tag đầu là từ khóa tìm kiếm điểm cao nhất, có tên truyện; trộn tag ngắn và dài; không trùng"),
-  thumbnailText: z.string().describe(`Chữ trên thumbnail 2–3 từ IN HOA, cảm xúc mạnh, KHÔNG lặp 'TRỌN BỘ' hay số chương (đã có nhãn riêng); ${NO_NAME_RULE}`),
-  thumbnailPrompt: z.string().describe("English image prompt for a YouTube thumbnail: extreme close-up of the main character's face and upper body at a dramatic moment, intense emotion, glowing eyes or energy, one focal point on the RIGHT half, darker simpler LEFT third for text, high contrast, saturated colors"),
+  thumbnailText: z.string().describe(`Chữ trên thumbnail: ${THUMB_TEXT_RULE}; ${NO_NAME_RULE}`),
+  thumbnailPrompt: z.string().describe("English image prompt for a YouTube thumbnail: extreme close-up of the main character's face and upper body at a dramatic moment, intense emotion, glowing eyes or energy, one focal point on the LEFT half, darker simpler RIGHT 40% for big text, high contrast, saturated colors"),
   characterLook: z.string().describe("English: mô tả ngoại hình nhân vật chính"),
 });
 
@@ -154,7 +154,7 @@ async function buildMeta(s: typeof series.$inferSelect, batch: Row[], label: str
   const m = await textProvider().generateJson({
     system: "Bạn là chuyên gia YouTube kênh truyện audio tiên hiệp Việt Nam, tối ưu CTR và watch time.",
     prompt: `Đây là BẢN GỘP video dài ${hours} giờ, nghe liền mạch các chương ${label} của một truyện.\n\nTruyện: ${s.title}\nCốt truyện: ${s.premise}\nNhân vật/bối cảnh:\n${s.bible.slice(0, 2000)}\n\nCác chương trong bản gộp:\n${chaptersText}${
-      seo ? `\n\nTừ khóa người xem Việt Nam tìm thật trên YouTube (vidIQ, xếp theo điểm). Tiêu đề PHẢI chứa 1 từ khóa top đầu ở ĐẦU tiêu đề; đoạn đầu mô tả và tag đầu dùng từ khóa điểm cao; không nhồi nhét:\n${seo.text}` : ""
+      seo ? `\n\nTừ khóa người xem Việt Nam tìm thật trên YouTube (vidIQ, xếp theo điểm). Tiêu đề giật tít KHÔNG chèn từ khóa; đoạn đầu mô tả và tag đầu dùng từ khóa điểm cao; không nhồi nhét:\n${seo.text}` : ""
     }`,
     schema: metaSchema,
     temperature: 0.8,
@@ -165,10 +165,9 @@ async function buildMeta(s: typeof series.$inferSelect, batch: Row[], label: str
 
   const options = [m.title, ...(m.titleAlternatives ?? [])].filter(Boolean);
   const scores = await scoreTitles(options);
-  const ideas = await generateTitles(m.title, m.description);
-  const all = [...options.map((t, i) => ({ title: t, score: scores?.[i] ?? null })), ...ideas.filter((x) => !options.includes(x.title))];
+  const all = options.map((t, i) => ({ title: t, score: scores?.[i] ?? null }));
   for (const x of all) console.log(`  ${x.score ?? "?"} — ${x.title}`);
-  const best = chooseTitle(all, keywords);
+  const best = chooseTitle(all);
   return { m, best, all, keywords };
 }
 
@@ -328,7 +327,7 @@ export async function compileSeries(seriesId: number) {
 /** Thumbnail mới (cận mặt nhân vật chính); AI vẽ lỗi / hết quota thì dùng lại thumbnail chương cuối, không có thì đăng không thumbnail. */
 async function makeThumbnail(dir: string, m: z.infer<typeof metaSchema>, label: string, lastVideoId: number) {
   try {
-    return await thumbnail(dir, `${m.thumbnailPrompt}, ${m.characterLook}`, m.thumbnailText, `TRỌN BỘ CHƯƠNG ${label}`);
+    return await thumbnail(dir, `${m.thumbnailPrompt}, ${m.characterLook}`, m.thumbnailText);
   } catch (e) {
     console.warn(`⚠ Thumbnail AI lỗi${e instanceof QuotaExhaustedError ? " (hết quota)" : ""}, dùng thumbnail chương cuối:`, e instanceof Error ? e.message : e);
     return downloadAsset(lastVideoId, "thumbnail.jpg", path.join(dir, "fallback")).catch(() => null);

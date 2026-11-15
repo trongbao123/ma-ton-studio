@@ -184,28 +184,12 @@ export async function generateTitles(
 
 export type ScoredTitle = { title: string; score: number | null };
 
-const keyOf = (s: string) => s.normalize("NFC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
-/** Từ khóa tìm kiếm thật (giữ dấu) đầu tiên có trong tiêu đề. */
-export const searchKeywordIn = (title: string, keywords: string[]) => keywords.find((k) => keyOf(k) && ` ${keyOf(title)} `.includes(` ${keyOf(k)} `));
-
 /**
- * Chọn tiêu đề: điểm vidIQ (CTR) cao nhất trong các tiêu đề CÓ từ khóa người ta tìm thật (top 8).
- * vidIQ gợi ý tiêu đề hay bỏ mất từ khóa → được 91 điểm hấp dẫn nhưng SEO trên vidIQ thấp, không ai tìm ra.
- * Chỉ khi tiêu đề có từ khóa kém hơn quá `slack` điểm mới lấy tiêu đề điểm cao nhất rồi gắn từ khóa vào đầu (điểm vidIQ bỏ trống).
+ * Chọn tiêu đề điểm vidIQ (CTR) cao nhất; bằng điểm thì giữ phương án đứng trước (AI viết theo khuôn giật tít).
+ * KHÔNG gắn từ khóa SEO vào tiêu đề nữa (15/11/2026): tiêu đề giật tít trơn của chủ kênh được 95 — từ khóa để ở mô tả/tag.
  */
-export function chooseTitle(all: ScoredTitle[], keywords: string[], slack = 8): ScoredTitle {
-  const best = (xs: ScoredTitle[]) => xs.reduce((b, x) => ((x.score ?? -1) > (b.score ?? -1) ? x : b));
-  const top = best(all);
-  const search = keywords.slice(0, 8);
-  if (!search.length || searchKeywordIn(top.title, search)) return top;
-  const withKw = all.filter((x) => searchKeywordIn(x.title, search));
-  if (withKw.length) {
-    const b = best(withKw);
-    if ((b.score ?? 0) >= (top.score ?? 0) - slack) return b;
-  }
-  const kw = search[0];
-  const prefixed = `${kw.charAt(0).toUpperCase()}${kw.slice(1)}: ${top.title}`;
-  return prefixed.length <= 100 ? { title: prefixed, score: null } : withKw.length ? best(withKw) : top;
+export function chooseTitle(all: ScoredTitle[]): ScoredTitle {
+  return all.reduce((b, x) => ((x.score ?? -1) > (b.score ?? -1) ? x : b));
 }
 
 /**
@@ -217,12 +201,11 @@ export async function pickBestTitle(
   description: string,
   target = 90,
   rounds = 3,
-  keywords: string[] = [],
   type: TitleKind = "long",
 ): Promise<{ best: ScoredTitle; all: ScoredTitle[] } | null> {
   const scores = await scoreTitles(options, type);
   const all: ScoredTitle[] = options.map((t, i) => ({ title: t, score: scores?.[i] ?? null }));
-  const top = () => chooseTitle(all, keywords);
+  const top = () => chooseTitle(all);
   for (let i = 0; i < rounds && (top().score ?? 0) < target; i++) {
     const ideas = await generateTitles(top().title, description, i ? { previous: all.map((x) => x.title), threshold: target, type } : { type });
     const fresh = ideas.filter((x) => !all.some((y) => y.title === x.title));

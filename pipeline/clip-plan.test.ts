@@ -55,15 +55,12 @@ describe("tiêu đề Short", () => {
     expect(long.length).toBeLessThanOrEqual(100);
     expect(long.endsWith(" #shorts")).toBe(true);
   });
-  it("lấy tiêu đề điểm cao nhất có từ khóa, gắn #shorts", () => {
-    const r = pickClipTitle(
-      [
-        { title: "Truyện tu tiên: hắn đột phá giữa tử địa", score: 88 },
-        { title: "Hắn đột phá", score: 90 },
-      ],
-      ["truyện tu tiên"],
-    );
-    expect(r).toEqual({ title: "Truyện tu tiên: hắn đột phá giữa tử địa #shorts", score: 88 });
+  it("lấy tiêu đề điểm cao nhất, gắn #shorts", () => {
+    const r = pickClipTitle([
+      { title: "Truyện tu tiên: hắn đột phá giữa tử địa", score: 88 },
+      { title: "Hắn đột phá", score: 90 },
+    ]);
+    expect(r).toEqual({ title: "Hắn đột phá #shorts", score: 90 });
   });
 });
 

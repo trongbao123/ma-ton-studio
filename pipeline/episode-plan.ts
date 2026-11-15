@@ -167,14 +167,6 @@ export function fullBadge(seconds: number) {
   return m ? `FULL ${h}H${String(m).padStart(2, "0")}` : `FULL ${h}H`;
 }
 
-/** Tiêu đề luôn có nhãn tập (AI/vidIQ có thể bỏ): thiếu "Tập N" / "FULL" thì nối "| Tập N (Chương X–Y)"; cắt ≤ 100 ký tự. */
-export function ensureEpisodeLabel(title: string, o: { episodeNo: number; from: number; to: number }) {
-  const t = title.trim();
-  if (/tập\s*\d+|full/i.test(t)) return t.length > 100 ? `${t.slice(0, 99)}…` : t;
-  const tag = ` | Tập ${o.episodeNo} (Chương ${o.from}–${o.to})`;
-  return `${t.slice(0, 100 - tag.length).trimEnd()}${tag}`;
-}
-
 /** Khung máy quay ảo trên CÙNG một ảnh (tỉ lệ theo cạnh ảnh): toàn cảnh, cận giữa-trên (mặt), trung cảnh trái/phải. */
 export type Framing = { x: number; y: number; w: number };
 export const SHOT_FRAMINGS: Framing[] = [

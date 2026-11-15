@@ -12,7 +12,7 @@ describe("tiêu đề + chữ thumbnail nói ra bàn tay vàng", () => {
   it("chữ thumbnail cấm tên nhân vật ở mọi nơi sinh thumbnail", () => {
     for (const s of [episodeSchema, metaSchema, compileSchema, rethumbSchema]) expect(desc(s, "thumbnailText")).toContain(NO_NAME_RULE);
   });
-  it("tiêu đề mở bằng bàn tay vàng + con số", () => {
+  it("tiêu đề theo khuôn giật tít ở mọi nơi sinh tiêu đề", () => {
     for (const s of [episodeSchema, metaSchema, compileSchema, fixSchema]) expect(desc(s, "title")).toContain(HOOK_TITLE_RULE);
   });
   it("tiêu đề Short không bắt buộc tên nhân vật nữa", () => {

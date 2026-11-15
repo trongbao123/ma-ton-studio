@@ -7,7 +7,7 @@ import type { Chapter, Series, VideoMeta } from "@/db/schema";
 import { QuotaExhaustedError, textProvider } from "@/lib/ai";
 import { AI_NOTE, optimizeMeta } from "@/lib/seo-optimize";
 import { composeDescription, hashtagsFor, headings, segmentsFromText } from "./description";
-import { buildEpisodeToc, coldOpenSceneCount, ensureEpisodeLabel, fullBadge, fullLabel, shortSceneCount } from "./episode-plan";
+import { buildEpisodeToc, coldOpenSceneCount, fullLabel, shortSceneCount } from "./episode-plan";
 import { duration, ffmpeg } from "./ffmpeg";
 import { playlistUrl, seriesPlaylist } from "./playlist";
 import { scenePrompts } from "./prompts";
@@ -20,12 +20,12 @@ import { kaggleAuth, runI2v } from "./kaggle";
 import { pool } from "./ffmpeg";
 import { outroArgs } from "./outro";
 import { sfxCutEvents, sfxTrackArgs, type SfxEvent } from "./sfx";
-import { BURN_TEXT, buildVideo, FONT, LOGO_CROP, musicCredit, narrate, pickMusic, posterTitle, splitScenes, thumbnail } from "./render";
+import { BURN_TEXT, buildVideo, FONT, LOGO_CROP, musicCredit, narrate, pickMusic, splitScenes, thumbnail } from "./render";
 import { PUBLISH_HOUR_UTC } from "./schedule";
 import { conformArgs } from "./still";
 import { DEFAULT_THUMB, THUMB_IDS, THUMB_STYLE, thumbFile, type ThumbId } from "./thumb-plan";
-import { chooseTitle, generateTitles, genreSeeds, keywordResearch, scoreTitles } from "./vidiq";
-import { COLD_OPEN_RULE, HOOK_TITLE_RULE, NO_NAME_RULE } from "@/lib/meta-rules";
+import { chooseTitle, genreSeeds, keywordResearch, scoreTitles } from "./vidiq";
+import { COLD_OPEN_RULE, HOOK_TITLE_RULE, NO_NAME_RULE, THUMB_TEXT_RULE } from "@/lib/meta-rules";
 
 
 export type EpisodeInput = {
@@ -46,16 +46,16 @@ export type EpisodeInput = {
 };
 
 export const episodeSchema = z.object({
-  title: z.string().describe(`Tiêu đề YouTube 50–70 ký tự kiểu kênh truyện audio lớn: mở bằng HOOK gây sốc/tò mò về khoảnh khắc gay cấn nhất (không spoil kết), chứa 1 từ khóa tìm kiếm điểm cao, kết bằng nhãn 'FULL …H' hoặc 'Tập N (Chương X–Y)'; viết hoa chữ cái đầu như câu thường; ${HOOK_TITLE_RULE}`),
-  titleAlternatives: z.array(z.string()).describe("2 phương án tiêu đề khác, hook khác nhau, cùng yêu cầu"),
+  title: z.string().describe(`Tiêu đề YouTube 40–75 ký tự về khoảnh khắc gay cấn nhất cả tập (không spoil kết); ${HOOK_TITLE_RULE}`),
+  titleAlternatives: z.array(z.string()).describe("2 phương án tiêu đề giật tít khác, góc tò mò khác nhau, cùng khuôn"),
   description: z.string().describe("Mô tả 220–300 từ, 3–4 đoạn (KHÔNG kèm mục lục, hệ thống tự thêm): câu đầu chứa tên truyện; giới thiệu hấp dẫn các chương trong tập, không spoil kết; nhắc tên truyện ≥ 2 lần; kêu gọi đăng ký/like/bật chuông"),
   tags: z.array(z.string()).describe("15–25 tag tiếng Việt CÓ DẤU viết y như người xem gõ tìm (vd 'truyện tu tiên', KHÔNG viết 'truyen tu tien'); ít nhất 5 tag lấy nguyên văn từ danh sách từ khóa vidIQ, tổng 300–480 ký tự; tag đầu là từ khóa điểm cao nhất, có tên truyện; không trùng"),
-  thumbnailText: z.string().describe(`Chữ trên thumbnail 2–3 từ IN HOA, cảm xúc mạnh, KHÔNG lặp số tập; ${NO_NAME_RULE}`),
-  thumbnailPrompt: z.string().describe("English image prompt, thumbnail A: EXTREME close-up of the main character's face filling 50-60% of the frame at the most dramatic moment, extreme expression (roaring, killing intent, terror), glowing eyes, face on the RIGHT half, plain dark LEFT third for text, very high contrast, minimal detail"),
-  thumbnailPromptConfront: z.string().describe("English image prompt, thumbnail B: the main character FACING a monster / beast / main enemy of this episode in a tense standoff, both clearly visible, high contrast, simple background, left third darker for text"),
-  thumbnailPromptBurst: z.string().describe("English image prompt, thumbnail C: the main character at the moment of an explosive power surge (huge energy blast, lightning, shockwave) with a fierce expression, high contrast, saturated colors, left third darker for text"),
+  thumbnailText: z.string().describe(`Chữ trên thumbnail: ${THUMB_TEXT_RULE}; ${NO_NAME_RULE}`),
+  thumbnailPrompt: z.string().describe("English image prompt, thumbnail A: EXTREME close-up of the main character's face filling 50-60% of the frame at the most dramatic moment, extreme expression (roaring, killing intent, terror), glowing eyes, face on the LEFT half, plain dark RIGHT 40% for big text, very high contrast, minimal detail"),
+  thumbnailPromptConfront: z.string().describe("English image prompt, thumbnail B: the main character FACING a monster / beast / main enemy of this episode in a tense standoff, both clearly visible, high contrast, simple background, right 40% darker and simpler for big text"),
+  thumbnailPromptBurst: z.string().describe("English image prompt, thumbnail C: the main character at the moment of an explosive power surge (huge energy blast, lightning, shockwave) with a fierce expression, high contrast, saturated colors, right 40% darker and simpler for big text"),
   characterLook: z.string().describe("English: ngoại hình nhân vật chính"),
-  shortTitle: z.string().describe(`Tiêu đề Short ≤ 60 ký tự, có tên truyện, có #shorts; ${HOOK_TITLE_RULE}`),
+  shortTitle: z.string().describe(`Tiêu đề Short ≤ 60 ký tự, có #shorts; ${HOOK_TITLE_RULE}`),
   shortDescription: z.string().describe("1–2 câu có tên truyện, mời xem tập full trên kênh, kèm #shorts"),
   coldOpen: z.string().describe(`Lời đọc MỞ ĐẦU video 30–45 giây (85–120 từ), phát ngay giây đầu tiên để giữ người xem: kể khoảnh khắc gay cấn nhất của tập như đang diễn ra trước mắt; câu đầu tiên là biến cố/hành động cụ thể (KHÔNG chào hỏi, KHÔNG đọc tên truyện, KHÔNG nói 'trong tập này'); dừng ngay trước kết quả; câu cuối gợi tò mò để nghe từ đầu, vd 'Nhưng để hiểu vì sao mọi chuyện ra nông nỗi này, phải quay về từ đầu…'; ${COLD_OPEN_RULE}`),
   hookText: z.string().optional().describe(`Chữ HOOK in hoa 3–6 từ hiện TO 2 giây đầu video, đi cùng tiếng nổ: câu sốc/tò mò về cao trào của tập (vd 'MỘT QUYỀN PHÁ NÁT THIÊN BIA', 'PHẾ VẬT GIẾT THÁNH TỬ?'), không spoil kết, không dấu chấm; ${NO_NAME_RULE}`),
@@ -69,7 +69,7 @@ async function writeMeta(o: EpisodeInput, seoText: string | null, total: number)
   return textProvider().generateJson({
     system: "Bạn là chuyên gia YouTube kênh truyện audio tiên hiệp Việt Nam, tối ưu CTR và watch time.",
     prompt: `Đây là TẬP ${o.episodeNo} dài ${(total / 3600).toFixed(1)} giờ (nhãn '${fullLabel(total)}'), nghe liền mạch chương ${o.from}–${o.to}.\n\nTruyện: ${o.s.title}\nCốt truyện: ${o.s.premise}\nNhân vật/bối cảnh:\n${o.s.bible.slice(0, 2000)}\n\n${body}${
-      seoText ? `\n\nTừ khóa người xem Việt Nam tìm thật (vidIQ, xếp theo điểm). Tiêu đề PHẢI chứa 1 từ khóa top đầu; mô tả và tag đầu dùng từ khóa điểm cao:\n${seoText}` : ""
+      seoText ? `\n\nTừ khóa người xem Việt Nam tìm thật (vidIQ, xếp theo điểm). Tiêu đề giật tít KHÔNG chèn từ khóa; mô tả và tag đầu dùng từ khóa điểm cao:\n${seoText}` : ""
     }`,
     schema: episodeSchema,
     temperature: 0.8,
@@ -230,13 +230,12 @@ export type ThumbVariant = { id: ThumbId; file: string };
  * Lưu thumb-a/b/c.jpg; (a) còn được chép thành thumbnail.jpg (màn web + đăng lại dùng tên này).
  * (a) lỗi thì không có thumbnail (như trước); (b)/(c) lỗi chỉ bỏ phương án đó.
  */
-async function makeThumbnails(o: EpisodeInput, m: z.infer<typeof episodeSchema>, total: number): Promise<ThumbVariant[]> {
+async function makeThumbnails(o: EpisodeInput, m: z.infer<typeof episodeSchema>): Promise<ThumbVariant[]> {
   const prompts: Record<ThumbId, string> = { a: m.thumbnailPrompt, b: m.thumbnailPromptConfront, c: m.thumbnailPromptBurst };
-  const badge = fullBadge(total);
   const out: ThumbVariant[] = [];
   for (const [i, id] of THUMB_IDS.entries()) {
     try {
-      const file = await thumbnail(o.dir, `${prompts[id] || m.thumbnailPrompt}, ${THUMB_STYLE[id]}, ${m.characterLook}`, m.thumbnailText, badge, { name: thumbFile(id).replace(/\.jpg$/, ""), seed: 42 + i * 101, refs: o.heroRef ? [o.heroRef] : undefined, poster: { title: posterTitle(o.s.title), ribbon: `TẬP ${o.episodeNo} · CHƯƠNG ${o.from}–${o.to}` } });
+      const file = await thumbnail(o.dir, `${prompts[id] || m.thumbnailPrompt}, ${THUMB_STYLE[id]}, ${m.characterLook}`, m.thumbnailText, { name: thumbFile(id).replace(/\.jpg$/, ""), seed: 42 + i * 101, refs: o.heroRef ? [o.heroRef] : undefined });
       out.push({ id, file });
     } catch (e) {
       console.warn(`⚠ Thumbnail ${id.toUpperCase()} lỗi:`, e instanceof Error ? e.message : e);
@@ -260,13 +259,14 @@ export async function buildEpisodeContent(o: EpisodeInput) {
   m.characterLook = hero.look;
   o.heroRef = hero.file;
 
+  // Chỉ chấm các phương án AI viết theo khuôn giật tít; KHÔNG xin vidIQ tự nghĩ tiêu đề (nó đặt kiểu 'Tên nhân vật: …', lệch khuôn, tốn 5 credit).
+  // Không nối "| Tập N" vào tiêu đề — số tập/chương đã nằm trên ruy băng thumbnail.
   const options = [m.title, ...(m.titleAlternatives ?? [])].filter(Boolean);
   const scores = await scoreTitles(options);
-  const ideas = await generateTitles(m.title, m.description);
-  const all = [...options.map((t, i) => ({ title: t, score: scores?.[i] ?? null })), ...ideas.filter((x) => !options.includes(x.title))];
+  const all = options.map((t, i) => ({ title: t, score: scores?.[i] ?? null }));
   for (const x of all) console.log(`  ${x.score ?? "?"} — ${x.title}`);
-  const best = chooseTitle(all, keywords);
-  const title = ensureEpisodeLabel(best.title, o);
+  const best = chooseTitle(all);
+  const title = best.title.length > 100 ? `${best.title.slice(0, 99)}…` : best.title;
 
   const music = await pickMusic(o.videoId);
   const draft: VideoMeta = {
@@ -304,7 +304,7 @@ export async function buildEpisodeContent(o: EpisodeInput) {
   console.log(`  Điểm SEO: ${fixed.score}; tiêu đề: ${meta.title}`);
 
   console.log("● Thumbnail (3 phương án)");
-  const thumbs = await makeThumbnails(o, m, total + (coldOpen?.seconds ?? 0));
+  const thumbs = await makeThumbnails(o, m);
   const thumb = (thumbs.find((t) => t.id === DEFAULT_THUMB) ?? thumbs[0])?.file ?? null;
   console.log("● Short");
   const short = await makeShort(o, m, music);

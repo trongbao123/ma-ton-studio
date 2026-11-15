@@ -91,9 +91,9 @@ export function scoreTitle(title: string, keywords: string[], tags: string[], vi
     checks.push(check(!!hit, hit ? `Có từ khóa tìm kiếm thật "${hit}" (vidIQ)` : `Thiếu từ khóa tìm kiếm thật — nên có "${search[0]}"`, 30));
   }
   const app = tally(checks);
-  // Điểm vidIQ chấm tiêu đề là điểm hấp dẫn (CTR), không xét từ khóa SEO → lấy mức thấp hơn của hai điểm,
-  // để tiêu đề "hay" nhưng không có từ khóa tìm kiếm không được 90+.
-  return vidiq != null ? { ...app, score: Math.min(Math.round(vidiq), app.score), source: "vidiq" } : app;
+  // Có điểm vidIQ (CTR thật) thì lấy luôn điểm đó: tiêu đề giật tít cố ý bỏ từ khóa/số tập (15/11/2026, ưu tiên lượt bấm),
+  // từ khóa tìm kiếm nằm ở mô tả + tag. Bảng kiểm bên dưới vẫn hiện để tham khảo.
+  return vidiq != null ? { ...app, score: Math.round(vidiq), source: "vidiq" } : app;
 }
 
 export function scoreDescription(description: string, keywords: string[], tags: string[]): SeoScore {

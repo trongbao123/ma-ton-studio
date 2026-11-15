@@ -64,9 +64,9 @@ async function draftClip(s: Series, ch: { number: number; title: string; summary
 /** Tiêu đề: AI 3 phương án + vidIQ gợi ý (type "short"), chấm hết bằng vidiq_score_title type "short", lấy điểm cao nhất. */
 async function chooseClipTitle(d: ClipDraft, keywords: string[]): Promise<{ best: ScoredTitle; all: ScoredTitle[] }> {
   const options = d.titleOptions.map((t) => ensureShortsTag(t));
-  const res = await pickBestTitle(options, d.description, CLIP_TITLE_TARGET, CLIP_TITLE_ROUNDS, keywords, "short").catch(() => null);
+  const res = await pickBestTitle(options, d.description, CLIP_TITLE_TARGET, CLIP_TITLE_ROUNDS, "short").catch(() => null);
   const all = res?.all ?? options.map((title) => ({ title, score: null }));
-  const best = pickClipTitle(all, keywords);
+  const best = pickClipTitle(all);
   // Tiêu đề cuối bị ghép từ khóa / #shorts → khác bản đã chấm: chấm lại để web hiện điểm thật (~5 credit).
   if (best.score == null) {
     const [score] = (await scoreTitles([best.title], "short").catch(() => null)) ?? [null];

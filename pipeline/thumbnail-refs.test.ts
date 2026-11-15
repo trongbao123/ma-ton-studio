@@ -8,7 +8,7 @@ describe("thumbnail", () => {
   // Nạp render.ts (nặng) có lúc quá 5 giây khi chạy cả bộ song song.
   it("gửi kèm ảnh mẫu nam chính cho AI vẽ", { timeout: 30_000 }, async () => {
     const { thumbnail } = await import("./render");
-    await thumbnail("/tmp/x", "prompt", "NUỐT CỔ THẦN", "FULL 1H40", { name: "thumb-a", seed: 42, refs: ["/x/hero-ref.jpg"] });
+    await thumbnail("/tmp/x", "prompt", "THÁCH ĐẤU", { name: "thumb-a", seed: 42, refs: ["/x/hero-ref.jpg"] });
     expect(drawImage).toHaveBeenCalledWith(expect.any(String), expect.any(String), expect.objectContaining({ refs: ["/x/hero-ref.jpg"] }));
   });
 });

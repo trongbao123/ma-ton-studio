@@ -79,9 +79,9 @@ export function ensureShortsTag(title: string, max = TITLE_MAX): string {
   return `${body} ${SHORTS_TAG}`;
 }
 
-/** Chọn tiêu đề Short: điểm vidIQ cao nhất trong tiêu đề có từ khóa tìm thật (luật của chooseTitle), rồi gắn #shorts. */
-export function pickClipTitle(all: ScoredTitle[], keywords: string[]): ScoredTitle {
-  const best = chooseTitle(all, keywords);
+/** Chọn tiêu đề Short: điểm vidIQ cao nhất (luật của chooseTitle), rồi gắn #shorts. */
+export function pickClipTitle(all: ScoredTitle[]): ScoredTitle {
+  const best = chooseTitle(all);
   return { title: ensureShortsTag(best.title), score: best.score };
 }
 

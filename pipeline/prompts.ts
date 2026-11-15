@@ -2,29 +2,29 @@ import { z } from "zod";
 import type { Chapter, Series } from "@/db/schema";
 import { textProvider } from "@/lib/ai";
 import type { SeoTrendHints } from "@/lib/trends";
-import { HOOK_TITLE_RULE, NO_NAME_RULE } from "@/lib/meta-rules";
+import { HOOK_TITLE_RULE, NO_NAME_RULE, THUMB_TEXT_RULE } from "@/lib/meta-rules";
 
 // Phong cách donghua 3D (hoạt hình tiên hiệp 3D Trung Quốc) — kiểu khán giả kênh tu tiên quen mắt.
 const ART_STYLE =
   "Chinese 3D donghua CG animation still, xianxia cultivation world, premium 3D anime render, Unreal Engine 5, octane render, beautiful handsome characters with flawless detailed faces and long flowing hair, fully clothed in ornate layered hanfu robes with embroidery, glowing spiritual energy and qi aura, floating immortal mountains, sea of clouds, volumetric god rays, cinematic composition, depth of field, ultra detailed, 8k, no text, no watermark, no nudity";
 
 export const metaSchema = z.object({
-  title: z.string().describe(`Tiêu đề YouTube 50–70 ký tự (quá 70 bị cắt trên điện thoại): mở đầu bằng 1 từ khóa tìm kiếm thật điểm cao (vd 'Truyện tu tiên'), tiếp theo là móc câu gây tò mò về khoảnh khắc gay cấn nhất chương, cuối là tên truyện ngắn + số chương; viết hoa chữ cái đầu như câu thường (KHÔNG in hoa toàn bộ); ${HOOK_TITLE_RULE}`),
-  titleAlternatives: z.array(z.string()).describe("2 phương án tiêu đề khác theo cùng yêu cầu, góc gây tò mò khác nhau"),
+  title: z.string().describe(`Tiêu đề YouTube 40–75 ký tự về khoảnh khắc gay cấn nhất chương; ${HOOK_TITLE_RULE}`),
+  titleAlternatives: z.array(z.string()).describe("2 phương án tiêu đề giật tít khác, góc tò mò khác nhau, cùng khuôn"),
   description: z.string().describe("Mô tả 220–300 từ, chia 3–4 đoạn: câu đầu tiên chứa tên truyện; tóm tắt hấp dẫn không spoil kết; nhắc tên truyện ít nhất 2 lần và lồng tự nhiên ít nhất 1/3 số tag (không nhồi nhét); kêu gọi đăng ký/like/bật chuông; dòng cuối 3–5 hashtag"),
   tags: z.array(z.string()).describe("15–25 tag tiếng Việt CÓ DẤU viết y như người xem gõ tìm (vd 'truyện tu tiên', KHÔNG viết 'truyen tu tien'); ít nhất 5 tag lấy nguyên văn từ danh sách từ khóa vidIQ, tổng 300–480 ký tự; tag đầu tiên là từ khóa tìm kiếm thật điểm cao nhất, có tên truyện; trộn tag ngắn 1–2 từ và tag dài 3+ từ; không trùng nhau"),
-  shortTitle: z.string().describe(`Tiêu đề Short ≤ 60 ký tự, có tên truyện, có #shorts; ${HOOK_TITLE_RULE}`),
+  shortTitle: z.string().describe(`Tiêu đề Short ≤ 60 ký tự, có #shorts; ${HOOK_TITLE_RULE}`),
   shortDescription: z.string().describe("1–2 câu có tên truyện, mời xem video full trên kênh, kèm #shorts"),
   shortScript: z.string().describe("Lời đọc cho Short 90–130 từ: hook cực mạnh câu đầu, kể đoạn gay cấn nhất, dừng ở cao trào, câu cuối mời xem video full"),
-  thumbnailText: z.string().describe(`Chữ trên thumbnail 2–4 từ IN HOA, cảm xúc mạnh, KHÔNG lặp lại tiêu đề (vd 'NUỐT XÁC THẦN', 'MỘT ĐAO DIỆT TÔNG'); ${NO_NAME_RULE}`),
-  thumbnailPrompt: z.string().describe("English image prompt for a YouTube thumbnail: extreme close-up of the main character's face and upper body at the most dramatic moment, intense emotion (rage, shock, cold killing intent), glowing eyes or energy, one clear focal point placed on the RIGHT half, darker simpler LEFT third for text, high contrast, saturated colors, strong rim light"),
+  thumbnailText: z.string().describe(`Chữ trên thumbnail: ${THUMB_TEXT_RULE}; ${NO_NAME_RULE}`),
+  thumbnailPrompt: z.string().describe("English image prompt for a YouTube thumbnail: extreme close-up of the main character's face and upper body at the most dramatic moment, intense emotion (rage, shock, cold killing intent), glowing eyes or energy, one clear focal point placed on the LEFT half, darker simpler RIGHT 40% for big text, high contrast, saturated colors, strong rim light"),
   characterLook: z.string().describe("English: mô tả ngoại hình nhân vật chính để giữ nhất quán giữa các ảnh"),
 });
 
 /** System + prompt gửi AI — tách ra để màn flow hiện lại đúng thứ đã gửi. */
 export function metaRequest(s: Series, c: Chapter, seo?: string | null, trends?: SeoTrendHints | null) {
   const keywords = seo
-    ? `\n\nTừ khóa người xem Việt Nam tìm thật trên YouTube (vidIQ, xếp theo điểm — điểm cao = nhiều lượt tìm, ít cạnh tranh). Tiêu đề PHẢI chứa 1 từ khóa top đầu; đoạn đầu mô tả và tag đầu dùng từ khóa điểm cao; không nhồi nhét:\n${seo}`
+    ? `\n\nTừ khóa người xem Việt Nam tìm thật trên YouTube (vidIQ, xếp theo điểm — điểm cao = nhiều lượt tìm, ít cạnh tranh). Tiêu đề giật tít KHÔNG chèn từ khóa; đoạn đầu mô tả và tag đầu dùng từ khóa điểm cao; không nhồi nhét:\n${seo}`
     : "";
   // Xu hướng hiện tại của ngách (vidIQ): tham khảo, không bắt chước nguyên văn.
   const trendNote = trends

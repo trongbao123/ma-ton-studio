@@ -32,7 +32,7 @@ export async function redoSeo(videoId: number) {
   // Cả các tiêu đề từng chấm ở lần trước (vd bản 89 điểm bị thay nhầm) cũng là ứng viên.
   const past = (v.meta.seo?.titleOptions ?? []).filter((x) => (x.score ?? 0) >= 80).map((x) => x.title);
   const options = [...new Set([v.meta.title, ...past, m.title, ...(m.titleAlternatives ?? [])].filter(Boolean))];
-  const picked = await pickBestTitle(options, m.description, 90, 3, keywords);
+  const picked = await pickBestTitle(options, m.description, 90, 3);
   const all = picked?.all ?? options.map((title) => ({ title, score: null }));
   for (const x of all) console.log(`  ${x.score ?? "?"} — ${x.title}`);
   const top = picked?.best ?? all[0];
