@@ -11,8 +11,9 @@ export const LIFE_TARGET_WORDS = 1700;
 
 /** Nhịp dựng của kênh (kế hoạch thử 4 tuần, 11/2026) — dùng cho cả người viết lẫn biên tập. */
 export const LIFE_PACING = [
-  "0–15 giây đầu (≈ 40 từ): vào THẲNG biến cố — câu đầu là lời thoại hoặc hành động ngay lúc chuyện xảy ra (bị đuổi khỏi nhà, phát hiện tin nhắn, bị chặn ở cổng cưới…). Không chào hỏi, không giới thiệu kênh, không tả thời tiết.",
-  "15–60 giây (≈ 150 từ tiếp): cho người nghe biết nhân vật chính là ai (tuổi, vai trong nhà, đã hy sinh gì) và điều họ CÓ NGUY CƠ MẤT (mái nhà, con cái, cuộc hôn nhân, danh dự).",
+  // Chủ kênh 17/11/2026: mở bằng câu thoại trơ trọi ("Mẹ ở tạm bên nhà Linh đi…") nghe cụt, không biết ai nói với ai → bỏ.
+  "0–20 giây đầu (≈ 60–80 từ) là ĐOẠN DẪN CỦA NGƯỜI KỂ, không phải thoại: 3–4 câu tóm cả bi kịch theo khuôn 'Hy sinh gì cả đời (có con số) → vậy mà giờ gặp chuyện gì đau nhất → một câu úp mở về bước ngoặt (KHÔNG nói ra lời giải)'. Câu đầu phải tự hiểu được khi nghe riêng: có tên + tuổi + vai (bà Thu 55 tuổi, người mẹ goá…). Vd: 'Nuôi ba đứa con khôn lớn, bán cả căn nhà cho chúng lập nghiệp, vậy mà năm 55 tuổi, bà Thu xách vali đi hết nhà con này sang nhà con khác mà không ai giữ mẹ lại. … Nhưng ở nơi bà tưởng đã mất từ lâu, có một người vẫn mở cổng chờ bà suốt ba năm.' Không chào hỏi, không giới thiệu kênh, không tả thời tiết.",
+  "Ngay sau đoạn dẫn: một câu chuyển ('Chuyện bắt đầu vào một buổi sáng…') rồi vào cảnh biến cố; câu thoại đầu tiên PHẢI nói rõ ai nói với ai (– Mẹ ở tạm bên nhà Linh đi – Khoa nói, mắt không rời điện thoại.). Trong ~150 từ tiếp cho biết nhân vật chính đã hy sinh gì và điều họ CÓ NGUY CƠ MẤT (mái nhà, con cái, cuộc hôn nhân, danh dự).",
   "Phần giữa: cứ khoảng 200–250 từ (≈ 1,5 phút nghe) phải có diễn biến MỚI — một lời nói làm đau, một bí mật hé ra, một quyết định, một cuộc chạm mặt. Không để quá 2 đoạn liền chỉ tả hoặc độc thoại.",
   "Khoảng 2/3 truyện có một BƯỚC NGOẶT bất ngờ nhưng hợp lý (sự thật bị giấu, người tưởng xấu hoá ra tốt, cái giá của lựa chọn cũ) — gieo chi tiết báo trước từ nửa đầu.",
   "Đoạn cuối: giải quyết dứt điểm mâu thuẫn và để lại một hình ảnh cụ thể gợi cảm xúc (bát cơm, lá thư, chiếc áo cũ). KHÔNG kết bằng bài học đạo đức nói thẳng, KHÔNG 'câu chuyện cho ta thấy…'.",
