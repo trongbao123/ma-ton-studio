@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { SeriesCover } from "@/components/studio-cards";
 import { cachedSeriesCards } from "@/lib/cached";
+import { viewChannel } from "@/lib/channel-filter";
 
 export default function SeriesListPage() {
   return (
@@ -21,7 +22,7 @@ export default function SeriesListPage() {
 }
 
 async function List() {
-  const list = await cachedSeriesCards();
+  const list = await cachedSeriesCards(await viewChannel());
   if (!list.length) return <p className="text-muted">Chưa có truyện nào.</p>;
   return (
     <ul className="grid grid-cols-2 gap-5 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">

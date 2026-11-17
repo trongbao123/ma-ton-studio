@@ -334,3 +334,12 @@ export async function saveSecretAction(env: string, _: ActionState, form: FormDa
     return "Đã lưu — dùng được ngay ở web và job render.";
   });
 }
+
+/** Bộ chọn kênh ở thanh bên: chỉ đổi cookie lọc hiển thị (pipeline vẫn chạy mọi kênh). */
+export async function setViewChannelAction(channel: string): Promise<void> {
+  const { cookies } = await import("next/headers");
+  const { ALL_CHANNELS, CHANNEL_COOKIE } = await import("@/lib/channel-filter");
+  const value = channel === ALL_CHANNELS || isChannelKey(channel) ? channel : ALL_CHANNELS;
+  (await cookies()).set(CHANNEL_COOKIE, value, { httpOnly: true, secure: true, sameSite: "lax", maxAge: 365 * 86400, path: "/" });
+  revalidatePath("/", "layout");
+}

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Be_Vietnam_Pro, Noto_Serif } from "next/font/google";
 import { Suspense } from "react";
 import { AppShell } from "@/components/app-shell";
+import { ChannelSwitch } from "@/components/channel-switch";
 import { TopStatus } from "@/components/top-status";
 import "./globals.css";
 
@@ -31,6 +32,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="vi" className={`${font.variable} ${serif.variable} h-full antialiased`}>
       <body className="min-h-full font-sans">
         <AppShell
+          channelSwitch={
+            <Suspense fallback={null}>
+              <ChannelSwitch />
+            </Suspense>
+          }
           status={
             <Suspense fallback={null}>
               <TopStatus />

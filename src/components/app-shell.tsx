@@ -65,14 +65,15 @@ function Nav({ path, onNavigate }: { path: string; onNavigate?: () => void }) {
 }
 
 /** Khung app: menu dọc bên trái trên máy tính, thanh trên + ngăn kéo trên điện thoại. Màn flow video tự phủ toàn màn hình. */
-export function AppShell({ children, status }: { children: ReactNode; status?: ReactNode }) {
+/** `channelSwitch`: bộ chọn kênh (server component trong Suspense) — hiện dưới logo. */
+export function AppShell({ children, status, channelSwitch }: { children: ReactNode; status?: ReactNode; channelSwitch?: ReactNode }) {
   const [open, setOpen] = useState(false);
   const brand = (
     <Link href="/" className="flex items-center gap-3" onClick={() => setOpen(false)}>
       <Seal />
       <span className="leading-tight">
         <b className="block font-serif text-[15px]">Ma Tôn Studio</b>
-        <span className="text-xs text-muted">kênh Thôn Phệ Audio</span>
+        <span className="text-xs text-muted">xưởng truyện audio</span>
       </span>
     </Link>
   );
@@ -92,7 +93,10 @@ export function AppShell({ children, status }: { children: ReactNode; status?: R
   return (
     <div className="min-h-dvh lg:grid lg:grid-cols-[248px_minmax(0,1fr)]">
       <aside className="sticky top-0 hidden h-dvh flex-col gap-8 border-r border-border bg-sidebar px-4 py-6 lg:flex">
-        {brand}
+        <div className="space-y-4">
+          {brand}
+          {channelSwitch}
+        </div>
         <NavLinks />
         <div className="mt-auto">{newSeries}</div>
       </aside>
@@ -113,6 +117,7 @@ export function AppShell({ children, status }: { children: ReactNode; status?: R
                 <X size={20} />
               </button>
             </div>
+            {channelSwitch}
             <NavLinks onNavigate={() => setOpen(false)} />
             <div className="mt-auto">{newSeries}</div>
           </div>

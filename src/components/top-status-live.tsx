@@ -19,10 +19,12 @@ type Props = {
   initialChannelStat: ChannelStat | null;
   channel: string | null;
   channelUrl: string;
+  /** Tổng view chỉ đo cho kênh gốc — đang xem kênh phụ thì ẩn để khỏi hiểu nhầm. */
+  showViews?: boolean;
 };
 
 /** Phần tương tác của thanh trên cùng: video đang render, đèn AI, tổng view kênh — cập nhật realtime qua SSE. */
-export function TopStatusLive({ initial, initialChannelStat, channel, channelUrl }: Props) {
+export function TopStatusLive({ initial, initialChannelStat, channel, channelUrl, showViews = true }: Props) {
   const live = useLive();
   const s = live.status ?? initial;
   const channelStat = live.stats?.channel ?? initialChannelStat;
@@ -81,7 +83,7 @@ export function TopStatusLive({ initial, initialChannelStat, channel, channelUrl
           </span>
         ))}
       </Link>
-      {channelStat && (
+      {showViews && channelStat && (
         <span className="hidden shrink-0 items-center gap-1.5 rounded-full border border-border bg-card/70 px-3 py-1 text-xs text-muted sm:flex" title="Tổng lượt xem kênh · cập nhật mỗi phút (YouTube trễ vài phút)">
           <Eye size={13} />
           <AnimatedCount value={channelStat.views} className="text-foreground" />

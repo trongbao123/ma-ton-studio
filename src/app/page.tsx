@@ -11,6 +11,7 @@ import { aiUsage } from "@/db/schema";
 import { quotaDay } from "@/lib/ai/usage";
 import { readStatsSnapshot } from "@/lib/youtube-stats";
 import { cachedSeriesCards } from "@/lib/cached";
+import { viewChannel } from "@/lib/channel-filter";
 import { counters, todo, videoCards } from "@/lib/studio";
 
 export default function HomePage() {
@@ -62,7 +63,7 @@ export default function HomePage() {
 
 async function Counters() {
   await connection();
-  const c = await counters();
+  const c = await counters(await viewChannel());
   const items = [
     [c.drafts, "chương chờ duyệt", "text-gold"],
     [c.rendering, "video đang làm", "text-sky-300"],
@@ -134,7 +135,7 @@ async function Todo() {
 }
 
 async function Covers() {
-  const list = await cachedSeriesCards();
+  const list = await cachedSeriesCards(await viewChannel());
   if (!list.length)
     return (
       <div className="rounded-xl border border-dashed border-border p-10 text-center">
@@ -157,7 +158,7 @@ async function Covers() {
 
 async function RecentVideos() {
   await connection();
-  const [list, stats] = await Promise.all([videoCards({ limit: 8 }), readStatsSnapshot()]);
+  const [list, stats] = await Promise.all([videoCards({ limit: 8, channel: await viewChannel() }), readStatsSnapshot()]);
   if (!list.length) return <p className="text-sm text-muted">Chưa có video. Duyệt một chương là video tự render.</p>;
   return (
     <>

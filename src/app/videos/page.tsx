@@ -8,6 +8,7 @@ import type { Video } from "@/db/schema";
 import { pageList } from "@/lib/paging";
 import { videoCards, videoCount, type VideoKind } from "@/lib/studio";
 import { readStatsSnapshot } from "@/lib/youtube-stats";
+import { viewChannel } from "@/lib/channel-filter";
 
 const FILTERS: { id: string; label: string; statuses?: Video["status"][]; kind?: VideoKind }[] = [
   { id: "all", label: "Tất cả" },
@@ -107,7 +108,7 @@ async function Tabs({ searchParams }: { searchParams: PageProps<"/videos">["sear
 async function Grid({ searchParams }: { searchParams: PageProps<"/videos">["searchParams"] }) {
   await connection();
   const [f, { q, page }] = await Promise.all([current(searchParams), query(searchParams)]);
-  const filter = { statuses: f.statuses, kind: f.kind, q };
+  const filter = { statuses: f.statuses, kind: f.kind, q, channel: await viewChannel() };
   const [list, total, stats] = await Promise.all([
     videoCards({ ...filter, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
     videoCount(filter),

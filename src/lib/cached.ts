@@ -17,11 +17,11 @@ export async function cachedTrends() {
 }
 
 /** Danh sách truyện + số chương: đổi khi duyệt / viết / tạo truyện (server action gọi updateTag(SERIES_TAG)). */
-export async function cachedSeriesCards() {
+export async function cachedSeriesCards(channel: string | null = null) {
   "use cache";
   cacheLife({ stale: 30, revalidate: 120, expire: 3600 });
   cacheTag(SERIES_TAG);
-  return seriesCards();
+  return seriesCards(channel);
 }
 
 /** Lượt dùng AI của các ngày quota ĐÃ QUA — không đổi nữa nên cache lâu. */

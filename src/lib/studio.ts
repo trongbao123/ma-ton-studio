@@ -18,7 +18,8 @@ export type SeriesCard = {
   coverVersion: number | null;
 };
 
-export async function seriesCards(): Promise<SeriesCard[]> {
+/** `channel`: chỉ bộ của kênh đó (null = mọi kênh). */
+export async function seriesCards(channel: string | null = null): Promise<SeriesCard[]> {
   const rows = await db()
     .select({
       id: series.id,
@@ -31,6 +32,7 @@ export async function seriesCards(): Promise<SeriesCard[]> {
     })
     .from(series)
     .leftJoin(chapters, eq(chapters.seriesId, series.id))
+    .where(channel ? eq(series.channel, channel) : undefined)
     .groupBy(series.id)
     .orderBy(desc(series.createdAt));
   const covers = await db()
@@ -108,7 +110,8 @@ export function coverOf(assets: Record<string, number>): { file: string; version
   return scene ? { file: scene.f, version: assets[scene.f] } : null;
 }
 
-type VideoFilter = { statuses?: Video["status"][]; kind?: VideoKind; q?: string };
+/** `channel`: chỉ video của kênh đó (null/undefined = mọi kênh). */
+type VideoFilter = { statuses?: Video["status"][]; kind?: VideoKind; q?: string; channel?: string | null };
 
 /** Điều kiện lọc dùng chung cho danh sách và đếm tổng (phân trang). */
 function videoWhere(opts: VideoFilter) {
@@ -125,6 +128,7 @@ function videoWhere(opts: VideoFilter) {
     : undefined;
   const where = and(
     search,
+    opts.channel ? eq(series.channel, opts.channel) : undefined,
     opts.statuses ? inArray(videos.status, opts.statuses) : undefined,
     opts.kind === "episode" ? isEpisode : opts.kind === "internal" ? isInternal : opts.kind === "short" ? isShortClip : undefined,
   );
@@ -143,7 +147,7 @@ export async function videoCount(opts: VideoFilter = {}) {
 }
 
 export async function videoCards(
-  opts: { limit?: number; offset?: number; statuses?: Video["status"][]; kind?: VideoKind; q?: string } = {},
+  opts: { limit?: number; offset?: number } & VideoFilter = {},
 ): Promise<VideoCard[]> {
   const where = videoWhere(opts);
   const rows = await db()
@@ -231,7 +235,8 @@ export async function todo() {
 }
 
 /** Đếm nhanh cho dòng số liệu đầu trang. */
-export async function counters() {
+export async function counters(channel: string | null = null) {
+  const own = channel ? sql`${series.channel} = ${channel}` : sql`true`;
   const [[row], [{ drafts }]] = await Promise.all([
     db()
       .select({
@@ -240,8 +245,15 @@ export async function counters() {
         scheduled: sql<number>`count(*) filter (where ${videos.uploadStatus} = 'scheduled' and ${videos.publishAt} > now())`.mapWith(Number),
         published: sql<number>`count(*) filter (where ${videos.status} = 'published')`.mapWith(Number),
       })
-      .from(videos),
-    db().select({ drafts: count() }).from(chapters).where(eq(chapters.status, "draft")),
+      .from(videos)
+      .innerJoin(chapters, eq(chapters.id, videos.chapterId))
+      .innerJoin(series, eq(series.id, chapters.seriesId))
+      .where(own),
+    db()
+      .select({ drafts: count() })
+      .from(chapters)
+      .innerJoin(series, eq(series.id, chapters.seriesId))
+      .where(and(eq(chapters.status, "draft"), own)),
   ]);
   return { ...row, drafts };
 }

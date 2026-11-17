@@ -8,6 +8,8 @@ import { readStatsSnapshot } from "@/lib/youtube-stats";
 
 /** Trang kênh trên YouTube (đổi kênh thì đặt YOUTUBE_CHANNEL_URL). */
 import { CHANNEL_URL } from "@/lib/channel";
+import { channelName, viewChannel } from "@/lib/channel-filter";
+import { channelUrlOf, getYoutubeAuth } from "@/lib/youtube";
 
 /**
  * Thanh trên cùng: render lần đầu ở server, sau đó TopStatusLive nhận cập nhật realtime qua SSE (/api/live).
@@ -26,5 +28,19 @@ export async function TopStatus() {
   const [s, stats] = await Promise.all([topStatus().catch(() => null), readStatsSnapshot()]);
   if (!s) return null;
   const { channel, ...status } = s;
+  // Đang lọc theo kênh phụ: nút YouTube mở đúng kênh đó.
+  const view = await viewChannel();
+  if (view && view !== "main") {
+    const auth = await getYoutubeAuth(view).catch(() => null);
+    return (
+      <TopStatusLive
+        initial={status}
+        initialChannelStat={null}
+        showViews={false}
+        channel={auth ? channelName(view, auth.channel) : null}
+        channelUrl={await channelUrlOf(view)}
+      />
+    );
+  }
   return <TopStatusLive initial={status} initialChannelStat={stats.channel} channel={channel} channelUrl={CHANNEL_URL} />;
 }
