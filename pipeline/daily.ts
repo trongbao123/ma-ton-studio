@@ -195,16 +195,18 @@ async function main() {
     .then((r) => console.log(`WebSub: ${r}`))
     .catch((e) => console.warn("⚠ WebSub:", e instanceof Error ? e.message : e));
   const failures: string[] = [];
+  let quotaLeft = true;
+  const autopilot = (await db().select().from(series).where(eq(series.autopilot, true))).sort((a, b) => a.id - b.id);
+  // Kênh phụ (Chuyện Đời Lắng Đọng) đang được ưu tiên: viết chương của nó TRƯỚC khi render hàng đợi — hàng đợi kênh gốc
+  // có thể dài nhiều giờ (giọng đọc free) nên viết sau thì cả ngày kênh mới không có truyện.
+  await writeSeries(autopilot.filter((s) => s.channel !== "main"));
   await renderQueue(failures);
   // Bình luận kêu gọi thích/chia sẻ/đăng ký cho video ĐÃ tới giờ phát (video lên lịch còn private thì YouTube không nhận bình luận).
   await commentOnPublished().catch((e) => console.warn("⚠ Bình luận kêu gọi:", e instanceof Error ? e.message : e));
+  await writeSeries(autopilot.filter((s) => s.channel === "main"));
 
-  let quotaLeft = true;
-  // Kênh phụ (Chuyện Đời Lắng Đọng) đang được ưu tiên: viết trước để nó không bị kênh gốc ăn hết quota AI/giọng đọc trong ngày.
-  const autopilot = (await db().select().from(series).where(eq(series.autopilot, true))).sort(
-    (a, b) => Number(a.channel === "main") - Number(b.channel === "main") || a.id - b.id,
-  );
-  for (const s of autopilot) {
+  async function writeSeries(list: typeof autopilot) {
+  for (const s of list) {
     if (!quotaLeft) break;
     console.log(`▶ ${s.title}`);
     try {
@@ -271,6 +273,7 @@ async function main() {
         failures.push(`${s.title}: ${e instanceof Error ? e.message : e}`);
       }
     }
+  }
   }
 
   await renderQueue(failures);
