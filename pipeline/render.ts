@@ -784,9 +784,10 @@ export async function renderVideo(videoId: number) {
     const m = await cached(path.join(dir, "meta-v2.json"), () => videoMeta(s, c, seo?.text, trendHints));
     track.model("agent", textProvider().lastModel);
     // vidIQ chấm điểm tiêu đề gốc + 2 phương án (đều theo khuôn giật tít) → lấy tiêu đề điểm cao nhất.
-    let title = m.title;
+    // Chuyện đời: tiêu đề truyện do chủ kênh đặt sẵn theo khuôn kênh — dùng nguyên (AI hay bịa chi tiết không có trong truyện).
+    let title = life ? c.title : m.title;
     let seoInfo: VideoMeta["seo"];
-    const options = [m.title, ...(m.titleAlternatives ?? [])].filter(Boolean);
+    const options = (life ? [c.title] : [m.title, ...(m.titleAlternatives ?? [])]).filter(Boolean);
     if (process.env.VIDIQ_API_KEY && options.length > 1) {
       const scores = await cached(path.join(dir, "vidiq-titles-v2.json"), () => scoreTitles(options));
       const all = options.map((t, i) => ({ title: t, score: scores?.[i] ?? null }));
