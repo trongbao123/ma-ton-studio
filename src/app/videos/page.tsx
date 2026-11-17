@@ -47,7 +47,7 @@ const YT_NOTICE: Record<string, { tone: string; text: string }> = {
   error: { tone: "text-rose-400", text: "Kết nối YouTube lỗi — thử lại." },
   "wrong-channel": {
     tone: "text-rose-400",
-    text: "Chọn nhầm kênh ở màn Google (kênh này đã gắn với khoá khác) — bấm kết nối lại và chọn đúng kênh trong danh sách tài khoản.",
+    text: "Chọn nhầm kênh ở màn Google (vd kênh cá nhân mang tên mình thay vì kênh Chuyện Đời Lắng Đọng) — bấm kết nối lại và chọn đúng kênh trong danh sách tài khoản.",
   },
 };
 

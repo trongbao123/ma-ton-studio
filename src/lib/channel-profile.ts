@@ -13,6 +13,8 @@ export type ChannelProfile = {
   publishEveryDays: number;
   /** Nhịp đăng nói trong bình luận kêu gọi đăng ký. */
   cadence: string;
+  /** Tên kênh trên YouTube — có thì lúc kết nối phải khớp (cùng account Google dễ chọn nhầm kênh cá nhân). */
+  youtubeTitle?: string;
 };
 
 const MAIN: ChannelProfile = {
@@ -32,7 +34,16 @@ const PROFILES: Record<string, ChannelProfile> = {
     // Kế hoạch thử 4 tuần (11/2026): 10 video / 28 ngày ≈ 3 ngày một truyện.
     publishEveryDays: 3,
     cadence: "chuyện mới mỗi tuần",
+    youtubeTitle: "Chuyện Đời Lắng Đọng",
   },
 };
+
+const norm = (s: string) => s.normalize("NFC").toLowerCase().replace(/\s+/g, " ").trim();
+
+/** Kênh vừa chọn ở màn Google có đúng kênh mong đợi không (hồ sơ không đặt tên thì luôn đúng). */
+export function titleMatches(ch: string, title: string | null) {
+  const want = channelProfile(ch).youtubeTitle;
+  return !want || (title != null && norm(title) === norm(want));
+}
 
 export const channelProfile = (ch: string | null | undefined): ChannelProfile => PROFILES[ch ?? "main"] ?? MAIN;

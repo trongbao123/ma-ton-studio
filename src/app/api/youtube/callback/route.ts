@@ -2,6 +2,7 @@ import { after, NextResponse, type NextRequest } from "next/server";
 import { loadSecrets } from "@/lib/secrets";
 import { ensureWebsub } from "@/lib/websub";
 import { CHANNEL_ID } from "@/lib/channel";
+import { titleMatches } from "@/lib/channel-profile";
 import { exchangeCode, isChannelKey, listYoutubeChannels, MAIN_CHANNEL, redirectUri, saveYoutubeAuth } from "@/lib/youtube";
 
 export async function GET(request: NextRequest) {
@@ -25,6 +26,7 @@ export async function GET(request: NextRequest) {
       const clash = (await listYoutubeChannels()).find((c) => c.key !== ch && c.auth.channelId === auth.channelId);
       if (clash) return back("wrong-channel");
     }
+    if (!titleMatches(ch, auth.channel)) return back("wrong-channel");
     await saveYoutubeAuth(auth, ch);
     // Kênh mới / kết nối lại: đăng ký webhook ngay (không chờ daily). Lỗi chỉ ghi log.
     after(() => ensureWebsub({ force: true, channel: ch }).catch((e) => console.warn("WebSub:", e instanceof Error ? e.message : e)));

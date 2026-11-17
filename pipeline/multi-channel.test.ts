@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Chapter, Series } from "@/db/schema";
-import { channelProfile } from "@/lib/channel-profile";
+import { channelProfile, titleMatches } from "@/lib/channel-profile";
 import { chapterPrompt, continuePrompt, outlinePrompt } from "@/lib/story/prompts";
 import { LIFE_GENRE, LIFE_PILOT, pilotOutline } from "@/lib/story/life";
 import { isChannelKey, MAIN_CHANNEL, ytKey } from "@/lib/youtube";
@@ -23,6 +23,13 @@ describe("khoá kênh", () => {
   it("kênh gốc giữ key cũ, kênh phụ có hậu tố", () => {
     expect(ytKey(MAIN_CHANNEL)).toBe("youtube");
     expect(ytKey("chuyen-doi")).toBe("youtube:chuyen-doi");
+  });
+  it("kết nối kênh chuyện đời phải đúng tên kênh (không nhận kênh cá nhân cùng account)", () => {
+    expect(titleMatches("chuyen-doi", "Chuyện Đời Lắng Đọng")).toBe(true);
+    expect(titleMatches("chuyen-doi", "chuyện đời  lắng đọng")).toBe(true);
+    expect(titleMatches("chuyen-doi", "Trọng Bảo Phạm")).toBe(false);
+    expect(titleMatches("chuyen-doi", null)).toBe(false);
+    expect(titleMatches("main", "Ma Tôn Truyện")).toBe(true);
   });
   it("chặn khoá lạ (dùng trong URL/state OAuth)", () => {
     expect(isChannelKey("chuyen-doi")).toBe(true);
