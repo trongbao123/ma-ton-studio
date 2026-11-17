@@ -24,7 +24,7 @@ import { heroRef } from "./hero";
 import { chapterNarration } from "./narration";
 import { dropStaleTts, markTts } from "./tts-cache";
 import { imageCount, isEpisodeOpener, planChapterScenes, planShots, shortSceneCount } from "./episode-plan";
-import { isLifeStory, LIFE_IMAGE_SECONDS, LIFE_MAX_IMAGES } from "@/lib/story/life";
+import { isLifeStory, LIFE_IMAGE_SECONDS, LIFE_MAX_IMAGES, lifeVoice } from "@/lib/story/life";
 import { OPENER_CLIPS, OPENER_SEGMENT_BUDGET } from "./i2v-plan";
 import { ensureRelease, uploadAsset } from "./release";
 import { keepOrNextSlot } from "./schedule";
@@ -769,6 +769,8 @@ export async function renderVideo(videoId: number) {
     const life = isLifeStory(s);
     // Chuyện đời hay được sửa tay rồi render lại: cache meta/cảnh gắn với nội dung truyện để bản sửa không dùng lại meta cũ.
     const tag = life ? `-${createHash("sha1").update(c.content).digest("hex").slice(0, 8)}` : "";
+    // Chuyện đời kể ngôi "tôi": giọng theo giới tính người kể (mẹ kể → giọng nữ), không cố định theo bộ.
+    const voice = life ? lifeVoice(c.content) : s.ttsVoice;
     if (life) {
       // Truyện đã sửa từ lần render trước → bỏ ảnh/đoạn video/Short cũ (giọng đọc tts-* tự kiểm theo văn bản nên giữ).
       const markFile = path.join(dir, "content.tag");
@@ -838,14 +840,14 @@ export async function renderVideo(videoId: number) {
     // ── Giọng đọc
     const longText = chapterNarration(c.content);
     track.start("tts", { long: ttsChunks(longText).length, ...(wantShort ? { short: ttsChunks(m.shortScript).length } : {}) });
-    track.log("tts", `Giọng ${s.ttsVoice}`);
+    track.log("tts", `Giọng ${voice}`);
     console.log("● Video dài: đọc giọng");
-    const long = await narrate(longText, dir, s.ttsVoice, (i, total) => track.tick("tts", "long", `Đoạn ${i + 1}/${total}`));
+    const long = await narrate(longText, dir, voice, (i, total) => track.tick("tts", "long", `Đoạn ${i + 1}/${total}`));
     await uploadPreview(videoId, releaseId, await previewAudio(long.audio, path.join(dir, "narration.m4a")));
     let short: Narration | null = null;
     if (wantShort) {
       try {
-        short = await narrate(m.shortScript, shortDir, s.ttsVoice, () => track.tick("tts", "short"), 34);
+        short = await narrate(m.shortScript, shortDir, voice, () => track.tick("tts", "short"), 34);
         await uploadPreview(videoId, releaseId, await previewAudio(short.audio, path.join(shortDir, "short-narration.m4a")));
       } catch (e) {
         if (e instanceof QuotaExhaustedError) throw e;

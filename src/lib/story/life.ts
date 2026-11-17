@@ -102,6 +102,19 @@ export const LIFE_STYLE =
 export const LIFE_VOICE_STYLE = "giọng nam trung niên trầm ấm, kể chuyện đời chậm rãi, ngắt nghỉ tự nhiên, lắng xuống ở đoạn xúc động";
 /** Giọng Gemini TTS: Charon — nam, trầm, kể chuyện. */
 export const LIFE_TTS_VOICE = "Charon";
+/** Giọng nữ ấm cho truyện người kể là phụ nữ. */
+export const LIFE_TTS_VOICE_FEMALE = "Sulafat";
+
+/**
+ * Truyện kể ngôi "tôi": đoán giới tính người kể từ cách gọi bạn đời ("chồng tôi" → nữ, "vợ tôi" → nam).
+ * Không rõ thì giọng nam mặc định.
+ */
+export function lifeVoice(content: string) {
+  const count = (re: RegExp) => (content.match(re) ?? []).length;
+  const female = count(/chồng tôi|tôi là mẹ|bà mẹ như tôi|tôi làm dâu|mẹ chồng tôi/gi);
+  const male = count(/vợ tôi|tôi là bố|tôi là cha|bố vợ tôi|mẹ vợ tôi/gi);
+  return female > male ? LIFE_TTS_VOICE_FEMALE : LIFE_TTS_VOICE;
+}
 
 export const LIFE_BIBLE = `Kênh truyện audio "chuyện đời" — mỗi video là MỘT câu chuyện độc lập trọn vẹn 8–12 phút, nhân vật mới mỗi truyện.
 Khán giả: người Việt 35–60 tuổi, nghe khi nấu cơm, lái xe, trước giờ ngủ; thích chuyện gia đình, tình thân, hôn nhân, nhân quả, sự tử tế.
