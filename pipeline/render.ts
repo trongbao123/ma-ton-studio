@@ -35,7 +35,8 @@ import { autoPublishEligible, publishToYoutube } from "./youtube";
 
 type ScenePrompt = Awaited<ReturnType<typeof scenePrompts>>[number];
 import { cuesForChunk, cuesForSegment, packChunks, parseSilenceMids, sentences, snapToSentences, titleCardFilter, toAss, type Cue } from "./text";
-import { speak } from "./tts";
+import { speak, speakTurns, SpeechFormatError, type SpeechTurn } from "./tts";
+import { castVoices, directScript, groupTurns, NARRATOR, stripTags } from "./voice-cast";
 
 // Đường dẫn tương đối (ffmpeg chạy ở gốc repo): đường dẫn tuyệt đối trên Windows có "C:" làm vỡ cú pháp filter của drawtext.
 const FONT_DIR = "pipeline/fonts";
@@ -67,11 +68,12 @@ const ttsChunks = (text: string) => packChunks(sentences(text), MAX_TTS_CHARS);
 /** Hệ số tốc độ đọc (1 = giữ nguyên giọng TTS). Đo chương 19: 195 âm tiết/phút → ×1,2 ≈ 234. */
 export const NARRATION_TEMPO = Number(process.env.NARRATION_TEMPO ?? 1.2);
 
-export async function narrate(text: string, dir: string, voice: string, onChunk?: (i: number, total: number) => void, cueChars = 70): Promise<Narration> {
+/** `tempo`: hệ số tốc độ (chuyện đời đọc tốc độ gốc = 1 — tăng tốc nghe vội, mất cảm xúc). */
+export async function narrate(text: string, dir: string, voice: string, onChunk?: (i: number, total: number) => void, cueChars = 70, tempo = NARRATION_TEMPO): Promise<Narration> {
   const chunks = ttsChunks(text);
   const files = await pool(chunks, 3, async (chunk, i) => {
     const f = path.join(dir, `tts-${voice}-${String(i).padStart(3, "0")}.wav`);
-    const fast = f.replace(/\.wav$/, `-x${NARRATION_TEMPO}.wav`);
+    const fast = f.replace(/\.wav$/, `-x${tempo}.wav`);
     const said = chunk.join(" ");
     // Văn bản đoạn đổi so với lần đọc trước (cache) thì đọc lại — tránh audio cũ + phụ đề chữ mới (tts-cache.ts).
     await dropStaleTts(f, [fast], said);
@@ -80,8 +82,8 @@ export async function narrate(text: string, dir: string, voice: string, onChunk?
     console.log(`  TTS ${i + 1}/${chunks.length}`);
     onChunk?.(i, chunks.length);
     // Kênh top cùng thể loại đọc 240–290 âm tiết/phút; giọng Gemini ~195 → tăng tốc giữ cao độ (atempo). Mốc câu đo trên bản đã tăng tốc.
-    if (NARRATION_TEMPO === 1) return f;
-    await once(fast, (tmp) => ffmpeg(["-i", f, "-af", `atempo=${NARRATION_TEMPO}`, "-c:a", "pcm_s16le", tmp]));
+    if (tempo === 1) return f;
+    await once(fast, (tmp) => ffmpeg(["-i", f, "-af", `atempo=${tempo}`, "-c:a", "pcm_s16le", tmp]));
     return fast;
   });
   const cues: Cue[] = [];
@@ -97,6 +99,43 @@ export async function narrate(text: string, dir: string, voice: string, onChunk?
   await writeFile(list, files.map((f) => `file '${f}'`).join("\n"));
   const audio = path.join(dir, "narration.wav");
   await ffmpeg(["-f", "concat", "-safe", "0", "-i", list, "-c", "copy", audio]);
+  return { audio, cues, seconds: t };
+}
+
+/** Người kể chuyện đời: chậm, ấm, có ngừng nghỉ (khi đạo diễn để trống cảm xúc). */
+const NARRATOR_STYLE = "speaking slowly, warm and heartfelt, natural pauses";
+
+/**
+ * Đọc kịch bản đã phân vai (voice-cast.ts): mỗi nhóm ≤ 2 giọng là một lượt gọi TTS, tốc độ gốc. File cache đặt tên theo
+ * nội dung nhóm nên sửa truyện không dùng nhầm audio cũ. Kiểu gọi nhiều giọng bị từ chối → nhóm đó đọc một giọng người kể.
+ */
+export async function narrateScript(groups: SpeechTurn[][], dir: string, narratorVoice: string, onChunk?: (i: number, total: number) => void, cueChars = 70): Promise<Narration> {
+  const files = await pool(groups, 3, async (g, i) => {
+    const key = createHash("sha1").update(JSON.stringify(g)).digest("hex").slice(0, 10);
+    const f = path.join(dir, `tts-cast-${String(i).padStart(3, "0")}-${key}.wav`);
+    try {
+      await speakTurns(g, f);
+    } catch (e) {
+      if (!(e instanceof SpeechFormatError)) throw e;
+      console.warn(`  ⚠ TTS nhiều giọng bị từ chối (${e.message.slice(0, 120)}) — đọc một giọng`);
+      await speak(g.map((t) => t.text).join(" "), f, narratorVoice);
+    }
+    console.log(`  TTS ${i + 1}/${groups.length} (${[...new Set(g.map((t) => t.voice))].join(" + ")})`);
+    onChunk?.(i, groups.length);
+    return f;
+  });
+  const cues: Cue[] = [];
+  let t = 0;
+  for (const [i, f] of files.entries()) {
+    const d = await duration(f);
+    const pauses = parseSilenceMids(await ffmpegLog(["-i", f, "-af", "silencedetect=noise=-35dB:d=0.18", "-f", "null", "-"]).catch(() => ""));
+    cues.push(...cuesForChunk(sentences(stripTags(groups[i].map((x) => x.text).join("\n"))), t, d, cueChars, pauses));
+    t += d;
+  }
+  const list = path.join(dir, "tts.txt");
+  await writeFile(list, files.map((f) => `file '${f}'`).join("\n"));
+  const audio = path.join(dir, "narration.wav");
+  await ffmpeg(["-y", "-f", "concat", "-safe", "0", "-i", list, "-c", "copy", audio]);
   return { audio, cues, seconds: t };
 }
 
@@ -842,12 +881,31 @@ export async function renderVideo(videoId: number) {
     track.start("tts", { long: ttsChunks(longText).length, ...(wantShort ? { short: ttsChunks(m.shortScript).length } : {}) });
     track.log("tts", `Giọng ${voice}`);
     console.log("● Video dài: đọc giọng");
-    const long = await narrate(longText, dir, voice, (i, total) => track.tick("tts", "long", `Đoạn ${i + 1}/${total}`));
+    const onLong = (i: number, total: number) => track.tick("tts", "long", `Đoạn ${i + 1}/${total}`);
+    let long: Narration;
+    // Chuyện đời: đạo diễn giọng đọc + phân vai từng nhân vật, đọc tốc độ gốc. Kịch bản lệch chữ truyện → một giọng như cũ.
+    const script = life ? await cached(path.join(dir, `voice-script${tag}.json`), () => directScript(longText).catch((e) => {
+      if (e instanceof QuotaExhaustedError) throw e;
+      console.warn("  ⚠ Đạo diễn giọng đọc lỗi:", e instanceof Error ? e.message : e);
+      return null;
+    })) : null;
+    if (script) {
+      const cast = castVoices(script);
+      track.log("tts", `Phân vai: ${Object.entries(cast).map(([k, v]) => `${k === NARRATOR ? "người kể" : k}=${v}`).join(", ")}`);
+      const groups = groupTurns(script.turns, cast).map((g) =>
+        g.map((t) => ({ speaker: t.speaker, voice: cast[t.speaker] ?? cast[NARRATOR], style: t.style || (t.speaker === NARRATOR ? NARRATOR_STYLE : ""), text: t.text })),
+      );
+      track.total("tts", "long", groups.length);
+      long = await narrateScript(groups, dir, cast[NARRATOR], onLong);
+    } else {
+      if (life) track.log("tts", "Không phân vai được — đọc một giọng, tốc độ gốc");
+      long = await narrate(longText, dir, voice, onLong, 70, life ? 1 : NARRATION_TEMPO);
+    }
     await uploadPreview(videoId, releaseId, await previewAudio(long.audio, path.join(dir, "narration.m4a")));
     let short: Narration | null = null;
     if (wantShort) {
       try {
-        short = await narrate(m.shortScript, shortDir, voice, () => track.tick("tts", "short"), 34);
+        short = await narrate(m.shortScript, shortDir, script ? castVoices(script)[NARRATOR] : voice, () => track.tick("tts", "short"), 34, life ? 1 : NARRATION_TEMPO);
         await uploadPreview(videoId, releaseId, await previewAudio(short.audio, path.join(shortDir, "short-narration.m4a")));
       } catch (e) {
         if (e instanceof QuotaExhaustedError) throw e;

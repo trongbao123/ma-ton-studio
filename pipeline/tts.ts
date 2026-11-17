@@ -9,6 +9,41 @@ const MODELS = (process.env.TTS_MODELS ?? "gemini-3.8-flash-tts,gemini-3.1-flash
  * Free tier: gemini-3.8-flash-tts chỉ 10 lượt/ngày — các model sau là dự phòng.
  */
 export async function speak(text: string, outFile: string, voice = process.env.TTS_VOICE ?? "Algenib") {
+  // Model TTS không nhận system instruction → chất giọng giữ bằng `voice` (chọn theo bộ truyện).
+  // Chỉ gửi đúng văn bản truyện: kèm câu hướng dẫn thì model đôi khi đọc luôn câu đó.
+  return synth(outFile, text, [{ voice, language: "vi-VN" }]);
+}
+
+/** Một lượt đọc có người nói + cảm xúc (speech_metadata) — văn bản được chèn thẻ hơi thở <sigh>… */
+export type SpeechTurn = { speaker: string; voice: string; style: string; text: string };
+
+/** Lỗi định dạng (400) của kiểu gọi nhiều giọng — người gọi quay về đọc một giọng. */
+export class SpeechFormatError extends Error {}
+
+/**
+ * Đọc nhiều lượt trong MỘT lượt gọi: 1 giọng → speech_config mảng; 2 giọng → { speakers }. Cảm xúc từng lượt ở
+ * annotations speech_metadata.style (không bị đọc thành tiếng). Gemini cho tối đa 2 giọng / lượt gọi.
+ */
+export async function speakTurns(turns: SpeechTurn[], outFile: string) {
+  const voices = [...new Set(turns.map((t) => t.voice))];
+  if (voices.length > 2) throw new Error("Tối đa 2 giọng mỗi lượt đọc");
+  const multi = voices.length === 2;
+  const input = [
+    {
+      type: "user_input",
+      content: turns.map((t) => ({
+        type: "text",
+        text: t.text,
+        // Nhiều giọng: tên speaker = tên giọng (map 1–1 trong speech_config).
+        annotations: [{ type: "speech_metadata", ...(multi ? { speaker: t.voice } : {}), ...(t.style ? { style: t.style } : {}) }],
+      })),
+    },
+  ];
+  const config = multi ? { speakers: voices.map((v) => ({ speaker: v, voice: v })) } : [{ voice: voices[0], language: "vi-VN" }];
+  return synth(outFile, input, config, true);
+}
+
+async function synth(outFile: string, input: unknown, speechConfig: unknown, structured = false) {
   // Đã có file từ lần chạy trước (cache GitHub Actions) thì không tốn quota đọc lại.
   if (await access(outFile).then(() => true, () => false)) return;
   let last = "";
@@ -24,11 +59,9 @@ export async function speak(text: string, outFile: string, voice = process.env.T
         },
         body: JSON.stringify({
           model,
-          // Chỉ gửi đúng văn bản truyện: kèm câu hướng dẫn thì model đôi khi đọc luôn câu đó.
-          // Model TTS không nhận system instruction → chất giọng giữ bằng `voice` (chọn theo bộ truyện).
-          input: text,
+          input,
           response_modalities: ["audio"],
-          generation_config: { speech_config: [{ voice, language: "vi-VN" }] },
+          generation_config: { speech_config: speechConfig },
         }),
       });
       const body = await res.json().catch(() => ({}));
@@ -45,6 +78,8 @@ export async function speak(text: string, outFile: string, voice = process.env.T
         limited++;
         break;
       }
+      // Kiểu nhiều lượt/nhiều giọng bị từ chối định dạng → báo người gọi đọc lại một giọng (không thử model khác vô ích).
+      if (structured && res.status === 400) throw new SpeechFormatError(last);
       if (res.status !== 429 && res.status < 500) break;
       await new Promise((r) => setTimeout(r, 10_000 * (attempt + 1)));
     }
