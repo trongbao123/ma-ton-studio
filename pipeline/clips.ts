@@ -1,6 +1,5 @@
 // Short cắt cảnh: mỗi ngày tối đa 2 Short dựng từ đoạn kịch tính nhất của các chương đã viết (cộng 1 Short của tập = 3 Short/ngày).
 // Gọi từ daily.ts (sau khi đã ưu tiên render chương cho tập kế tiếp) hoặc CLI "clips[:N]".
-import { CHANNEL_URL } from "@/lib/channel";
 import { rm } from "node:fs/promises";
 import path from "node:path";
 import { and, eq, inArray, lt, sql } from "drizzle-orm";
@@ -13,7 +12,7 @@ import { YT_USAGE_MODEL } from "@/lib/limits";
 import { escapeHtml, notify, WEB_URL } from "@/lib/notify";
 import { loadSecrets } from "@/lib/secrets";
 import { isYoutubeQuotaMessage } from "@/lib/short-backfill";
-import { accessToken, cleanTags, getYoutubeAuth, noAngle, YoutubeAuthError } from "@/lib/youtube";
+import { accessToken, channelUrlOf, cleanTags, getYoutubeAuth, noAngle, YoutubeAuthError } from "@/lib/youtube";
 import { buildClipDescription, canUploadClip, clipsToMake, clipTags, ensureShortsTag, fullEpisodeUrl, pickClipSlot, pickClipSources, pickClipTitle, CLIP_TITLE_ROUNDS, CLIP_TITLE_TARGET, type ClipSource } from "./clip-plan";
 import { seriesRows, withStaleAsFailed } from "./compile";
 import { vnDay } from "./episode-plan";
@@ -130,13 +129,14 @@ async function makeOne(c: Ctx): Promise<number> {
   const file = await renderShort({ dir, voice: c.s.ttsVoice, script: draft.shortScript, characterLook: c.characterLook ?? draft.characterLook, hook: draft.hook, music });
 
   const own = await seriesPlaylist(c.s.id);
-  const listUrl = own ? playlistUrl(own) : CHANNEL_URL;
+  const listUrl = own ? playlistUrl(own) : await channelUrlOf(c.s.channel);
   const description = buildClipDescription({
     body: draft.description,
     fullUrl: fullEpisodeUrl({ episodeYoutubeId: c.src.episodeYoutubeId, episodePublishAt: c.src.episodePublishAt, clipPublishAt: c.slot, playlistUrl: listUrl }),
     playlistUrl: listUrl,
     seriesTitle: c.s.title,
     tail: music ? musicCredit(music) : "",
+    channelUrl: await channelUrlOf(c.s.channel),
   });
   const tags = clipTags(c.keywords, c.s.title);
   const meta: VideoMeta = {
@@ -146,8 +146,8 @@ async function makeOne(c: Ctx): Promise<number> {
     shortClip: { sourceChapterId: c.src.chapterId, scoreTitle: best.score, episodeVideoId: c.src.episodeVideoId },
   };
 
-  const auth = await getYoutubeAuth();
-  if (!auth) throw new YoutubeAuthError("Chưa kết nối YouTube");
+  const auth = await getYoutubeAuth(c.s.channel);
+  if (!auth) throw new YoutubeAuthError(`Chưa kết nối YouTube (kênh ${c.s.channel})`);
   if (!canUploadClip(await usedUnitsToday())) throw new Error("quotaExceeded: không đủ unit YouTube hôm nay cho Short cắt cảnh");
   const token = await accessToken(auth.refreshToken);
 

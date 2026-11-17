@@ -7,6 +7,7 @@ import { planChapters, writeChapterStep } from "@/lib/story/service";
 import { maxContinues } from "@/lib/story/prompts";
 import { quotaDay } from "@/lib/ai/usage";
 import { aiUsage } from "@/db/schema";
+import { isLifeStory } from "@/lib/story/life";
 import { loadSecrets } from "@/lib/secrets";
 import { ensureWebsub } from "@/lib/websub";
 import { commentOnPublished } from "./comment";
@@ -70,7 +71,16 @@ const run = { rendered: 0, written: 0, quotaHit: false };
 
 async function renderQueue(failures: string[]) {
   await requeueStuck();
-  const queue = await db().select().from(videos).where(eq(videos.status, "queued")).orderBy(asc(videos.id));
+  // Video của kênh phụ (đang được ưu tiên) render trước, trong cùng kênh thì theo thứ tự id.
+  const queue = (
+    await db()
+      .select({ id: videos.id, channel: series.channel })
+      .from(videos)
+      .innerJoin(chapters, eq(chapters.id, videos.chapterId))
+      .innerJoin(series, eq(series.id, chapters.seriesId))
+      .where(eq(videos.status, "queued"))
+      .orderBy(asc(videos.id))
+  ).sort((a, b) => Number(a.channel === "main") - Number(b.channel === "main") || a.id - b.id);
   let quota: string | null = null;
   // Nhiều luồng: RENDER_PARALLEL chương cùng lúc; hết quota thì không bắt đầu chương mới (chương đang chạy tự dừng ở quota).
   await pool(queue, RENDER_PARALLEL, async (v) => {
@@ -115,6 +125,8 @@ async function dispatchCompile(seriesId: number) {
 /** Đủ chương đã render chưa nằm trong bản gộp nào thì kích hoạt gộp. Lỗi dispatch chỉ báo (1 lần/ngày), không làm hỏng job. */
 async function dispatchCompilations() {
   for (const s of await db().select().from(series).where(eq(series.autopilot, true))) {
+    // Chuyện đời: mỗi truyện đăng riêng — gộp 5 truyện khác nhau thành 1 video là vô nghĩa.
+    if (isLifeStory(s)) continue;
     const { active, recentFailed, batch } = await compileState(s);
     if (!batch) continue;
     if (active || recentFailed) {
@@ -188,7 +200,11 @@ async function main() {
   await commentOnPublished().catch((e) => console.warn("⚠ Bình luận kêu gọi:", e instanceof Error ? e.message : e));
 
   let quotaLeft = true;
-  for (const s of await db().select().from(series).where(eq(series.autopilot, true))) {
+  // Kênh phụ (Chuyện Đời Lắng Đọng) đang được ưu tiên: viết trước để nó không bị kênh gốc ăn hết quota AI/giọng đọc trong ngày.
+  const autopilot = (await db().select().from(series).where(eq(series.autopilot, true))).sort(
+    (a, b) => Number(a.channel === "main") - Number(b.channel === "main") || a.id - b.id,
+  );
+  for (const s of autopilot) {
     if (!quotaLeft) break;
     console.log(`▶ ${s.title}`);
     try {

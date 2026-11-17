@@ -12,7 +12,7 @@ import { availableProviders } from "@/lib/ai";
 import { CLI_STATUS_KEY, withCliStatus, type CliStatus } from "@/lib/ai/cli-status";
 import { applySecrets, secretsFresh } from "@/lib/secrets";
 import { SECRETS_KEY } from "@/lib/secret-keys";
-import { parseYoutubeAuth, YT_KEY } from "@/lib/youtube";
+import { parseYoutubeAuth, YT_KEY, ytKey } from "@/lib/youtube";
 import type { FlowData, TrendsView } from "./model";
 import { VIDIQ_STATS_KEY, type VidiqStats } from "@/lib/vidiq-stats";
 
@@ -84,7 +84,7 @@ export async function loadFlowPage(
   const { v, c, s } = row;
   const tracked = v.progress?.steps.images?.model;
   const [settingRows, compRows, usage] = await db().batch([
-    db().select({ key: appSettings.key, value: appSettings.value }).from(appSettings).where(inArray(appSettings.key, SETTING_KEYS)),
+    db().select({ key: appSettings.key, value: appSettings.value }).from(appSettings).where(inArray(appSettings.key, [...SETTING_KEYS, ytKey(s.channel)])),
     compilationRows(v.id),
     // Pipeline chưa ghi model ảnh (video cũ) thì suy từ lượt dùng trong ngày render; đã ghi thì lô này trả rỗng.
     db()
@@ -96,7 +96,8 @@ export async function loadFlowPage(
   if (process.env.DATABASE_URL && !secretsFresh()) applySecrets(setting[SECRETS_KEY]);
   const routing = normalizeRouting(setting[ROUTING_KEY] ?? null);
   const cli = (setting[CLI_STATUS_KEY] ?? {}) as CliStatus;
-  const yt = parseYoutubeAuth(setting[YT_KEY]);
+  // Kênh của bộ truyện này (kênh phụ: "youtube:<khoá>").
+  const yt = parseYoutubeAuth(setting[ytKey(s.channel)]);
   const trends = (setting[TRENDS_KEY] as TrendsData | undefined) ?? null;
   const compiledInto = compilationOf(v.id, compRows);
   const content = c.content.trim();
@@ -139,7 +140,7 @@ export async function loadFlowPage(
       autoPublish: s.autoPublish,
     },
     prevSummary: row.prevSummary || null,
-    youtube: { connected: Boolean(yt), channel: yt?.channel ?? null, playlistId: playlistOf(setting[PLAYLISTS_KEY], s.id) },
+    youtube: { connected: Boolean(yt), channel: yt?.channel ?? null, channelKey: s.channel, playlistId: playlistOf(setting[PLAYLISTS_KEY], s.id) },
     vidiq: v.youtubeVideoId ? ((setting[VIDIQ_STATS_KEY] as VidiqStats | undefined)?.videos[v.youtubeVideoId] ?? null) : null,
     vidiqAt: (setting[VIDIQ_STATS_KEY] as VidiqStats | undefined)?.at ?? null,
     trends: trendsView(trends),

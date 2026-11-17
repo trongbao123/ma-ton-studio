@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { chapters, series, type Chapter, type Series } from "@/db/schema";
 import { textProvider } from "@/lib/ai";
 import { polishOpening, shouldPolishOpening } from "./editor";
+import { isLifeStory } from "./life";
 import { freshInsights, loadTrends, trendsBrief } from "@/lib/trends";
 import {
   bibleSchema,
@@ -67,7 +68,7 @@ export async function writeChapterStep(chapterId: number, mode: WriteMode) {
   } else {
     const base = chapterPrompt(s, await previousChapters(chapter), chapter, { partial: isLongChapter(s.targetWords) });
     const part = await ai.generateText({
-      ...(mode === "start" ? base : continuePrompt(base, content, s.targetWords)),
+      ...(mode === "start" ? base : continuePrompt(base, content, s.targetWords, isLifeStory(s))),
       maxOutputTokens: 16000,
       temperature: 0.9,
       task: "story",
@@ -76,7 +77,8 @@ export async function writeChapterStep(chapterId: number, mode: WriteMode) {
     const save = (text: string) => db().update(chapters).set({ content: text, summary: "", status: "outline", updatedAt: new Date() }).where(eq(chapters.id, chapterId));
     // Lưu ngay bản vừa viết: bước chấm phía sau lỗi/bị cắt cũng không mất lượt viết 16k token.
     await save(content);
-    if (mode === "start" && shouldPolishOpening()) {
+    // Biên tập mở đầu chấm theo luật tiên hiệp (bàn tay vàng…) — chuyện đời có nhịp riêng nên bỏ qua.
+    if (mode === "start" && shouldPolishOpening() && !isLifeStory(s)) {
       // Biên tập viên AI chấm 300 từ đầu ngay lượt đầu — viết lại lúc này rẻ nhất, trước khi tốn các lượt viết tiếp và giọng đọc.
       const polished = await polishOpening(content, base, ai);
       warning = polished.warning;

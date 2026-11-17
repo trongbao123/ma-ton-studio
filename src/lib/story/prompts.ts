@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Chapter, Series } from "@/db/schema";
+import { isLifeStory, lifeChapterPrompt, lifeContinueTask, lifeOutlinePrompt } from "./life";
 
 /** Số chương gần nhất đưa nguyên tóm tắt vào prompt; xa hơn thì bỏ để prompt không phình. */
 export const RECENT_SUMMARY_WINDOW = 15;
@@ -131,6 +132,7 @@ export function openerLine(s: Pick<Series, "episodeChapters">, startAt: number, 
 
 /** `trends`: đoạn xu hướng khán giả hiện tại (trendsBrief) — có thì lồng vào, không có thì dàn ý như cũ. */
 export function outlinePrompt(s: Series, previous: Chapter[], count: number, trends?: string | null) {
+  if (isLifeStory(s)) return lifeOutlinePrompt(s, previous, count);
   const startAt = (previous.at(-1)?.number ?? 0) + 1;
   return {
     system: WRITER_SYSTEM,
@@ -156,6 +158,8 @@ export const maxContinues = (targetWords: number) => (isLongChapter(targetWords)
 
 /** `partial`: chương dài viết nhiều lượt — lượt đầu chỉ viết phần mở đầu, chưa kết chương. */
 export function chapterPrompt(s: Series, previous: RecalledChapter[], chapter: Chapter, opts: { partial?: boolean } = {}) {
+  // Chuyện đời: mỗi chương một truyện độc lập — không cần trí nhớ các chương trước.
+  if (isLifeStory(s)) return lifeChapterPrompt(s, chapter);
   const long = isLongChapter(s.targetWords);
   const length = long
     ? `Chương DÀI khoảng ${s.targetWords} từ, chia 6–8 cảnh liền mạch.${
@@ -183,8 +187,15 @@ Cách viết (bắt buộc):
   };
 }
 
-export function continuePrompt(base: { system: string; prompt: string }, written: string, targetWords: number) {
+export function continuePrompt(base: { system: string; prompt: string }, written: string, targetWords: number, life = false) {
   const remaining = Math.max(targetWords - wordCount(written), 500);
+  // Chuyện đời: lượt viết tiếp phải đi tới kết trọn vẹn, không cliffhanger.
+  if (life) {
+    return {
+      system: base.system,
+      prompt: `${base.prompt}\n\n# Phần đã viết (${wordCount(written)} từ)\n${written}\n\nTruyện còn quá ngắn. ${lifeContinueTask(remaining)}`,
+    };
+  }
   // Chương dài: còn nhiều thì chỉ viết 1 phần rồi dừng giữa mạch; phần cuối mới đi hết dàn ý + cliffhanger.
   const more = isLongChapter(targetWords) && remaining > PART_WORDS + 500;
   const task = more

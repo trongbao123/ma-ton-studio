@@ -6,6 +6,7 @@ import { z } from "zod";
 import type { Chapter, Series, VideoMeta } from "@/db/schema";
 import { QuotaExhaustedError, textProvider } from "@/lib/ai";
 import { AI_NOTE, optimizeMeta } from "@/lib/seo-optimize";
+import { channelUrlOf } from "@/lib/youtube";
 import { composeDescription, hashtagsFor, headings, segmentsFromText } from "./description";
 import { buildEpisodeToc, coldOpenSceneCount, fullLabel, shortSceneCount } from "./episode-plan";
 import { duration, ffmpeg } from "./ffmpeg";
@@ -23,7 +24,7 @@ import { sfxCutEvents, sfxTrackArgs, type SfxEvent } from "./sfx";
 import { BURN_TEXT, buildVideo, FONT, LOGO_CROP, musicCredit, narrate, pickMusic, splitScenes, thumbnail } from "./render";
 import { PUBLISH_HOUR_UTC } from "./schedule";
 import { conformArgs } from "./still";
-import { DEFAULT_THUMB, THUMB_IDS, THUMB_STYLE, thumbFile, type ThumbId } from "./thumb-plan";
+import { DEFAULT_THUMB, THUMB_IDS, THUMB_LAYOUT, THUMB_STYLE, thumbFile, type ThumbId } from "./thumb-plan";
 import { chooseTitle, genreSeeds, keywordResearch, scoreTitles } from "./vidiq";
 import { COLD_OPEN_RULE, HOOK_TITLE_RULE, NO_NAME_RULE, THUMB_TEXT_RULE } from "@/lib/meta-rules";
 
@@ -51,8 +52,8 @@ export const episodeSchema = z.object({
   description: z.string().describe("Mô tả 220–300 từ, 3–4 đoạn (KHÔNG kèm mục lục, hệ thống tự thêm): câu đầu chứa tên truyện; giới thiệu hấp dẫn các chương trong tập, không spoil kết; nhắc tên truyện ≥ 2 lần; kêu gọi đăng ký/like/bật chuông"),
   tags: z.array(z.string()).describe("15–25 tag tiếng Việt CÓ DẤU viết y như người xem gõ tìm (vd 'truyện tu tiên', KHÔNG viết 'truyen tu tien'); ít nhất 5 tag lấy nguyên văn từ danh sách từ khóa vidIQ, tổng 300–480 ký tự; tag đầu là từ khóa điểm cao nhất, có tên truyện; không trùng"),
   thumbnailText: z.string().describe(`Chữ trên thumbnail: ${THUMB_TEXT_RULE}; ${NO_NAME_RULE}`),
-  thumbnailPrompt: z.string().describe("English image prompt, thumbnail A: EXTREME close-up of the main character's face filling 50-60% of the frame at the most dramatic moment, extreme expression (roaring, killing intent, terror), glowing eyes, face on the LEFT half, plain dark RIGHT 40% for big text, very high contrast, minimal detail"),
-  thumbnailPromptConfront: z.string().describe("English image prompt, thumbnail B: the main character FACING a monster / beast / main enemy of this episode in a tense standoff, both clearly visible, high contrast, simple background, right 40% darker and simpler for big text"),
+  thumbnailPrompt: z.string().describe("English image prompt, thumbnail B: EXTREME close-up of the main character's face filling 50-60% of the frame at the most dramatic moment, extreme expression (roaring, killing intent, terror), glowing eyes, face on the LEFT half, plain dark RIGHT 40% for big text, very high contrast, minimal detail"),
+  thumbnailPromptConfront: z.string().describe("English image prompt, thumbnail A (mặc định, chủ kênh muốn kiểu này): the main character on the LEFT and the main villain / monster of THIS episode on the RIGHT clashing head-on in mid-fight, their attacks or weapons colliding in the center with an explosion of light and sparks, both faces clearly visible with intense expressions, the villain looks clearly different from the hero (age, build, outfit colors, aura color), both figures in the upper two-thirds of the frame, bottom third darker and simpler for big text, high contrast, saturated colors"),
   thumbnailPromptBurst: z.string().describe("English image prompt, thumbnail C: the main character at the moment of an explosive power surge (huge energy blast, lightning, shockwave) with a fierce expression, high contrast, saturated colors, right 40% darker and simpler for big text"),
   characterLook: z.string().describe("English: ngoại hình nhân vật chính"),
   shortTitle: z.string().describe(`Tiêu đề Short ≤ 60 ký tự, có #shorts; ${HOOK_TITLE_RULE}`),
@@ -231,11 +232,11 @@ export type ThumbVariant = { id: ThumbId; file: string };
  * (a) lỗi thì không có thumbnail (như trước); (b)/(c) lỗi chỉ bỏ phương án đó.
  */
 async function makeThumbnails(o: EpisodeInput, m: z.infer<typeof episodeSchema>): Promise<ThumbVariant[]> {
-  const prompts: Record<ThumbId, string> = { a: m.thumbnailPrompt, b: m.thumbnailPromptConfront, c: m.thumbnailPromptBurst };
+  const prompts: Record<ThumbId, string> = { a: m.thumbnailPromptConfront, b: m.thumbnailPrompt, c: m.thumbnailPromptBurst };
   const out: ThumbVariant[] = [];
   for (const [i, id] of THUMB_IDS.entries()) {
     try {
-      const file = await thumbnail(o.dir, `${prompts[id] || m.thumbnailPrompt}, ${THUMB_STYLE[id]}, ${m.characterLook}`, m.thumbnailText, { name: thumbFile(id).replace(/\.jpg$/, ""), seed: 42 + i * 101, refs: o.heroRef ? [o.heroRef] : undefined });
+      const file = await thumbnail(o.dir, `${prompts[id] || m.thumbnailPrompt}, ${THUMB_STYLE[id]}, ${m.characterLook}`, m.thumbnailText, { name: thumbFile(id).replace(/\.jpg$/, ""), seed: 42 + i * 101, refs: o.heroRef ? [o.heroRef] : undefined, layout: THUMB_LAYOUT[id] });
       out.push({ id, file });
     } catch (e) {
       console.warn(`⚠ Thumbnail ${id.toUpperCase()} lỗi:`, e instanceof Error ? e.message : e);
@@ -296,7 +297,10 @@ export async function buildEpisodeContent(o: EpisodeInput) {
   console.log("● Mở đầu cao trào");
   const coldOpen = await makeColdOpen(o, m, music);
   const toc = buildEpisodeToc(items, coldOpen ? { seconds: coldOpen.seconds, title: "Mở đầu" } : undefined);
-  const description = composeDescription(fixed.meta.description, toc, links, hashtagsFor(keywords), o.credits.join("\n\n"));
+  const description = composeDescription(
+    fixed.meta.description, toc, links, hashtagsFor(keywords, o.s.channel), o.credits.join("\n\n"),
+    await channelUrlOf(o.s.channel).catch(() => undefined),
+  );
   const credit = music ? `\n\n${musicCredit(music)}` : "";
   const meta: VideoMeta = { ...fixed.meta, title, description, shortDescription: `${fixed.meta.shortDescription}${credit}`, compilation: o.compilation,
     shortScript: m.shortScript, thumbnailText: m.thumbnailText, characterLook: m.characterLook,

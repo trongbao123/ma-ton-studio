@@ -20,3 +20,22 @@ describe("thumbnail chữ nổ", () => {
     expect(f).not.toContain("box=1");
   });
 });
+
+describe("thumbnail đối đầu: chữ dải dưới", () => {
+  it("chữ ngắn 1 dòng, dài thì 2 dòng chia đôi", async () => {
+    const { bottomLines } = await import("./thumb-blast");
+    expect(bottomLines("Thách đấu")).toEqual(["THÁCH ĐẤU"]);
+    expect(bottomLines("Một chưởng định sinh tử")).toEqual(["MỘT CHƯỞNG ĐỊNH", "SINH TỬ"]);
+  });
+  it("căn giữa ngang, tối dần dải dưới", () => {
+    const f = blastFilter("Thách đấu", "bottom");
+    expect(f).toContain("x=(w-tw)/2");
+    expect(f).toContain("Y/H-0.5");
+  });
+  it("phương án mặc định (a) là đối đầu, chữ dưới", async () => {
+    const { DEFAULT_THUMB, THUMB_LAYOUT, THUMB_STYLE } = await import("./thumb-plan");
+    expect(DEFAULT_THUMB).toBe("a");
+    expect(THUMB_LAYOUT.a).toBe("bottom");
+    expect(THUMB_STYLE.a).toContain("villain");
+  });
+});

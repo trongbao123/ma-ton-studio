@@ -9,7 +9,7 @@ import { appSettings, chapters, series, videos } from "@/db/schema";
 import { layoutKey, mergeLayout, pickSubPositions, type Orientation, type Pos } from "@/lib/flow/layout";
 import { draftBible, planChapters, writeChapterStep, type WriteMode } from "@/lib/story/service";
 import { dispatchPublish, dispatchRender, dispatchTrends, queueVideo } from "@/lib/story/videos";
-import { saveYoutubeAuth, updateYoutubeSnippet } from "@/lib/youtube";
+import { isChannelKey, saveYoutubeAuth, updateYoutubeSnippet } from "@/lib/youtube";
 import { syncFromYoutube } from "@/lib/youtube-stats";
 import { optimizeMeta, SEO_TARGET } from "@/lib/seo-optimize";
 import { VOICES } from "@/lib/flow/voices";
@@ -223,9 +223,11 @@ export async function retryPublishAction(videoId: number): Promise<ActionState> 
   });
 }
 
-export async function disconnectYoutubeAction(): Promise<ActionState> {
+/** Ngắt kênh (bind khoá kênh từ node YouTube; mặc định kênh gốc). */
+export async function disconnectYoutubeAction(channel: string = "main"): Promise<ActionState> {
   return attempt(async () => {
-    await saveYoutubeAuth(null);
+    if (typeof channel !== "string" || !isChannelKey(channel)) throw new Error("Khoá kênh không hợp lệ.");
+    await saveYoutubeAuth(null, channel);
     revalidatePath("/videos", "layout");
     return "Đã ngắt kết nối YouTube.";
   });

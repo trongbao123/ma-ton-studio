@@ -3,9 +3,9 @@
 //   vidIQ trả jobId, lượt cron sau đọc tiếp — không tốn thêm credit).
 // - Lượt xem, thời gian xem TB, % xem TB: YouTube Analytics qua vidIQ.
 // Mỗi lần lấy ~10 credit; tài khoản còn ít (11/2026: 285 credit tới 6/12) nên mặc định 3 ngày/lần (VIDIQ_STATS_EVERY_HOURS).
-import { eq, isNotNull } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 import { db } from "@/db";
-import { appSettings, videos } from "@/db/schema";
+import { appSettings, chapters, series, videos } from "@/db/schema";
 import { CHANNEL_ID } from "./channel";
 
 export const VIDIQ_STATS_KEY = "vidiq_stats";
@@ -98,7 +98,16 @@ export async function syncVidiqStats(now = Date.now(), force = false): Promise<s
     const state = await readVidiqStats();
     const due = force || isDue(state.at, now);
     if (!due && !state.pendingJob) return "vidIQ: chưa tới hạn lấy số";
-    const ids = (await db().select({ id: videos.youtubeVideoId }).from(videos).where(isNotNull(videos.youtubeVideoId)).orderBy(videos.id))
+    // vidIQ chỉ gắn với kênh gốc — video kênh phụ không lấy số ở đây.
+    const ids = (
+      await db()
+        .select({ id: videos.youtubeVideoId })
+        .from(videos)
+        .innerJoin(chapters, eq(chapters.id, videos.chapterId))
+        .innerJoin(series, eq(series.id, chapters.seriesId))
+        .where(and(isNotNull(videos.youtubeVideoId), eq(series.channel, "main")))
+        .orderBy(videos.id)
+    )
       .map((r) => r.id!)
       .slice(-50);
     if (!ids.length) return "vidIQ: chưa có video trên YouTube";

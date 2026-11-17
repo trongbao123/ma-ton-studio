@@ -11,7 +11,7 @@ const s: Series = {
   style: "ngôi thứ nhất",
   targetWords: 3000,
   autopilot: false,
-  autoApprove: false,
+  autoApprove: false, channel: "main",
   chaptersPerDay: 2,
   episodeChapters: 0,
   voiceStyle: "",

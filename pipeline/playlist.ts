@@ -4,7 +4,8 @@ import { and, asc, eq, isNotNull } from "drizzle-orm";
 import { db } from "@/db";
 import { appSettings, chapters, series, videos } from "@/db/schema";
 import { loadSecrets } from "@/lib/secrets";
-import { accessToken, getYoutubeAuth, noAngle } from "@/lib/youtube";
+import { channelProfile } from "@/lib/channel-profile";
+import { channelOfSeries, channelToken, noAngle } from "@/lib/youtube";
 import { recordYoutubeUnits } from "@/lib/yt-units";
 
 const KEY = "yt_playlists";
@@ -12,10 +13,9 @@ const KEY = "yt_playlists";
 const SHORTS_KEY = "yt_short_playlists";
 const API = "https://www.googleapis.com/youtube/v3";
 
-async function token() {
-  const auth = await getYoutubeAuth();
-  if (!auth) throw new Error("Chưa kết nối YouTube.");
-  return accessToken(auth.refreshToken);
+/** Token của kênh đăng bộ truyện này (playlist nằm trên đúng kênh đó). */
+async function token(seriesId: number) {
+  return channelToken(await channelOfSeries(seriesId));
 }
 
 /** POST YouTube API; 409/5xx (playlist vừa tạo, gọi dồn dập) thì thử lại có giãn cách. */
@@ -63,10 +63,10 @@ export async function ensurePlaylist(seriesId: number, tok?: string) {
   const ids = await savedIds();
   if (ids[String(seriesId)]) return ids[String(seriesId)];
   const [s] = await db().select().from(series).where(eq(series.id, seriesId));
-  const t = tok ?? (await token());
+  const t = tok ?? (await token(seriesId));
   const res = await yt("playlists?part=snippet,status", t, {
     snippet: {
-      title: noAngle(`${s.title} | Truyện Audio Tu Tiên Trọn Bộ`).slice(0, 150),
+      title: noAngle(`${s.title} | ${channelProfile(s.channel).playlistLabel} Trọn Bộ`).slice(0, 150),
       description: noAngle(`Nghe trọn bộ ${s.title} theo thứ tự chương. ${s.premise}`).slice(0, 5000),
       defaultLanguage: "vi",
     },
@@ -82,11 +82,11 @@ export async function ensureShortsPlaylist(seriesId: number, tok?: string) {
   const ids = await savedIds(SHORTS_KEY);
   if (ids[String(seriesId)]) return ids[String(seriesId)];
   const [s] = await db().select().from(series).where(eq(series.id, seriesId));
-  const t = tok ?? (await token());
+  const t = tok ?? (await token(seriesId));
   const res = await yt("playlists?part=snippet,status", t, {
     snippet: {
-      title: noAngle(`${s.title} | Short Truyện Audio Tu Tiên`).slice(0, 150),
-      description: noAngle(`Những đoạn kịch tính nhất của ${s.title}. Nghe trọn bộ ở danh sách phát đầy đủ trên kênh. #shorts #truyentutien #truyenaudio`).slice(0, 5000),
+      title: noAngle(`${s.title} | Short ${channelProfile(s.channel).playlistLabel}`).slice(0, 150),
+      description: noAngle(`Những đoạn đáng nhớ nhất của ${s.title}. Nghe trọn ở danh sách phát đầy đủ trên kênh. ${channelProfile(s.channel).shortHashtags.join(" ")}`).slice(0, 5000),
       defaultLanguage: "vi",
     },
     status: { privacyStatus: "public" },
@@ -98,7 +98,7 @@ export async function ensureShortsPlaylist(seriesId: number, tok?: string) {
 
 /** Thêm 1 Short vào playlist Short của bộ truyện. Lỗi chỉ báo cho người gọi, không ảnh hưởng video. */
 export async function addToShortsPlaylist(seriesId: number, youtubeId: string) {
-  const tok = await token();
+  const tok = await token(seriesId);
   const playlistId = await ensureShortsPlaylist(seriesId, tok);
   if ((await playlistVideoIds(playlistId, tok)).has(youtubeId)) return playlistId;
   await yt("playlistItems?part=snippet", tok, { snippet: { playlistId, resourceId: { kind: "youtube#video", videoId: youtubeId } } });
@@ -107,7 +107,7 @@ export async function addToShortsPlaylist(seriesId: number, youtubeId: string) {
 
 /** Thêm 1 video YouTube vào playlist của bộ truyện. Lỗi chỉ báo cho người gọi, không ảnh hưởng video. */
 export async function addToSeriesPlaylist(seriesId: number, youtubeId: string) {
-  const tok = await token();
+  const tok = await token(seriesId);
   const playlistId = await ensurePlaylist(seriesId, tok);
   if ((await playlistVideoIds(playlistId, tok)).has(youtubeId)) return playlistId;
   await yt("playlistItems?part=snippet", tok, { snippet: { playlistId, resourceId: { kind: "youtube#video", videoId: youtubeId } } });

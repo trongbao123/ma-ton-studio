@@ -1,12 +1,18 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { appSettings } from "@/db/schema";
+import { appSettings, chapters, series, videos } from "@/db/schema";
+import { CHANNEL_URL } from "./channel";
 import { decrypt, encrypt } from "./crypto";
 import { recordYoutubeUnits } from "./yt-units";
 import { cleanTags } from "./youtube-tags";
 
 export const YT_KEY = "youtube";
-export type YoutubeAuth = { refreshToken: string; channel: string | null; connectedAt: string };
+/** Kênh gốc (Thôn Phệ Audio) — token ở app_settings "youtube"; kênh khác ở "youtube:<khoá>". Mỗi bộ truyện gắn 1 kênh (series.channel). */
+export const MAIN_CHANNEL = "main";
+export const ytKey = (ch: string) => (ch === MAIN_CHANNEL ? YT_KEY : `${YT_KEY}:${ch}`);
+/** Khoá kênh hợp lệ: chữ thường, số, gạch ngang (dùng trong URL và tên key). */
+export const isChannelKey = (ch: string) => /^[a-z0-9-]{1,24}$/.test(ch);
+export type YoutubeAuth = { refreshToken: string; channel: string | null; channelId?: string | null; connectedAt: string };
 
 /** Token bị thu hồi/hết hạn — người dùng phải bấm "Kết nối YouTube" lại. */
 export class YoutubeAuthError extends Error {}
@@ -55,8 +61,9 @@ export async function exchangeCode(code: string, redirectUri: string): Promise<Y
   const res = await fetch("https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true", {
     headers: { Authorization: `Bearer ${t.access_token}` },
   });
-  const body = (await res.json().catch(() => ({}))) as { items?: { snippet?: { title?: string } }[] };
-  return { refreshToken: t.refresh_token, channel: body.items?.[0]?.snippet?.title ?? null, connectedAt: new Date().toISOString() };
+  const body = (await res.json().catch(() => ({}))) as { items?: { id?: string; snippet?: { title?: string } }[] };
+  const it = body.items?.[0];
+  return { refreshToken: t.refresh_token, channel: it?.snippet?.title ?? null, channelId: it?.id ?? null, connectedAt: new Date().toISOString() };
 }
 
 export async function accessToken(refreshToken: string) {
@@ -67,21 +74,71 @@ export async function accessToken(refreshToken: string) {
 export function parseYoutubeAuth(raw: unknown): YoutubeAuth | null {
   const v = raw as Partial<YoutubeAuth> | undefined;
   if (!v?.refreshToken) return null;
-  return { refreshToken: decrypt(v.refreshToken), channel: v.channel ?? null, connectedAt: v.connectedAt ?? "" };
+  return { refreshToken: decrypt(v.refreshToken), channel: v.channel ?? null, channelId: v.channelId ?? null, connectedAt: v.connectedAt ?? "" };
 }
 
-export async function getYoutubeAuth(): Promise<YoutubeAuth | null> {
-  const [row] = await db().select({ value: appSettings.value }).from(appSettings).where(eq(appSettings.key, YT_KEY));
+export async function getYoutubeAuth(ch: string = MAIN_CHANNEL): Promise<YoutubeAuth | null> {
+  const [row] = await db().select({ value: appSettings.value }).from(appSettings).where(eq(appSettings.key, ytKey(ch)));
   return parseYoutubeAuth(row?.value);
 }
 
-export async function saveYoutubeAuth(auth: YoutubeAuth | null) {
-  if (!auth) return void (await db().delete(appSettings).where(eq(appSettings.key, YT_KEY)));
+export async function saveYoutubeAuth(auth: YoutubeAuth | null, ch: string = MAIN_CHANNEL) {
+  if (!auth) return void (await db().delete(appSettings).where(eq(appSettings.key, ytKey(ch))));
   const value = { ...auth, refreshToken: encrypt(auth.refreshToken) };
   await db()
     .insert(appSettings)
-    .values({ key: YT_KEY, value })
+    .values({ key: ytKey(ch), value })
     .onConflictDoUpdate({ target: appSettings.key, set: { value, updatedAt: new Date() } });
+}
+
+/** Mọi kênh đã kết nối (kênh gốc trước). */
+export async function listYoutubeChannels(): Promise<{ key: string; auth: YoutubeAuth }[]> {
+  const rows = await db().select({ key: appSettings.key, value: appSettings.value }).from(appSettings);
+  return rows
+    .filter((r) => r.key === YT_KEY || r.key.startsWith(`${YT_KEY}:`))
+    .map((r) => ({ key: r.key === YT_KEY ? MAIN_CHANNEL : r.key.slice(YT_KEY.length + 1), auth: parseYoutubeAuth(r.value) }))
+    .filter((r): r is { key: string; auth: YoutubeAuth } => r.auth != null)
+    .sort((a, b) => Number(b.key === MAIN_CHANNEL) - Number(a.key === MAIN_CHANNEL) || a.key.localeCompare(b.key));
+}
+
+/** Kênh của bộ truyện / của video (qua chương → bộ). Không tìm thấy → kênh gốc. */
+export async function channelOfSeries(seriesId: number): Promise<string> {
+  const [r] = await db().select({ ch: series.channel }).from(series).where(eq(series.id, seriesId));
+  return r?.ch ?? MAIN_CHANNEL;
+}
+export async function channelOfVideo(videoId: number): Promise<string> {
+  const [r] = await db()
+    .select({ ch: series.channel })
+    .from(videos)
+    .innerJoin(chapters, eq(chapters.id, videos.chapterId))
+    .innerJoin(series, eq(series.id, chapters.seriesId))
+    .where(eq(videos.id, videoId));
+  return r?.ch ?? MAIN_CHANNEL;
+}
+/** Kênh có video YouTube này (id video dài hoặc Short). Không thấy → kênh gốc. */
+export async function channelOfYoutubeId(youtubeId: string): Promise<string> {
+  const { or } = await import("drizzle-orm");
+  const [r] = await db()
+    .select({ ch: series.channel })
+    .from(videos)
+    .innerJoin(chapters, eq(chapters.id, videos.chapterId))
+    .innerJoin(series, eq(series.id, chapters.seriesId))
+    .where(or(eq(videos.youtubeVideoId, youtubeId), eq(videos.youtubeShortId, youtubeId)));
+  return r?.ch ?? MAIN_CHANNEL;
+}
+
+/** Link kênh (theo ID, không gãy khi đổi handle) cho mô tả / bình luận. Kênh phụ chưa kết nối → link kênh gốc. */
+export async function channelUrlOf(ch: string): Promise<string> {
+  if (ch === MAIN_CHANNEL) return CHANNEL_URL;
+  const auth = await getYoutubeAuth(ch).catch(() => null);
+  return auth?.channelId ? `https://www.youtube.com/channel/${auth.channelId}` : CHANNEL_URL;
+}
+
+/** Access token của kênh (ném YoutubeAuthError nếu chưa kết nối). */
+export async function channelToken(ch: string): Promise<string> {
+  const auth = await getYoutubeAuth(ch);
+  if (!auth) throw new YoutubeAuthError(`Chưa kết nối YouTube cho kênh "${ch}".`);
+  return accessToken(auth.refreshToken);
 }
 
 export const redirectUri = (origin: string) => `${origin}/api/youtube/callback`;
@@ -92,7 +149,7 @@ export const noAngle = (s: string) => s.replace(/[<>]/g, "");
 
 /** Sửa tiêu đề / mô tả / tag của video đã có trên YouTube (videos.update ghi đè cả snippet nên gửi đủ trường). */
 export async function updateYoutubeSnippet(youtubeId: string, s: { title: string; description: string; tags: string[] }) {
-  const auth = await getYoutubeAuth();
+  const auth = await getYoutubeAuth(await channelOfYoutubeId(youtubeId));
   if (!auth) throw new YoutubeAuthError("Chưa kết nối YouTube.");
   const res = await fetch("https://www.googleapis.com/youtube/v3/videos?part=snippet", {
     method: "PUT",
@@ -108,7 +165,7 @@ export async function updateYoutubeSnippet(youtubeId: string, s: { title: string
 
 /** Gỡ lịch công chiếu, giữ video ở RIÊNG TƯ (không xoá) — dùng khi tập chưa đạt chuẩn, chờ bản dựng lại. */
 export async function holdYoutubeVideo(youtubeId: string) {
-  const auth = await getYoutubeAuth();
+  const auth = await getYoutubeAuth(await channelOfYoutubeId(youtubeId));
   if (!auth) throw new YoutubeAuthError("Chưa kết nối YouTube.");
   const res = await fetch("https://www.googleapis.com/youtube/v3/videos?part=status", {
     method: "PUT",
@@ -120,7 +177,7 @@ export async function holdYoutubeVideo(youtubeId: string) {
 
 /** Đổi giờ công chiếu của video đang ở chế độ lên lịch (private + publishAt). Video đã công khai thì YouTube từ chối — bỏ qua. */
 export async function updateYoutubePublishAt(youtubeId: string, publishAt: Date) {
-  const auth = await getYoutubeAuth();
+  const auth = await getYoutubeAuth(await channelOfYoutubeId(youtubeId));
   if (!auth) throw new YoutubeAuthError("Chưa kết nối YouTube.");
   const res = await fetch("https://www.googleapis.com/youtube/v3/videos?part=status", {
     method: "PUT",

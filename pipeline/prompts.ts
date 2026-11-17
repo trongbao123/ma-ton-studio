@@ -3,6 +3,9 @@ import type { Chapter, Series } from "@/db/schema";
 import { textProvider } from "@/lib/ai";
 import type { SeoTrendHints } from "@/lib/trends";
 import { HOOK_TITLE_RULE, NO_NAME_RULE, THUMB_TEXT_RULE } from "@/lib/meta-rules";
+import {
+  isLifeStory, LIFE_ART_STYLE, LIFE_LOOK_RULE, LIFE_META_SYSTEM, LIFE_SCENES_SYSTEM, LIFE_THUMB_PROMPT, LIFE_THUMB_TEXT_RULE, LIFE_TITLE_RULE,
+} from "@/lib/story/life";
 
 // Phong cách donghua 3D (hoạt hình tiên hiệp 3D Trung Quốc) — kiểu khán giả kênh tu tiên quen mắt.
 const ART_STYLE =
@@ -21,6 +24,18 @@ export const metaSchema = z.object({
   characterLook: z.string().describe("English: mô tả ngoại hình nhân vật chính để giữ nhất quán giữa các ảnh"),
 });
 
+/** Chuyện đời: cùng các trường nhưng luật tiêu đề / chữ thumbnail / ảnh thumbnail theo kênh trung niên. */
+export const lifeMetaSchema = metaSchema.extend({
+  title: z.string().describe(`Tiêu đề YouTube: giữ gần nguyên tiêu đề truyện nếu đã đúng khuôn, chỉ sửa cho hút hơn; ${LIFE_TITLE_RULE}`),
+  titleAlternatives: z.array(z.string()).describe("2 phương án tiêu đề khác, góc tò mò khác nhau, cùng khuôn"),
+  tags: z.array(z.string()).describe("15–25 tag tiếng Việt CÓ DẤU như người xem gõ tìm (vd 'chuyện đời', 'truyện audio cảm động', 'câu chuyện gia đình'); ít nhất 5 tag lấy nguyên văn từ danh sách từ khóa vidIQ nếu có; tổng 300–480 ký tự; không trùng"),
+  shortTitle: z.string().describe(`Tiêu đề Short ≤ 60 ký tự, có #shorts; ${LIFE_TITLE_RULE}`),
+  shortScript: z.string().describe("Lời đọc Short 30–50 giây (70–110 từ): câu đầu là biến cố đau nhất, kể tình huống hấp dẫn nhất, dừng ngay trước sự thật, câu cuối mời nghe trọn câu chuyện trên kênh"),
+  thumbnailText: z.string().describe(`Chữ trên thumbnail: ${LIFE_THUMB_TEXT_RULE}`),
+  thumbnailPrompt: z.string().describe(LIFE_THUMB_PROMPT),
+  characterLook: z.string().describe("English: appearance of the main character (age, face, hair, everyday modern Vietnamese clothes) to keep images consistent"),
+});
+
 /** System + prompt gửi AI — tách ra để màn flow hiện lại đúng thứ đã gửi. */
 export function metaRequest(s: Series, c: Chapter, seo?: string | null, trends?: SeoTrendHints | null) {
   const keywords = seo
@@ -30,6 +45,12 @@ export function metaRequest(s: Series, c: Chapter, seo?: string | null, trends?:
   const trendNote = trends
     ? `\n\nXu hướng đang ăn view của ngách (tham khảo cách đặt, KHÔNG sao chép nguyên văn):${trends.titlePatterns.length ? `\n- Mẫu tiêu đề: ${trends.titlePatterns.join(" | ")}` : ""}${trends.thumbnailPatterns.length ? `\n- Mẫu thumbnail: ${trends.thumbnailPatterns.join(" | ")}` : ""}`
     : "";
+  if (isLifeStory(s)) {
+    return {
+      system: LIFE_META_SYSTEM,
+      prompt: `Kênh: ${s.title}\nĐây là MỘT câu chuyện độc lập (không phải chương của bộ dài — mô tả không nhắc "chương"; câu đầu mô tả chứa tiêu đề truyện).\n\nTruyện: ${c.title}\n${c.content}${keywords}${trendNote}`,
+    };
+  }
   return {
     system: "Bạn là chuyên gia YouTube kênh truyện audio tiên hiệp Việt Nam, tối ưu CTR và retention.",
     prompt: `Truyện: ${s.title}\nCốt truyện: ${s.premise}\nNhân vật/bối cảnh:\n${s.bible.slice(0, 3000)}\n\nChương ${c.number}: ${c.title}\n${c.content}${keywords}${trendNote}`,
@@ -39,7 +60,7 @@ export function metaRequest(s: Series, c: Chapter, seo?: string | null, trends?:
 export async function videoMeta(s: Series, c: Chapter, seo?: string | null, trends?: SeoTrendHints | null) {
   return textProvider().generateJson({
     ...metaRequest(s, c, seo, trends),
-    schema: metaSchema,
+    schema: isLifeStory(s) ? lifeMetaSchema : metaSchema,
     temperature: 0.8,
     // Tiêu đề/mô tả quyết định lượt bấm → dùng model tốt (Gemini: danh sách quality, không phải flash-lite).
     tier: "quality",
@@ -47,9 +68,9 @@ export async function videoMeta(s: Series, c: Chapter, seo?: string | null, tren
   });
 }
 
-export function scenesRequest(characterLook: string, scenes: string[]) {
+export function scenesRequest(characterLook: string, scenes: string[], life = false) {
   return {
-    system: "You write prompts for an image model illustrating a Chinese xianxia audio story.",
+    system: life ? LIFE_SCENES_SYSTEM : "You write prompts for an image model illustrating a Chinese xianxia audio story.",
     prompt: `Main character look (keep consistent): ${characterLook}
 
 For EACH numbered scene below write one vivid English image prompt (subject, dynamic pose, setting, mood, cinematic camera angle) and mark action=true if the scene is a fight, chase, explosion, technique release or other intense moment; mark hero=true if the MAIN CHARACTER is visible in the image. Exactly ${scenes.length} items, same order.
@@ -62,12 +83,13 @@ ${scenes.map((t, i) => `${i + 1}. ${t.slice(0, 600)}`).join("\n\n")}`,
 /** Mỗi lượt AI viết tối đa ngần này prompt — nhiều hơn AI hay trả thiếu, ảnh bị lặp lại lệch cốt truyện. */
 const SCENE_BATCH = 20;
 
-export async function scenePrompts(characterLook: string, scenes: string[]) {
+/** `life`: chuyện đời — ảnh điện ảnh chân thực thay cho donghua tiên hiệp. */
+export async function scenePrompts(characterLook: string, scenes: string[], life = false) {
   const out: { prompt: string; action: boolean; hero?: boolean }[] = [];
   for (let i = 0; i < scenes.length; i += SCENE_BATCH) {
     const part = scenes.slice(i, i + SCENE_BATCH);
     const { scenes: got } = await textProvider().generateJson({
-      ...scenesRequest(characterLook, part),
+      ...scenesRequest(characterLook, part, life),
       schema: z.object({ scenes: z.array(z.object({ prompt: z.string(), action: z.boolean(), hero: z.boolean() })) }),
       temperature: 0.7,
       tier: "cheap",
@@ -79,7 +101,9 @@ export async function scenePrompts(characterLook: string, scenes: string[]) {
   return scenes.map((_, i) => {
     const sc = out[i];
     return {
-      prompt: `${sc?.prompt ?? characterLook}, ${sc?.action ? "dynamic action shot, motion, glowing spiritual energy, sparks, " : ""}${ART_STYLE}`,
+      prompt: life
+        ? `${sc?.prompt ?? characterLook}, ${LIFE_ART_STYLE}`
+        : `${sc?.prompt ?? characterLook}, ${sc?.action ? "dynamic action shot, motion, glowing spiritual energy, sparks, " : ""}${ART_STYLE}`,
       action: Boolean(sc?.action),
       hero: Boolean(sc?.hero),
     };
@@ -92,7 +116,7 @@ export { ART_STYLE };
 export async function characterLookFor(s: Series) {
   return textProvider().generateJson({
     system: "You describe fictional characters for an image model. Always answer in ENGLISH, even if the story is in Vietnamese.",
-    prompt: `Truyện: ${s.title}\nNhân vật/bối cảnh:\n${s.bible.slice(0, 3000)}\n\nDescribe the MAIN CHARACTER's appearance in ENGLISH for an image model (visual only: age, face, hair, eyes, outfit colors, accessories). Ancient Chinese xianxia world: outfit is hanfu robes or ancient armor — nothing modern (no "tactical", no leather jacket). No names of techniques, no Vietnamese.`,
+    prompt: `Truyện: ${s.title}\nNhân vật/bối cảnh:\n${s.bible.slice(0, 3000)}\n\nDescribe the MAIN CHARACTER's appearance in ENGLISH for an image model (visual only: age, face, hair, eyes, outfit colors, accessories). ${isLifeStory(s) ? LIFE_LOOK_RULE : `Ancient Chinese xianxia world: outfit is hanfu robes or ancient armor — nothing modern (no "tactical", no leather jacket).`} No names of techniques, no Vietnamese.`,
     schema: z.object({ characterLook: z.string().describe("ENGLISH ONLY, visual details only: age, face, hair, eyes, outfit colors, accessories; 1–2 sentences") }),
     temperature: 0.2,
     tier: "cheap",

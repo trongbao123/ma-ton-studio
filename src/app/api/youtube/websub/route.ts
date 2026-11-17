@@ -1,6 +1,6 @@
 import { after, type NextRequest } from "next/server";
 import { loadSecrets } from "@/lib/secrets";
-import { markVerified, parseFeedChannelId, parseFeedVideoIds, readWebsubState, verifySignature, websubSecret } from "@/lib/websub";
+import { markVerified, parseFeedChannelId, parseFeedVideoIds, readAllWebsubStates, verifySignature, websubSecret } from "@/lib/websub";
 import { syncFromYoutube } from "@/lib/youtube-stats";
 
 // Webhook YouTube (WebSub). Công khai (proxy cho qua) vì hub của Google gọi không có đăng nhập:
@@ -24,9 +24,9 @@ export async function POST(request: NextRequest) {
   const body = await request.text();
   // Sai chữ ký / kênh lạ: vẫn trả 2xx (đúng chuẩn WebSub, để hub không gửi lại) nhưng bỏ qua.
   if (!verifySignature(body, request.headers.get("x-hub-signature"), websubSecret())) return new Response(null, { status: 202 });
-  const state = await readWebsubState();
+  const states = await readAllWebsubStates();
   const channel = parseFeedChannelId(body);
-  if (!state || (channel && channel !== state.channelId)) return new Response(null, { status: 202 });
+  if (!states.length || (channel && !states.some((x) => x.state.channelId === channel))) return new Response(null, { status: 202 });
   const ids = parseFeedVideoIds(body);
   if (ids.length) {
     // Trả lời hub ngay, kéo bản mới từ YouTube sau (1 quota unit).

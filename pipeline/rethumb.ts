@@ -8,19 +8,19 @@ import { db } from "@/db";
 import { chapters, series, videos } from "@/db/schema";
 import { textProvider } from "@/lib/ai";
 import { loadSecrets } from "@/lib/secrets";
-import { accessToken, getYoutubeAuth } from "@/lib/youtube";
+import { accessToken, getYoutubeAuth, channelOfVideo } from "@/lib/youtube";
 import { Tracker } from "./progress";
 import { heroRef } from "./hero";
 import { ensureRelease, uploadAsset } from "./release";
 import { thumbnail } from "./render";
-import { THUMB_IDS, THUMB_STYLE, thumbFile, type ThumbId } from "./thumb-plan";
+import { THUMB_IDS, THUMB_LAYOUT, THUMB_STYLE, thumbFile, type ThumbId } from "./thumb-plan";
 import { chooseThumbnail, setThumbnail } from "./youtube";
 import { NO_NAME_RULE, THUMB_TEXT_RULE } from "@/lib/meta-rules";
 
 export const rethumbSchema = z.object({
   thumbnailText: z.string().describe(`Chữ trên thumbnail: ${THUMB_TEXT_RULE}; ${NO_NAME_RULE}`),
-  a: z.string().describe("English prompt A: EXTREME close-up of the main character's face filling 50-60% of the frame at the most dramatic moment, extreme expression, glowing eyes, face on the LEFT half, plain dark RIGHT 40% for big text, very high contrast"),
-  b: z.string().describe("English prompt B: the main character FACING the monster / main enemy of this video in a tense standoff, both clearly visible, high contrast, simple background, right 40% darker and simpler for big text"),
+  a: z.string().describe("English prompt A: the main character on the LEFT and the main villain / monster of THIS video on the RIGHT clashing head-on in mid-fight, their attacks or weapons colliding in the center with an explosion of light and sparks, both faces clearly visible with intense expressions, the villain looks clearly different from the hero (age, build, outfit colors, aura color), both figures in the upper two-thirds of the frame, bottom third darker and simpler for big text, high contrast, saturated colors"),
+  b: z.string().describe("English prompt B: EXTREME close-up of the main character's face filling 50-60% of the frame at the most dramatic moment, extreme expression, glowing eyes, face on the LEFT half, plain dark RIGHT 40% for big text, very high contrast"),
   c: z.string().describe("English prompt C: the main character at the moment of an explosive power surge (energy blast, lightning, shockwave), fierce expression, high contrast, saturated colors, right 40% darker and simpler for big text"),
 });
 
@@ -52,7 +52,7 @@ export async function rethumb(videoId: number) {
   const thumbs: { id: ThumbId; file: string }[] = [];
   for (const [i, id] of THUMB_IDS.entries()) {
     try {
-      const file = await thumbnail(dir, `${m[id]}, ${THUMB_STYLE[id]}, ${look}`, m.thumbnailText, { name: thumbFile(id).replace(/\.jpg$/, ""), seed: 77 + i * 101, refs: hero.file ? [hero.file] : undefined });
+      const file = await thumbnail(dir, `${m[id]}, ${THUMB_STYLE[id]}, ${look}`, m.thumbnailText, { name: thumbFile(id).replace(/\.jpg$/, ""), seed: 77 + i * 101, refs: hero.file ? [hero.file] : undefined, layout: THUMB_LAYOUT[id] });
       await uploadAsset(videoId, releaseId, file, thumbFile(id));
       thumbs.push({ id, file });
       console.log(`  ✔ Thumbnail ${id.toUpperCase()}`);
@@ -63,7 +63,7 @@ export async function rethumb(videoId: number) {
   if (!thumbs.length) throw new Error("Không vẽ được thumbnail nào.");
   const track = new Tracker(videoId, v.progress);
   const picked = await chooseThumbnail(videoId, v.youtubeVideoId, v.meta.title, thumbs, track);
-  const auth = await getYoutubeAuth();
+  const auth = await getYoutubeAuth(await channelOfVideo(videoId));
   if (!auth) throw new Error("Chưa kết nối YouTube.");
   await setThumbnail(await accessToken(auth.refreshToken), v.youtubeVideoId, picked.file);
   await uploadAsset(videoId, releaseId, picked.file, "thumbnail.jpg");

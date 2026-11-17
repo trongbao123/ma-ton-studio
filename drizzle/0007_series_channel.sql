@@ -1,0 +1,1 @@
+ALTER TABLE "series" ADD COLUMN "channel" text DEFAULT 'main' NOT NULL;

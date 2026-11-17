@@ -11,6 +11,8 @@ import type { Cue } from "./text";
 
 export { CHANNEL_URL } from "@/lib/channel";
 import { CHANNEL_URL } from "@/lib/channel";
+import { channelProfile } from "@/lib/channel-profile";
+import { channelOfSeries, channelUrlOf } from "@/lib/youtube";
 
 export type Segment = { start: number; text: string };
 
@@ -70,11 +72,11 @@ async function chapterLinks(seriesId: number, chapterNumber: number) {
 }
 
 /** Ghép mô tả: thân bài AI + mục lục + link + hashtag + ghi chú AI + ghi công nhạc. Thuần — để test. */
-export function composeDescription(body: string, toc: { start: number; title: string }[], links: string[], hashtags: string[], tail: string) {
+export function composeDescription(body: string, toc: { start: number; title: string }[], links: string[], hashtags: string[], tail: string, channelUrl = CHANNEL_URL) {
   const clean = body.replace(AI_NOTE, "").trim();
   const parts = [clean];
   if (toc.length >= 3) parts.push(`⏱ MỤC LỤC\n${toc.map((t) => `${formatTimestamp(t.start)} ${t.title}`).join("\n")}`);
-  parts.push([...links, `🔔 Đăng ký kênh để nghe chương mới mỗi ngày: ${CHANNEL_URL}?sub_confirmation=1`].join("\n"));
+  parts.push([...links, `🔔 Đăng ký kênh để nghe ${channelUrl === CHANNEL_URL ? "chương mới mỗi ngày" : "thêm những câu chuyện đời"}: ${channelUrl}?sub_confirmation=1`].join("\n"));
   const missing = hashtags.filter((h) => !clean.toLowerCase().includes(h.toLowerCase()));
   if (missing.length) parts.push(missing.join(" "));
   parts.push(AI_NOTE);
@@ -92,8 +94,8 @@ export function splitBody(description: string) {
 export const hashtagOf = (k: string) => `#${k.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/gi, "d").replace(/[^a-zA-Z0-9]/g, "")}`;
 
 /** 3–5 hashtag: 3 cố định của kênh + 2 từ khóa tìm kiếm đầu. */
-export function hashtagsFor(keywords?: string[]) {
-  return ["#TruyenAudio", "#TruyenTuTien", "#TienHiep", ...(keywords ?? []).slice(0, 2).map(hashtagOf)]
+export function hashtagsFor(keywords?: string[], channel = "main") {
+  return [...channelProfile(channel).hashtags, ...(keywords ?? []).slice(0, 2).map(hashtagOf)]
     .filter((h, i, a) => h.length > 3 && a.indexOf(h) === i)
     .slice(0, 5);
 }
@@ -108,6 +110,7 @@ export async function enrichDescription(
     .then((t) => o.segments.map((s, i) => ({ start: s.start, title: t[i] })))
     .catch(() => []);
   const links = [...(o.links ?? []), ...(await chapterLinks(o.seriesId, o.chapterNumber).catch(() => []))];
-  const hashtags = hashtagsFor(o.keywords);
-  return { ...meta, description: composeDescription(body, toc, links, hashtags, credit) };
+  const ch = await channelOfSeries(o.seriesId).catch(() => "main");
+  const hashtags = hashtagsFor(o.keywords, ch);
+  return { ...meta, description: composeDescription(body, toc, links, hashtags, credit, await channelUrlOf(ch).catch(() => CHANNEL_URL)) };
 }

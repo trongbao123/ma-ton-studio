@@ -10,7 +10,7 @@ import { escapeHtml, notify, WEB_URL } from "@/lib/notify";
 import { loadSecrets } from "@/lib/secrets";
 import { BACKFILL_PER_RUN, isYoutubeQuotaMessage, nextBackfillState, pickShortBackfill, shortPublishAt, type BackfillCandidate, type BackfillOutcome } from "@/lib/short-backfill";
 import { heroRef } from "./hero";
-import { accessToken, cleanTags, getYoutubeAuth, noAngle, YoutubeAuthError } from "@/lib/youtube";
+import { accessToken, cleanTags, channelOfVideo, getYoutubeAuth, noAngle, YoutubeAuthError } from "@/lib/youtube";
 import { renderShort } from "./episode";
 import { pickMusic } from "./render";
 import { ensureRelease, uploadAsset } from "./release";
@@ -71,7 +71,7 @@ async function backfillOne(v: typeof videos.$inferSelect): Promise<void> {
     dir, voice: row.s.ttsVoice, script: meta.shortScript!, characterLook: hero.look, hook: meta.thumbnailText!, music: await pickMusic(v.id), heroRef: hero.file,
   });
 
-  const auth = await getYoutubeAuth();
+  const auth = await getYoutubeAuth(await channelOfVideo(v.id));
   if (!auth) throw new YoutubeAuthError("Chưa kết nối YouTube");
   const token = await accessToken(auth.refreshToken);
   const id = await uploadVideo(token, {

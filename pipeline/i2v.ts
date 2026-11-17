@@ -3,8 +3,8 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import { textProvider } from "@/lib/ai";
-import { ffmpeg, ffmpegLog, once, pool } from "./ffmpeg";
-import { CLIP_END_STRENGTH, CLIP_HEIGHT, CLIP_WIDTH, clipSegmentArgs, gpuMinutes, motionPrompt, pickClipScenes, type ClipJob, type SceneSpan } from "./i2v-plan";
+import { duration, ffmpeg, ffmpegLog, once, pool } from "./ffmpeg";
+import { CLIP_END_STRENGTH, CLIP_HEIGHT, CLIP_WIDTH, clipSegmentArgs, gpuMinutes, motionPrompt, pickClipScenes, pickContinuousScenes, type ClipJob, type SceneSpan } from "./i2v-plan";
 import { meanYdif, MODEL_PROBES, parseSsim, ssimArgs, sweepCells, sweepTable, ydifArgs, type SweepRow } from "./i2v-sweep";
 import type { Tracker } from "./progress";
 import { finishI2v, kaggleAuth, KERNEL_TIMEOUT_MINUTES, runI2v, startI2v, type I2vEvents, type I2vOutcome, type I2vSession } from "./kaggle";
@@ -38,9 +38,13 @@ export async function motionPrompts(scenes: { prompt: string; text: string }[]):
   }
 }
 
-/** Đoạn video 1080p của cảnh có clip: clip (lanczos) → mờ chéo sang ảnh tĩnh nếu đoạn dài hơn. Dựng một lần (job chạy lại thì dùng lại). */
+/**
+ * Đoạn video 1080p của cảnh có clip: clip phủ kín cảnh nếu đủ dài (clip nối nhiều đoạn), không thì ảnh tĩnh → mờ chéo sang clip.
+ * Số khung clip đo từ file thật (clip nối 2–3 đoạn dài hơn CLIP_FRAMES). Dựng một lần (job chạy lại thì dùng lại).
+ */
 export async function buildClipSegment(o: { clip: string; img: string; file: string; start: number; end: number; w: number; h: number; logoCrop: string; subs?: string }): Promise<void> {
-  await once(o.file, (tmp) => ffmpeg(clipSegmentArgs({ clip: o.clip, img: o.img, out: tmp, frames: stillFrames(o.start, o.end), w: o.w, h: o.h, logoCrop: o.logoCrop, subs: o.subs })));
+  const clipFrames = Math.max(1, Math.floor((await duration(o.clip).catch(() => 0)) * 24)) || undefined;
+  await once(o.file, (tmp) => ffmpeg(clipSegmentArgs({ clip: o.clip, img: o.img, out: tmp, frames: stillFrames(o.start, o.end), w: o.w, h: o.h, logoCrop: o.logoCrop, subs: o.subs, clipFrames })));
 }
 
 /** Sau khi dựng xong các đoạn tĩnh, chờ Kaggle thêm tối đa ngần này phút (kể từ lúc đẩy lên, trần KERNEL_TIMEOUT_MINUTES). */
@@ -55,6 +59,7 @@ type SavedRun = { session: I2vSession; clips: I2vClip[] };
  */
 export class I2vRun {
   readonly picks: number[];
+  private readonly segments = new Map<number, number>();
   private started: Promise<I2vSession | null> = Promise.resolve(null);
   private list: I2vClip[] = [];
   private readonly stateFile: string;
@@ -69,11 +74,17 @@ export class I2vRun {
       logoCrop: string;
       /** Hạn mức clip (chương mở đầu tập dùng OPENER_CLIPS). */
       limits?: { min: number; max: number; head?: number };
+      /** Có thì chọn cảnh LIỀN MẠCH từ đầu chương, mỗi cảnh nối đủ đoạn để động suốt cảnh; giá trị = ngân sách đoạn. */
+      continuous?: number;
       /** Báo tiến độ cho màn flow. */
       report: { progress: (patch: Partial<I2vProgress>) => void; log: (text: string) => void; total: (n: number) => void; tick: (text: string) => void; model: (m: string) => void };
     },
   ) {
-    this.picks = pickClipScenes(o.scenes, o.limits);
+    if (o.continuous) {
+      const run = pickContinuousScenes(o.scenes, o.continuous);
+      this.picks = run.picks;
+      this.segments = run.segments;
+    } else this.picks = pickClipScenes(o.scenes, o.limits);
     this.stateFile = path.join(o.dir, `${o.name}-i2v-state.json`);
   }
 
@@ -106,7 +117,8 @@ export class I2vRun {
     for (const [k, scene] of this.picks.entries()) {
       const file = path.join(this.o.dir, `${this.o.name}-i2v-in-${scene}.jpg`);
       await prepareClipImage(imageOf(scene), file, this.o.logoCrop);
-      jobs.push({ id: scene, image: `scene-${scene}.jpg`, prompt: motions[k], file });
+      const segments = this.segments.get(scene);
+      jobs.push({ id: scene, image: `scene-${scene}.jpg`, prompt: motions[k], file, ...(segments && segments > 1 ? { segments } : {}) });
     }
     const events = this.events();
     const res = await startI2v({ videoId: this.o.videoId, dir: this.o.dir, jobs, events });
@@ -174,12 +186,12 @@ export class I2vRun {
 }
 
 /** Clip động trên GPU free của Kaggle: chỉ khi có token (Actions) và chưa tắt bằng I2V=0; thiếu/lỗi thì cứ ảnh tĩnh. */
-export function newI2vRun(o: { videoId: number; dir: string; track: Tracker; scenes: { start: number; end: number; zoom?: boolean; text: string }[]; prompts: { prompt: string; action: boolean }[]; logoCrop: string; limits?: { min: number; max: number; head?: number } }) {
+export function newI2vRun(o: { videoId: number; dir: string; track: Tracker; scenes: { start: number; end: number; zoom?: boolean; text: string }[]; prompts: { prompt: string; action: boolean }[]; logoCrop: string; limits?: { min: number; max: number; head?: number }; continuous?: number }) {
   const enabled = Boolean(kaggleAuth()) && process.env.I2V !== "0" && Boolean(process.env.GITHUB_ACTIONS || process.env.I2V === "1");
   if (!enabled) return undefined;
   const { track } = o;
   return new I2vRun({
-    videoId: o.videoId, dir: o.dir, name: "long", logoCrop: o.logoCrop, limits: o.limits,
+    videoId: o.videoId, dir: o.dir, name: "long", logoCrop: o.logoCrop, limits: o.limits, continuous: o.continuous,
     scenes: o.scenes.map((x, i) => ({ start: x.start, end: x.end, zoom: x.zoom, action: o.prompts[i].action, text: x.text })),
     prompts: o.prompts,
     report: {
@@ -314,7 +326,8 @@ export async function kaggleTest(dir = "/tmp/i2v-in", logoCrop = ""): Promise<vo
   for (const [id, name] of images.entries()) {
     const file = path.join(work, `in-${id}.jpg`);
     await prepareClipImage(path.join(dir, name), file, logoCrop);
-    jobs.push({ id, image: `in-${id}.jpg`, prompt: motions[id], file });
+    // Ảnh thứ 2 nối 3 đoạn (~12 giây) để xem chuyển động liền mạch như production ở đầu tập.
+    jobs.push({ id, image: `in-${id}.jpg`, prompt: motions[id], file, ...(id === 1 ? { segments: 3 } : {}) });
   }
   lap(`Chuẩn bị ${jobs.length} ảnh (${images.join(", ")})`);
   const out = await runI2v({
@@ -330,7 +343,7 @@ export async function kaggleTest(dir = "/tmp/i2v-in", logoCrop = ""): Promise<vo
   console.log(JSON.stringify({ clips: [...out.clips.entries()], results: out.results, model: out.model, gpuSeconds: out.gpuSeconds, kernel: out.kernelUrl }, null, 2));
   await pool([...out.clips.values()], 2, async (f) => {
     const w = f.replace(/\.mp4$/, "-1080.mp4");
-    await ffmpeg(["-i", f, "-vf", "scale=1920:1080:flags=lanczos", "-c:v", "libx264", "-crf", "20", w]);
+    await ffmpeg(["-i", f, "-vf", "scale=1920:1080:force_original_aspect_ratio=increase:flags=lanczos,crop=1920:1080", "-c:v", "libx264", "-crf", "18", w]);
     lap(`Upscale 1080p: ${w}`);
   });
 }

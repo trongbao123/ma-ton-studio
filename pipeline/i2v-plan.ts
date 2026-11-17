@@ -44,6 +44,38 @@ function spread(items: number[], count: number): number[] {
 /** Chương mở đầu tập: nhiều clip hơn, dồn vào 30 phút đầu (vùng zoom). ~44 clip ≈ 45 phút GPU T4 (kernel tối đa 60). */
 export const OPENER_CLIPS = { min: 40, max: 44, head: 38 } as const;
 
+/** Một cảnh nối tối đa ngần này đoạn clip (cảnh 10 giây ≈ 3 đoạn 4 giây). */
+export const MAX_SEGMENTS = 3;
+/** Ngân sách "đoạn" của chương mở tập khi chạy liền mạch (~41 s GPU + ~8 s phóng nét mỗi đoạn ≈ 40 phút T4). */
+export const OPENER_SEGMENT_BUDGET = 44;
+
+/** Số đoạn clip nối liền để phủ kín cảnh dài `seconds` (đoạn đầu CLIP_FRAMES khung, mỗi đoạn sau thêm CLIP_FRAMES−1). */
+export function segmentsFor(seconds: number, fps = STILL_FPS): number {
+  const need = Math.ceil(seconds * fps);
+  const n = need <= CLIP_FRAMES ? 1 : 1 + Math.ceil((need - CLIP_FRAMES) / (CLIP_FRAMES - 1));
+  return Math.min(MAX_SEGMENTS, Math.max(1, n));
+}
+
+/**
+ * Chọn cảnh LIỀN MẠCH từ đầu chương (bỏ cảnh quá ngắn), mỗi cảnh đủ đoạn để chuyển động suốt cảnh, tới khi hết `budget` đoạn.
+ * Khác pickClipScenes (rải đều, mỗi cảnh 1 clip 4 giây rồi ảnh đứng): đầu video phải động liên tục như phim, không khựng.
+ */
+export function pickContinuousScenes(scenes: SceneSpan[], budget = OPENER_SEGMENT_BUDGET): { picks: number[]; segments: Map<number, number> } {
+  const picks: number[] = [];
+  const segments = new Map<number, number>();
+  let used = 0;
+  for (const [i, sc] of scenes.entries()) {
+    const sec = sc.end - sc.start;
+    if (sec < MIN_SCENE_SECONDS) continue;
+    const n = segmentsFor(sec);
+    if (used + n > budget) break;
+    picks.push(i);
+    segments.set(i, n);
+    used += n;
+  }
+  return { picks, segments };
+}
+
 export function pickClipScenes(scenes: SceneSpan[], limits: { min: number; max: number; head?: number } = CLIPS_PER_CHAPTER): number[] {
   const usable = scenes.map((_, i) => i).filter((i) => scenes[i].end - scenes[i].start >= MIN_SCENE_SECONDS);
   const head = usable.filter((i) => scenes[i].zoom);
@@ -70,7 +102,7 @@ export const MOTION_NEGATIVE =
  * Một việc của kernel: ảnh trong dataset + prompt chuyển động tiếng Anh.
  * `endStrength` / `frames` / `negative` chỉ dùng khi dò tham số (i2v-sweep) — bỏ trống thì lấy mức chung của manifest.
  */
-export type ClipJob = { id: number; image: string; prompt: string; endStrength?: number; frames?: number; negative?: string };
+export type ClipJob = { id: number; image: string; prompt: string; endStrength?: number; frames?: number; negative?: string; segments?: number };
 
 export type DatasetFile = { name: string; path: string };
 
@@ -113,6 +145,8 @@ export function buildManifest(
     seed,
     endStrength: CLIP_END_STRENGTH,
     negative: MOTION_NEGATIVE,
+    // run.py phóng nét Real-ESRGAN anime-video lên 1920×1120 trước khi ghi (thăm dò model thì giữ khung gốc để đo).
+    upscale: !model,
     ...(model ? { model } : {}),
     ...(progress ? { progress } : {}),
     clips,
@@ -206,7 +240,7 @@ export function clipSegmentArgs(o: { clip: string; img: string; out: string; fra
   // Mờ vào/ra (0 = cắt thẳng như kênh top) + phụ đề của đoạn; rỗng thì "null" để đồ thị vẫn hợp lệ.
   const tail = [...(fade > 0 ? [`fade=t=in:st=0:d=${fade}`, `fade=t=out:st=${(seconds - fade).toFixed(3)}:d=${fade}`] : []), ...(o.subs ? [subsFilter(o.subs)] : [])].join(",") || "null";
   const encode = [
-    "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-g", String(fps * 5), "-r", String(fps),
+    "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-g", String(fps * 5), "-r", String(fps),
     "-video_track_timescale", STILL_TIMESCALE, o.out,
   ];
   if (split.stillFrames === 0) {

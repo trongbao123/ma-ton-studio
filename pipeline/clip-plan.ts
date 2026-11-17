@@ -97,8 +97,8 @@ export function clipHashtags(seriesTitle: string): string[] {
 }
 
 /** Mô tả Short: 2–3 câu từ khóa + dòng "Nghe FULL tập" + link danh sách phát + hashtag + ghi công nhạc. */
-export function buildClipDescription(o: { body: string; fullUrl: string; playlistUrl: string; seriesTitle: string; tail?: string }): string {
-  return composeDescription(o.body, [], [`▶ Nghe FULL tập: ${o.fullUrl}`, `📚 Danh sách phát trọn bộ: ${o.playlistUrl}`], clipHashtags(o.seriesTitle), o.tail ?? "");
+export function buildClipDescription(o: { body: string; fullUrl: string; playlistUrl: string; seriesTitle: string; tail?: string; channelUrl?: string }): string {
+  return composeDescription(o.body, [], [`▶ Nghe FULL tập: ${o.fullUrl}`, `📚 Danh sách phát trọn bộ: ${o.playlistUrl}`], clipHashtags(o.seriesTitle), o.tail ?? "", o.channelUrl);
 }
 
 /** Tag Short: top từ khóa tìm thật (VN) trước, rồi tag cố định; bỏ trùng, không phân biệt hoa thường. */

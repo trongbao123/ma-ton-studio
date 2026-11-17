@@ -28,6 +28,8 @@ export const series = pgTable("series", {
   makeShort: boolean("make_short").notNull().default(true),
   /** Render xong thì tự upload + lên lịch trên YouTube (cần kết nối YouTube). */
   autoPublish: boolean("auto_publish").notNull().default(true),
+  /** Kênh YouTube đăng bộ này: "main" = kênh gốc, khác = khoá kênh phụ (token ở app_settings "youtube:<khoá>"). */
+  channel: text("channel").notNull().default("main"),
   voiceStyle: text("voice_style").notNull().default("giọng nam trầm, kể chuyện kiếm hiệp cổ trang, nhịp vừa, nhấn nhá ở đoạn cao trào"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

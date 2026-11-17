@@ -164,3 +164,31 @@ describe("pickClipScenes — chương mở đầu tập", () => {
     expect(got.filter((i) => spans[i].zoom).length).toBeGreaterThanOrEqual(38);
   });
 });
+
+describe("đầu video động liền mạch (chương mở tập)", () => {
+  it("số đoạn nối đủ phủ cảnh, tối đa 3", async () => {
+    const { segmentsFor } = await import("./i2v-plan");
+    expect(segmentsFor(3)).toBe(1); // 72 khung ≤ 97
+    expect(segmentsFor(6)).toBe(2); // 144 khung: 97 + 96
+    expect(segmentsFor(10)).toBe(3); // 240 khung: 97 + 96 + 96 = 289
+    expect(segmentsFor(30)).toBe(3);
+  });
+  it("chọn cảnh liên tiếp từ đầu tới khi hết ngân sách đoạn, bỏ cảnh quá ngắn", async () => {
+    const { pickContinuousScenes } = await import("./i2v-plan");
+    const scenes = [
+      { start: 0, end: 10 }, // 3 đoạn
+      { start: 10, end: 11 }, // < 2 giây: bỏ qua
+      { start: 11, end: 17 }, // 2 đoạn
+      { start: 17, end: 27 }, // 3 đoạn → vượt ngân sách 6
+      { start: 27, end: 30 },
+    ];
+    const r = pickContinuousScenes(scenes, 6);
+    expect(r.picks).toEqual([0, 2]);
+    expect([...r.segments.entries()]).toEqual([[0, 3], [2, 2]]);
+  });
+  it("manifest bật phóng nét cho production, tắt khi thăm dò model", async () => {
+    const { buildManifest } = await import("./i2v-plan");
+    expect(buildManifest([]).upscale).toBe(true);
+    expect(buildManifest([], 42, { width: 720, height: 480, frames: 49, fps: 8 }).upscale).toBe(false);
+  });
+});

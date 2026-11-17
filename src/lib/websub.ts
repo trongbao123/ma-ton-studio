@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { appSettings } from "@/db/schema";
 import { WEB_URL } from "./notify";
-import { accessToken, getYoutubeAuth } from "./youtube";
+import { accessToken, getYoutubeAuth, listYoutubeChannels, MAIN_CHANNEL } from "./youtube";
 
 /**
  * Webhook YouTube (WebSub / PubSubHubbub): kênh đăng video hoặc ĐỔI TIÊU ĐỀ / MÔ TẢ thì hub của Google POST feed Atom
@@ -47,24 +47,35 @@ export function parseFeedChannelId(xml: string): string | null {
   return xml.match(/<yt:channelId>\s*(UC[A-Za-z0-9_-]{22})\s*<\/yt:channelId>/)?.[1] ?? null;
 }
 
-export async function readWebsubState(): Promise<WebsubState | null> {
-  const [row] = await db().select().from(appSettings).where(eq(appSettings.key, STATE_KEY));
+/** Mỗi kênh một bản ghi: "yt_websub" (kênh gốc), "yt_websub:<khoá>" (kênh phụ). */
+const stateKey = (ch: string) => (ch === MAIN_CHANNEL ? STATE_KEY : `${STATE_KEY}:${ch}`);
+
+export async function readWebsubState(ch: string = MAIN_CHANNEL): Promise<WebsubState | null> {
+  const [row] = await db().select().from(appSettings).where(eq(appSettings.key, stateKey(ch)));
   return (row?.value as WebsubState | undefined) ?? null;
 }
 
-async function saveState(value: WebsubState) {
+/** Đăng ký WebSub của mọi kênh (kèm khoá kênh). */
+export async function readAllWebsubStates(): Promise<{ ch: string; state: WebsubState }[]> {
+  const rows = await db().select().from(appSettings);
+  return rows
+    .filter((r) => r.key === STATE_KEY || r.key.startsWith(`${STATE_KEY}:`))
+    .map((r) => ({ ch: r.key === STATE_KEY ? MAIN_CHANNEL : r.key.slice(STATE_KEY.length + 1), state: r.value as WebsubState }));
+}
+
+async function saveState(value: WebsubState, ch: string = MAIN_CHANNEL) {
   await db()
     .insert(appSettings)
-    .values({ key: STATE_KEY, value })
+    .values({ key: stateKey(ch), value })
     .onConflictDoUpdate({ target: appSettings.key, set: { value, updatedAt: new Date() } });
 }
 
 /** Hub gọi GET xác nhận đăng ký → ghi lại hạn để biết khi nào gia hạn. */
 export async function markVerified(topic: string, leaseSeconds: number | null) {
-  const s = await readWebsubState();
-  if (!s || s.topic !== topic) return false;
+  const hit = (await readAllWebsubStates()).find((x) => x.state.topic === topic);
+  if (!hit) return false;
   const now = Date.now();
-  await saveState({ ...s, verifiedAt: new Date(now).toISOString(), expiresAt: new Date(now + (leaseSeconds ?? LEASE_SECONDS) * 1000).toISOString() });
+  await saveState({ ...hit.state, verifiedAt: new Date(now).toISOString(), expiresAt: new Date(now + (leaseSeconds ?? LEASE_SECONDS) * 1000).toISOString() }, hit.ch);
   return true;
 }
 
@@ -75,9 +86,10 @@ export function needsRenew(s: WebsubState | null, callback: string, now = Date.n
   return Date.parse(s.expiresAt) - now < RENEW_BEFORE_MS;
 }
 
-async function myChannelId(): Promise<string | null> {
-  const yt = await getYoutubeAuth();
+async function myChannelId(ch: string): Promise<string | null> {
+  const yt = await getYoutubeAuth(ch);
   if (!yt) return null;
+  if (yt.channelId) return yt.channelId;
   const res = await fetch("https://www.googleapis.com/youtube/v3/channels?part=id&mine=true", {
     headers: { Authorization: `Bearer ${await accessToken(yt.refreshToken)}` },
     cache: "no-store",
@@ -90,14 +102,24 @@ async function myChannelId(): Promise<string | null> {
  * Đăng ký / gia hạn webhook nếu cần (`force` = luôn gửi). Trả lý do bỏ qua hoặc "requested".
  * Gọi từ daily (2 lượt/ngày) và lúc kết nối YouTube. Hub xác nhận bất đồng bộ qua GET /api/youtube/websub.
  */
-export async function ensureWebsub(opts: { force?: boolean; baseUrl?: string } = {}) {
+export async function ensureWebsub(opts: { force?: boolean; baseUrl?: string; channel?: string } = {}): Promise<string> {
+  // Không chỉ định kênh = mọi kênh đã kết nối (daily gọi kiểu này).
+  if (!opts.channel) {
+    const chans = await listYoutubeChannels();
+    if (!chans.length) return "no-channel";
+    const out: string[] = [];
+    for (const c of chans) out.push(`${c.key}=${await ensureWebsub({ ...opts, channel: c.key })}`);
+    return out.join(", ");
+  }
+  const ch = opts.channel;
   const callback = `${(opts.baseUrl ?? WEB_URL).replace(/\/$/, "")}${WEBSUB_PATH}`;
-  const state = await readWebsubState();
+  const state = await readWebsubState(ch);
   if (!opts.force && !needsRenew(state, callback)) return "fresh";
-  const channelId = state?.channelId ?? (await myChannelId());
+  // Kết nối lại (force) có thể là kênh khác → hỏi lại id kênh thay vì dùng id cũ.
+  const channelId = (opts.force ? null : state?.channelId) ?? (await myChannelId(ch));
   if (!channelId) return "no-channel";
   const topic = topicFor(channelId);
-  await saveState({ channelId, topic, callback, requestedAt: new Date().toISOString() });
+  await saveState({ channelId, topic, callback, requestedAt: new Date().toISOString() }, ch);
   const res = await fetch(HUB, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },

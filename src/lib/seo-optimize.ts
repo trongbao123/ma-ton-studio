@@ -16,7 +16,8 @@ export const fixSchema = z.object({
   shortDescription: z.string().describe("1–2 câu có tên truyện, mời xem video full, kèm #shorts"),
 });
 
-type Ctx = { seriesTitle: string; chapterNumber: number; chapterTitle: string; summary?: string };
+/** `life`: truyện chuyện đời độc lập — khoá tiêu đề (đã theo khuôn kênh), seriesTitle = tên truyện. */
+type Ctx = { seriesTitle: string; chapterNumber: number; chapterTitle: string; summary?: string; life?: boolean };
 
 const strip = (d: string) => d.replace(AI_NOTE, "").trim();
 const withNote = (d: string) => `${strip(d)}\n\n${AI_NOTE}`;
@@ -33,14 +34,14 @@ export async function optimizeMeta(meta: VideoMeta, ctx: Ctx, opts: { target?: n
   let used = 0;
   // Tiêu đề do vidIQ chấm/chọn (điểm CTR thật) thì khoá lại, chỉ sửa mô tả / tag / Short.
   // Tiêu đề giật tít cố ý KHÔNG có từ khóa (15/11/2026) — không mở khoá để AI chèn từ khóa vào nữa.
-  const lockTitle = meta.seo?.titleScore != null;
+  const lockTitle = meta.seo?.titleScore != null || Boolean(ctx.life);
   for (let i = 0; i < (opts.rounds ?? 3) && bestScore < target; i++) {
     used++;
     const scores = scoreMeta(best, ctx.seriesTitle);
     let out: z.infer<typeof fixSchema>;
     try {
       out = await textProvider().generateJson({
-        system: "Bạn là chuyên gia SEO YouTube cho kênh truyện audio tiên hiệp Việt Nam. Sửa metadata để đạt điểm SEO cao mà vẫn tự nhiên, hấp dẫn, không nhồi nhét, không spoil kết chương.",
+        system: `Bạn là chuyên gia SEO YouTube cho kênh truyện audio ${ctx.life ? "chuyện đời / gia đình" : "tiên hiệp"} Việt Nam. Sửa metadata để đạt điểm SEO cao mà vẫn tự nhiên, hấp dẫn, không nhồi nhét, không spoil kết chương.`,
         prompt: `Truyện: ${ctx.seriesTitle}
 Chương ${ctx.chapterNumber}: ${ctx.chapterTitle}${ctx.summary ? `\nTóm tắt chương: ${ctx.summary.slice(0, 1500)}` : ""}
 
@@ -50,7 +51,7 @@ ${JSON.stringify({ title: best.title, description: strip(best.description), tags
 Các tiêu chí đang mất điểm — sửa đúng những điểm này, phần đã đạt thì giữ:
 ${seoFeedback(scores)}
 
-Giữ nguyên nội dung câu chuyện và tên nhân vật.${lockTitle ? " Tiêu đề đã được vidIQ chọn — GIỮ NGUYÊN tiêu đề, chỉ sửa mô tả, tag và Short." : ""} Trả về đủ 5 trường.`,
+Giữ nguyên nội dung câu chuyện và tên nhân vật.${lockTitle ? " Tiêu đề đã chốt — GIỮ NGUYÊN tiêu đề, chỉ sửa mô tả, tag và Short." : ""} Trả về đủ 5 trường.`,
         schema: fixSchema,
         temperature: 0.6,
         tier: "quality",

@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { chapters, series, videos } from "@/db/schema";
 import { escapeHtml, notify, WEB_URL } from "@/lib/notify";
-import { accessToken, cleanTags, getYoutubeAuth, noAngle, YoutubeAuthError } from "@/lib/youtube";
+import { accessToken, channelOfVideo, cleanTags, getYoutubeAuth, noAngle, YoutubeAuthError } from "@/lib/youtube";
 import { recordYoutubeUnits } from "@/lib/yt-units";
 import { Tracker } from "./progress";
 import { keepOrNextSlot } from "./schedule";
@@ -70,7 +70,7 @@ export async function setThumbnail(token: string, videoId: string, file: string)
  */
 export async function chooseThumbnail(_videoId: number, ytId: string, title: string, thumbs: { id: ThumbId; file: string }[], track: Tracker) {
   const scores: ThumbScores = {};
-  const auth = await getYoutubeAuth().catch(() => null);
+  const auth = await getYoutubeAuth(await channelOfVideo(_videoId)).catch(() => null);
   const token = auth ? await accessToken(auth.refreshToken).catch(() => null) : null;
   if (token && thumbs.length > 1) {
     for (const t of thumbs) {
@@ -104,14 +104,14 @@ const slot = (d: Date) =>
 export async function autoPublishEligible(videoId: number) {
   if (!process.env.GITHUB_ACTIONS) return false;
   const [row] = await db()
-    .select({ ytId: videos.youtubeVideoId, autoPublish: series.autoPublish, episodeChapters: series.episodeChapters, meta: videos.meta })
+    .select({ ytId: videos.youtubeVideoId, autoPublish: series.autoPublish, episodeChapters: series.episodeChapters, meta: videos.meta, channel: series.channel })
     .from(videos)
     .innerJoin(chapters, eq(chapters.id, videos.chapterId))
     .innerJoin(series, eq(series.id, chapters.seriesId))
     .where(eq(videos.id, videoId));
   // Chế độ tập: video chương chỉ là nguyên liệu, chỉ tập (meta.compilation.episode) mới đăng.
   if (row && row.episodeChapters > 0 && !row.meta?.compilation?.episode) return false;
-  return Boolean(row?.autoPublish && !row.ytId && (await getYoutubeAuth()));
+  return Boolean(row?.autoPublish && !row.ytId && (await getYoutubeAuth(row.channel)));
 }
 
 export { cleanTags };
@@ -129,10 +129,11 @@ export async function publishToYoutube(videoId: number, files: { long: string; s
     if (!v.meta) throw new Error("Video chưa có tiêu đề/mô tả.");
     // Chống đăng trùng: đã có id YouTube thì không upload lại.
     if (v.youtubeVideoId) throw new Error(`Video đã có trên YouTube (youtu.be/${v.youtubeVideoId}) — không đăng lại.`);
-    const auth = await getYoutubeAuth();
-    if (!auth) throw new YoutubeAuthError("Chưa kết nối YouTube — bấm “Kết nối YouTube” trên node Đăng YouTube.");
+    const channel = await channelOfVideo(videoId);
+    const auth = await getYoutubeAuth(channel);
+    if (!auth) throw new YoutubeAuthError(`Chưa kết nối YouTube${channel === "main" ? "" : ` cho kênh "${channel}"`} — bấm “Kết nối YouTube” trên node Đăng YouTube.`);
     const token = await accessToken(auth.refreshToken);
-    const publishAt = await keepOrNextSlot(v.publishAt);
+    const publishAt = await keepOrNextSlot(v.publishAt, channel);
     const meta = v.meta;
 
     track.log("youtube", "Upload video dài");

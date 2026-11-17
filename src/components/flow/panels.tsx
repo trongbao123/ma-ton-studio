@@ -22,6 +22,9 @@ import { VOICES } from "@/lib/flow/voices";
 export type Tab = "out" | "in" | "log";
 type PanelProps = { data: FlowData; tab: Tab };
 
+/** Link kết nối YouTube cho kênh của bộ truyện (kênh gốc không cần tham số). */
+const connectHref = (ch?: string) => (ch && ch !== "main" ? `/api/youtube/connect?channel=${encodeURIComponent(ch)}` : "/api/youtube/connect");
+
 const PENDING = "Chưa có dữ liệu — video này render trước khi có ghi tiến độ, render lại để xem.";
 
 export function Empty({ text = PENDING }: { text?: string }) {
@@ -1051,16 +1054,16 @@ function Youtube({ data, tab }: PanelProps) {
               <span className="text-emerald-400">●</span> {data.youtube.channel ?? "Đã kết nối"}
             </span>
             <div className="flex gap-2">
-              <a href="/api/youtube/connect" className="btn-secondary !px-3 !py-1.5 text-xs">
+              <a href={connectHref(data.youtube.channelKey)} className="btn-secondary !px-3 !py-1.5 text-xs">
                 Kết nối lại
               </a>
-              <ActionForm action={disconnectYoutubeAction} submitLabel="Ngắt" variant="secondary" />
+              <ActionForm action={disconnectYoutubeAction.bind(null, data.youtube.channelKey ?? "main")} submitLabel="Ngắt" variant="secondary" />
             </div>
           </div>
         ) : (
           <div className="space-y-2">
             <p className="text-xs text-muted">Chưa kết nối — video sẽ chờ đăng tay.</p>
-            <a href="/api/youtube/connect" className="btn-primary inline-block">
+            <a href={connectHref(data.youtube.channelKey)} className="btn-primary inline-block">
               Kết nối YouTube
             </a>
           </div>

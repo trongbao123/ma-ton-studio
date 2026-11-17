@@ -159,9 +159,51 @@ def load_pipe(torch, spec):
 
 
 def write_mp4(frames, path, fps):
-    from diffusers.utils import export_to_video
+    """Ghi mp4 nét (libx264 crf 16) — export_to_video mặc định nén mạnh, khung 1080p bị bệt."""
+    import imageio
+    import numpy as np
 
-    export_to_video(frames, path, fps=fps)
+    with imageio.get_writer(path, fps=fps, codec="libx264", quality=None, macro_block_size=8,
+                            ffmpeg_params=["-crf", "16", "-preset", "medium", "-pix_fmt", "yuv420p"]) as w:
+        for f in frames:
+            w.append_data(np.asarray(f))
+
+
+# Real-ESRGAN bản anime-video (SRVGG compact, ~2,4 MB, OSS BSD-3): LTX ra 768×448 → phóng ×4 rồi thu về 1920×1120.
+# Phóng thẳng bằng lanczos lên 1080p (cách cũ) làm hình bệt, nét vẽ nhoè — người xem thấy "mờ".
+ESRGAN_URL = "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-animevideov3.pth"
+UPSCALE_W, UPSCALE_H = 1920, 1120
+_ESRGAN = {}
+
+
+def esrgan(torch):
+    if "m" not in _ESRGAN:
+        sh(f"{sys.executable} -m pip install -q spandrel")
+        from spandrel import ModelLoader
+
+        path = os.path.join("/tmp", "realesr-animevideov3.pth")
+        if not os.path.exists(path):
+            urllib.request.urlretrieve(ESRGAN_URL, path)
+        _ESRGAN["m"] = ModelLoader().load_from_file(path).model.cuda().half().eval()
+    return _ESRGAN["m"]
+
+
+def upscale(torch, frames, batch=6):
+    """Danh sách khung PIL → khung numpy 1920×1120 đã phóng nét. Lỗi thì ném để main ghi bản gốc."""
+    import numpy as np
+    import torch.nn.functional as F
+
+    model = esrgan(torch)
+    out = []
+    with torch.no_grad():
+        for i in range(0, len(frames), batch):
+            x = torch.from_numpy(np.stack([np.asarray(f) for f in frames[i:i + batch]])).cuda().half().permute(0, 3, 1, 2) / 255.0
+            y = model(x).float().clamp(0, 1)
+            y = F.interpolate(y, size=(UPSCALE_H, UPSCALE_W), mode="area")
+            out.extend((y.permute(0, 2, 3, 1) * 255.0 + 0.5).byte().cpu().numpy())
+            del x, y
+    torch.cuda.empty_cache()
+    return out
 
 
 def usable(frames):
@@ -234,26 +276,50 @@ def main():
                 ).frames[0]
             else:
                 steps = {"timesteps": spec_used["timesteps"]} if spec_used.get("timesteps") else {"num_inference_steps": spec_used["steps"]}
-                out = pipe(
-                    conditions=[LTXVideoCondition(image=img, frame_index=0), LTXVideoCondition(image=img, frame_index=n_frames - 1, strength=end)] if end > 0 else [LTXVideoCondition(image=img, frame_index=0)],
-                    prompt=job["prompt"],
-                    negative_prompt=negative,
-                    width=w,
-                    height=h,
-                    num_frames=n_frames,
-                    guidance_scale=spec_used["guidance"],
-                    guidance_rescale=0.7,
-                    decode_timestep=0.05,
-                    decode_noise_scale=0.025,
-                    image_cond_noise_scale=0.0,
-                    generator=gen,
-                    callback_on_step_end=step_reporter(job["id"], len(spec_used["timesteps"]) if spec_used.get("timesteps") else spec_used["steps"]),
-                    **steps,
-                ).frames[0]
+                # `segments` > 1: nối nhiều đoạn LIỀN MẠCH cho cảnh dài — đoạn sau khóa khung đầu bằng khung CUỐI của đoạn trước,
+                # khung cuối vẫn neo nhẹ vào ảnh gốc (giữ mặt, không trôi dần). Cảnh 10 giây chuyển động suốt, không còn ảnh đứng.
+                segs = max(1, int(job.get("segments", 1)))
+                out, start_img = [], img
+                for s in range(segs):
+                    conds = [LTXVideoCondition(image=start_img, frame_index=0)]
+                    if end > 0:
+                        conds.append(LTXVideoCondition(image=img, frame_index=n_frames - 1, strength=end))
+                    part = pipe(
+                        conditions=conds,
+                        prompt=job["prompt"],
+                        negative_prompt=negative,
+                        width=w,
+                        height=h,
+                        num_frames=n_frames,
+                        guidance_scale=spec_used["guidance"],
+                        guidance_rescale=0.7,
+                        decode_timestep=0.05,
+                        decode_noise_scale=0.025,
+                        image_cond_noise_scale=0.0,
+                        generator=torch.Generator("cuda").manual_seed(seed + job["id"] * 7 + s),
+                        callback_on_step_end=step_reporter(job["id"], len(spec_used["timesteps"]) if spec_used.get("timesteps") else spec_used["steps"]),
+                        **steps,
+                    ).frames[0]
+                    if not usable(part):
+                        log(f"clip {job['id']} đoạn {s + 1}: khung hỏng — dừng ở {s} đoạn")
+                        break
+                    out.extend(part if s == 0 else part[1:])  # khung đầu đoạn sau trùng khung cuối đoạn trước
+                    start_img = part[-1]
+                if segs > 1:
+                    log(f"clip {job['id']}: nối {segs} đoạn → {len(out)} khung")
             peak_gib = torch.cuda.max_memory_allocated() / 2**30
             log(f"MTS_VRAM id={job['id']} peak={peak_gib:.2f}GiB")
-            if usable(out):
-                write_mp4(out, os.path.join(OUT, f"clip-{job['id']}.mp4"), fps)
+            if out and usable(out):
+                frames_out = out
+                if manifest.get("upscale"):
+                    try:
+                        tu = time.time()
+                        frames_out = upscale(torch, out)
+                        log(f"clip {job['id']}: phóng nét ESRGAN {len(out)} khung trong {time.time() - tu:.0f}s")
+                    except Exception as e:  # noqa: BLE001
+                        log(f"clip {job['id']}: phóng nét lỗi ({type(e).__name__}: {str(e)[:200]}) — ghi bản gốc")
+                        frames_out = out
+                write_mp4(frames_out, os.path.join(OUT, f"clip-{job['id']}.mp4"), fps)
                 ok = True
             else:
                 log(f"clip {job['id']}: khung hình hỏng (đen/NaN)")

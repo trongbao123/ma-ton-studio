@@ -1,9 +1,9 @@
 import { desc, eq, inArray, isNotNull, or } from "drizzle-orm";
 import { db } from "@/db";
-import { appSettings, videos } from "@/db/schema";
+import { appSettings, chapters, series, videos } from "@/db/schema";
 import { chunk } from "./batch";
 import type { ChannelStat, LiveStats, YtStat, YtStatsMap } from "./live/types";
-import { accessToken, getYoutubeAuth, YoutubeAuthError } from "./youtube";
+import { accessToken, channelOfYoutubeId, getYoutubeAuth, MAIN_CHANNEL, YoutubeAuthError } from "./youtube";
 import { bestThumb, youtubeIdFromUrl, youtubePatch, type YtInfo } from "./youtube-sync";
 
 /** Snapshot để trang mở lần đầu có số ngay (không cần migration — dùng bảng app_settings). */
@@ -31,7 +31,8 @@ let mem: { stats: LiveStats; at: number } | null = null;
 let inflight: Promise<LiveStats> | null = null;
 /** Hết quota / lỗi liên tục thì nghỉ gọi đến mốc này (ms epoch), vẫn trả số cũ. */
 let blockedUntil = 0;
-let token: { refresh: string; value: string; at: number } | null = null;
+/** Access token nhớ theo refresh token (mỗi kênh một cái). */
+const tokens = new Map<string, { value: string; at: number }>();
 
 /** Đọc snapshot đã lưu (1 truy vấn). Lỗi DB → rỗng, UI chỉ ẩn số. */
 export async function readStatsSnapshot(): Promise<LiveStats> {
@@ -55,22 +56,32 @@ async function saveSnapshot(key: string, value: unknown) {
     .onConflictDoUpdate({ target: appSettings.key, set: { value, updatedAt: new Date() } });
 }
 
-/** Id YouTube (video dài + Short) của các video mới nhất. Video đăng tay chỉ có youtubeUrl thì lấy id từ link. */
-async function recentYoutubeIds(): Promise<string[]> {
+/** Id YouTube (video dài + Short) của các video mới nhất, kèm kênh. Video đăng tay chỉ có youtubeUrl thì lấy id từ link. */
+async function recentYoutubeIds(): Promise<{ id: string; ch: string }[]> {
   const rows = await db()
-    .select({ long: videos.youtubeVideoId, short: videos.youtubeShortId, url: videos.youtubeUrl })
+    .select({ long: videos.youtubeVideoId, short: videos.youtubeShortId, url: videos.youtubeUrl, ch: series.channel })
     .from(videos)
+    .innerJoin(chapters, eq(chapters.id, videos.chapterId))
+    .innerJoin(series, eq(series.id, chapters.seriesId))
     .where(or(isNotNull(videos.youtubeVideoId), isNotNull(videos.youtubeShortId), isNotNull(videos.youtubeUrl)))
     .orderBy(desc(videos.id))
     .limit(RECENT_VIDEOS);
-  return rows.flatMap((r) => [r.long ?? youtubeIdFromUrl(r.url), r.short]).filter((x): x is string => Boolean(x));
+  return rows.flatMap((r) => [r.long ?? youtubeIdFromUrl(r.url), r.short].filter((x): x is string => Boolean(x)).map((id) => ({ id, ch: r.ch })));
 }
 
 async function bearer(refreshToken: string): Promise<string> {
-  if (token && token.refresh === refreshToken && Date.now() - token.at < TOKEN_TTL_MS) return token.value;
+  const t = tokens.get(refreshToken);
+  if (t && Date.now() - t.at < TOKEN_TTL_MS) return t.value;
   const value = await accessToken(refreshToken);
-  token = { refresh: refreshToken, value, at: Date.now() };
+  tokens.set(refreshToken, { value, at: Date.now() });
   return value;
+}
+
+/** Gom id theo kênh — video riêng tư / lên lịch chỉ token của chính kênh mới đọc được. */
+function byChannel(list: { id: string; ch: string }[]) {
+  const m = new Map<string, string[]>();
+  for (const x of list) m.set(x.ch, [...(m.get(x.ch) ?? []), x.id]);
+  return m;
 }
 
 type ApiError = { error?: { code?: number; errors?: { reason?: string }[] } };
@@ -78,7 +89,7 @@ type ApiError = { error?: { code?: number; errors?: { reason?: string }[] } };
 /** Lỗi API → đặt thời gian nghỉ phù hợp (hết quota nghỉ lâu, lỗi khác nghỉ ngắn). */
 function backOff(status: number, body: ApiError) {
   const reason = body.error?.errors?.[0]?.reason ?? "";
-  if (status === 401) token = null;
+  if (status === 401) tokens.clear();
   const wait = reason === "quotaExceeded" || reason === "rateLimitExceeded" ? 30 * 60_000 : 2 * 60_000;
   blockedUntil = Date.now() + wait;
 }
@@ -188,9 +199,13 @@ export async function syncFromYoutube(ids: string[]): Promise<number> {
   const list = ids.filter(Boolean);
   if (!list.length) return 0;
   try {
-    const yt = await getYoutubeAuth();
-    if (!yt) return 0;
-    const { infos } = await fetchVideoStats(list, await bearer(yt.refreshToken));
+    const tagged = await Promise.all(list.map(async (id) => ({ id, ch: await channelOfYoutubeId(id) })));
+    const infos: Record<string, YtInfo> = {};
+    for (const [ch, ids] of byChannel(tagged)) {
+      const yt = await getYoutubeAuth(ch);
+      if (!yt) continue;
+      Object.assign(infos, (await fetchVideoStats(ids, await bearer(yt.refreshToken))).infos);
+    }
     return await syncSnippets(infos);
   } catch (e) {
     console.warn("Không đồng bộ được tiêu đề/mô tả từ YouTube:", e instanceof Error ? e.message : e);
@@ -208,26 +223,42 @@ async function fetchChannelStat(auth: string): Promise<ChannelStat | null> {
 async function refresh(extraIds: string[]): Promise<LiveStats> {
   const snap = await readStatsSnapshot();
   const now = Date.now();
-  const wanted = [...new Set([...(await recentYoutubeIds()), ...extraIds])];
-  const stale = wanted.filter((id) => !snap.videos[id] || now - snap.videos[id].at >= STATS_TTL_MS - TTL_SLACK_MS);
+  const recent = await recentYoutubeIds();
+  const known = new Set(recent.map((x) => x.id));
+  const extra = await Promise.all(extraIds.filter((id) => !known.has(id)).map(async (id) => ({ id, ch: await channelOfYoutubeId(id) })));
+  const wanted = [...recent, ...extra].filter((x, i, a) => a.findIndex((y) => y.id === x.id) === i);
+  const stale = wanted.filter((x) => !snap.videos[x.id] || now - snap.videos[x.id].at >= STATS_TTL_MS - TTL_SLACK_MS);
   const channelStale = !snap.channel || now - snap.channel.at >= CHANNEL_TTL_MS;
   if ((!stale.length && !channelStale) || now < blockedUntil) return snap;
 
-  let auth: string;
-  try {
-    const yt = await getYoutubeAuth();
-    if (!yt) return snap;
-    auth = await bearer(yt.refreshToken);
-  } catch (e) {
-    // Token bị thu hồi: nghỉ lâu hơn, người dùng phải kết nối lại. Lỗi khác (mạng): nghỉ ngắn.
-    blockedUntil = now + (e instanceof YoutubeAuthError ? 10 * 60_000 : 60_000);
-    return snap;
+  // Token từng kênh; kênh gốc lo luôn số liệu kênh ở thanh trên cùng.
+  const auths = new Map<string, string>();
+  for (const ch of new Set([MAIN_CHANNEL, ...stale.map((x) => x.ch)])) {
+    try {
+      const yt = await getYoutubeAuth(ch);
+      if (yt) auths.set(ch, await bearer(yt.refreshToken));
+    } catch (e) {
+      // Token bị thu hồi: nghỉ lâu hơn, người dùng phải kết nối lại. Lỗi khác (mạng): nghỉ ngắn.
+      if (ch === MAIN_CHANNEL) {
+        blockedUntil = now + (e instanceof YoutubeAuthError ? 10 * 60_000 : 60_000);
+        return snap;
+      }
+    }
   }
+  if (!auths.size) return snap;
 
   const result: LiveStats = { videos: { ...snap.videos }, channel: snap.channel, metaAt: snap.metaAt };
   try {
     if (stale.length) {
-      const { stats: fresh, infos } = await fetchVideoStats(stale, auth);
+      const fresh: YtStatsMap = {};
+      const infos: Record<string, YtInfo> = {};
+      for (const [ch, ids] of byChannel(stale)) {
+        const auth = auths.get(ch);
+        if (!auth) continue;
+        const got = await fetchVideoStats(ids, auth);
+        Object.assign(fresh, got.stats);
+        Object.assign(infos, got.infos);
+      }
       if (Object.keys(fresh).length) {
         Object.assign(result.videos, fresh);
         await saveSnapshot(STATS_KEY, result.videos);
@@ -238,8 +269,9 @@ async function refresh(extraIds: string[]): Promise<LiveStats> {
       });
       if (changed) result.metaAt = Date.now();
     }
-    if (channelStale && Date.now() >= blockedUntil) {
-      const channel = await fetchChannelStat(auth);
+    const mainAuth = auths.get(MAIN_CHANNEL);
+    if (mainAuth && channelStale && Date.now() >= blockedUntil) {
+      const channel = await fetchChannelStat(mainAuth);
       if (channel) {
         result.channel = channel;
         await saveSnapshot(CHANNEL_STATS_KEY, channel);

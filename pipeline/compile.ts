@@ -297,7 +297,7 @@ export async function compileSeries(seriesId: number) {
       .select({ at: videos.publishAt })
       .from(videos)
       .where(and(isNotNull(videos.publishAt), gte(videos.publishAt, new Date())));
-    const publishAt = episode ? await nextPublishSlot() : nextCompileSlot(taken.map((t) => t.at!));
+    const publishAt = episode ? await nextPublishSlot(s.channel) : nextCompileSlot(taken.map((t) => t.at!));
     const publish = await autoPublishEligible(videoId);
     await db()
       .update(videos)

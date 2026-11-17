@@ -106,6 +106,20 @@ export function pickPublishSlot(taken: Date[], hourUtc: number, now = new Date()
   return slot;
 }
 
+/**
+ * Như pickPublishSlot nhưng cách video đã xếp gần nhất ít nhất `gapDays` ngày (kênh đăng thưa, vd 3 ngày/video).
+ * gapDays ≤ 1 = mỗi ngày một video như cũ.
+ */
+export function pickSpacedSlot(taken: Date[], hourUtc: number, gapDays: number, now = new Date()) {
+  if (gapDays <= 1 || !taken.length) return pickPublishSlot(taken, hourUtc, now);
+  const last = Math.max(...taken.map((t) => t.getTime()));
+  // Mốc "now" giả: 3 giờ trước khung giờ của ngày (last + gap) → khung đó vẫn còn ≥ 2 giờ nên được chọn.
+  const day = new Date(last);
+  day.setUTCDate(day.getUTCDate() + gapDays);
+  const floor = Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), hourUtc) - 3 * 3600_000;
+  return pickPublishSlot(taken, hourUtc, new Date(Math.max(now.getTime(), floor)));
+}
+
 /** Video có tính vào lịch ngày không: video chương thường và tập có; bản gộp 5 chương cũ và Short cắt cảnh có khung riêng nên không. */
 export const occupiesDailySlot = (meta: VideoMeta | null) => !meta?.shortClip && (!meta?.compilation || Boolean(meta.compilation.episode));
 

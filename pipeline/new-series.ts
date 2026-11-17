@@ -8,6 +8,9 @@ import { draftBible } from "@/lib/story/service";
 import { seriesSettingsFrom, tropeOf } from "@/lib/story/tropes";
 import { FIRST_PERSON_STYLE } from "@/lib/story/prompts";
 import { escapeHtml, notify } from "@/lib/notify";
+import {
+  LIFE_BIBLE, LIFE_GENRE, LIFE_PILOT, LIFE_PREMISE, LIFE_STYLE, LIFE_TARGET_WORDS, LIFE_TTS_VOICE, LIFE_VOICE_STYLE, pilotOutline,
+} from "@/lib/story/life";
 
 export async function newSeries(keys: string[]) {
   await loadSecrets(true);
@@ -34,6 +37,34 @@ export async function newSeries(keys: string[]) {
   await listSeries();
 }
 
+/**
+ * Kênh chuyện đời (CLI: render.ts "newlife" hoặc "newlife:<khoá kênh>"): 1 "bộ" = cả kênh, mỗi chương một truyện độc lập đăng riêng
+ * (episodeChapters = 0), nạp sẵn 10 truyện thử nghiệm theo đúng thứ tự kế hoạch. Đã có bộ chuyện đời trên kênh đó thì bỏ qua.
+ */
+export async function newLifeSeries(channel = "chuyen-doi") {
+  if (!/^[a-z0-9-]{1,24}$/.test(channel)) throw new Error(`Khoá kênh không hợp lệ: ${channel}`);
+  await loadSecrets(true);
+  const [dup] = await db().select().from(series).where(sql`${series.genre} = ${LIFE_GENRE} and ${series.channel} = ${channel}`);
+  if (dup) {
+    console.log(`• Kênh ${channel} đã có bộ chuyện đời #${dup.id} ${dup.title} — bỏ qua`);
+    return listSeries();
+  }
+  const [row] = await db()
+    .insert(series)
+    .values({
+      title: "Chuyện Đời Lắng Đọng", genre: LIFE_GENRE, premise: LIFE_PREMISE, bible: LIFE_BIBLE, style: LIFE_STYLE, channel,
+      targetWords: LIFE_TARGET_WORDS, autopilot: true, autoApprove: true, chaptersPerDay: 1, episodeChapters: 0,
+      ttsVoice: LIFE_TTS_VOICE, voiceStyle: LIFE_VOICE_STYLE, makeShort: true, autoPublish: true,
+    })
+    .returning({ id: series.id });
+  await db()
+    .insert(chapters)
+    .values(LIFE_PILOT.map((p, i) => ({ seriesId: row.id, number: i + 1, title: p.title, outline: pilotOutline(p) })));
+  console.log(`✔ #${row.id} Chuyện Đời Lắng Đọng (kênh ${channel}) + ${LIFE_PILOT.length} truyện thử nghiệm`);
+  await notify(`🆕 Kênh <b>Chuyện Đời Lắng Đọng</b> — bộ #${row.id}, đã nạp ${LIFE_PILOT.length} truyện, bật tự chạy (3 ngày/truyện).`);
+  await listSeries();
+}
+
 /** Đổi ngôi kể sang "Ta" (CLI: render.ts "pov:5,6,7"). Chương đã viết giữ nguyên — chỉ áp từ chương viết sau. */
 export async function firstPerson(ids: number[]) {
   await loadSecrets(true);
@@ -49,7 +80,7 @@ export async function listSeries() {
   await loadSecrets(true);
   const rows = await db()
     .select({
-      id: series.id, title: series.title, genre: series.genre, autopilot: series.autopilot, perDay: series.chaptersPerDay,
+      id: series.id, title: series.title, genre: series.genre, channel: series.channel, autopilot: series.autopilot, perDay: series.chaptersPerDay,
       episode: series.episodeChapters, voice: series.ttsVoice, chapters: sql<number>`(select count(*)::int from ${chapters} where ${eq(chapters.seriesId, series.id)})`,
     })
     .from(series)

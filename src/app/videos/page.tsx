@@ -25,6 +25,9 @@ export default function VideosPage({ searchParams }: PageProps<"/videos">) {
     <div className="space-y-8">
       <header className="space-y-5">
         <h1 className="font-serif text-3xl font-extrabold sm:text-4xl">Video</h1>
+        <Suspense fallback={null}>
+          <YoutubeNotice searchParams={searchParams} />
+        </Suspense>
         <Suspense fallback={<div className="h-9" />}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <Tabs searchParams={searchParams} />
@@ -37,6 +40,22 @@ export default function VideosPage({ searchParams }: PageProps<"/videos">) {
       </Suspense>
     </div>
   );
+}
+
+const YT_NOTICE: Record<string, { tone: string; text: string }> = {
+  connected: { tone: "text-emerald-400", text: "Đã kết nối kênh YouTube." },
+  error: { tone: "text-rose-400", text: "Kết nối YouTube lỗi — thử lại." },
+  "wrong-channel": {
+    tone: "text-rose-400",
+    text: "Chọn nhầm kênh ở màn Google (kênh này đã gắn với khoá khác) — bấm kết nối lại và chọn đúng kênh trong danh sách tài khoản.",
+  },
+};
+
+/** Kết quả quay về từ /api/youtube/callback (?youtube=…). */
+async function YoutubeNotice({ searchParams }: { searchParams: PageProps<"/videos">["searchParams"] }) {
+  const v = (await searchParams).youtube;
+  const n = YT_NOTICE[Array.isArray(v) ? v[0] : (v ?? "")];
+  return n ? <p className={`text-sm ${n.tone}`}>{n.text}</p> : null;
 }
 
 const PAGE_SIZE = 8;

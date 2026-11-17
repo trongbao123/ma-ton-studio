@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { chapters, videos } from "@/db/schema";
 import { loadSecrets } from "@/lib/secrets";
-import { accessToken, getYoutubeAuth } from "@/lib/youtube";
+import { accessToken, getYoutubeAuth, channelOfVideo } from "@/lib/youtube";
 import { compileSeries } from "./compile";
 import { setPublishAt } from "./schedule";
 
@@ -19,7 +19,7 @@ export async function redoEpisode(videoId: number, publishAt?: Date, full = fals
   const [v] = await db().select().from(videos).where(eq(videos.id, videoId));
   if (!v?.meta?.compilation?.episode) throw new Error(`Video #${videoId} không phải tập.`);
   if (v.publishAt && v.publishAt < new Date()) throw new Error("Tập đã công chiếu — không xoá (mất view).");
-  const auth = await getYoutubeAuth();
+  const auth = await getYoutubeAuth(await channelOfVideo(videoId));
   if (!auth) throw new Error("Chưa kết nối YouTube.");
   const token = await accessToken(auth.refreshToken);
   for (const id of [v.youtubeVideoId, v.youtubeShortId]) if (id) await deleteYoutube(id, token);

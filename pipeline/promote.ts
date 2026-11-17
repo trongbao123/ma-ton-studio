@@ -4,7 +4,7 @@ import { eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { videos } from "@/db/schema";
 import { loadSecrets } from "@/lib/secrets";
-import { accessToken, getYoutubeAuth, updateYoutubeSnippet } from "@/lib/youtube";
+import { accessToken, channelOfVideo, getYoutubeAuth, updateYoutubeSnippet } from "@/lib/youtube";
 import { postComment } from "./comment";
 import { recordYoutubeUnits } from "@/lib/yt-units";
 
@@ -24,7 +24,7 @@ export async function promoteEpisode(episodeId: number, targetIds: number[]) {
   const label = ep.meta.compilation?.episodeNo ? `TẬP ${ep.meta.compilation.episodeNo}` : "TẬP MỚI";
   const url = `https://youtu.be/${ep.youtubeVideoId}`;
   const line = `${MARK} ${label} (FULL ${Math.floor(mins / 60)}H${String(mins % 60).padStart(2, "0")}): ${url}`;
-  const auth = await getYoutubeAuth();
+  const auth = await getYoutubeAuth(await channelOfVideo(episodeId));
   if (!auth) throw new Error("Chưa kết nối YouTube.");
   const token = await accessToken(auth.refreshToken);
   for (const v of await db().select().from(videos).where(inArray(videos.id, targetIds))) {

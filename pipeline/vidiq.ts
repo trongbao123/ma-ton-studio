@@ -1,5 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { LIFE_GENRE, LIFE_SEEDS } from "@/lib/story/life";
 
 /**
  * vidIQ qua MCP server chính chủ (https://mcp.vidiq.com/mcp), xác thực bằng API key (Account Settings → MCP).
@@ -68,6 +69,7 @@ export function parseKeywordTable(text: string): Keyword[] {
 /** Từ khóa gốc theo thể loại — người xem tìm "truyện tu tiên", không ai tìm tên truyện mình tự đặt. */
 export function genreSeeds(genre: string) {
   const g = genre.toLowerCase();
+  if (genre === LIFE_GENRE) return LIFE_SEEDS;
   if (g.includes("huyền")) return ["truyện huyền huyễn", "truyện tu tiên", "truyện audio"];
   if (g.includes("ma")) return ["truyện ma đạo", "truyện tu tiên", "truyện tiên hiệp"];
   return ["truyện tu tiên", "truyện tiên hiệp", "tiên hiệp audio"];

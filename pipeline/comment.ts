@@ -9,7 +9,8 @@ import { and, eq, isNotNull, lte } from "drizzle-orm";
 import { db } from "@/db";
 import { chapters, series, videos } from "@/db/schema";
 import { escapeHtml, notify } from "@/lib/notify";
-import { accessToken, getYoutubeAuth, noAngle } from "@/lib/youtube";
+import { channelProfile } from "@/lib/channel-profile";
+import { accessToken, channelUrlOf, getYoutubeAuth, noAngle } from "@/lib/youtube";
 import { recordYoutubeUnits } from "@/lib/yt-units";
 import { playlistUrl, seriesPlaylist } from "./playlist";
 import { PUBLISH_HOUR_UTC } from "./schedule";
@@ -17,7 +18,6 @@ import { PUBLISH_HOUR_UTC } from "./schedule";
 /** Giới hạn ký tự một bình luận YouTube. */
 export const COMMENT_MAX = 10_000;
 
-import { CHANNEL_URL } from "@/lib/channel";
 
 /** Short đăng sau video dài 2 tiếng (publishToYoutube) — bình luận cũng phải đợi tới lúc đó. */
 export const SHORT_DELAY_MS = 2 * 3600_000;
@@ -26,7 +26,19 @@ export const SHORT_DELAY_MS = 2 * 3600_000;
  * Nội dung bình luận: lời kêu gọi + link trọn bộ + link đăng ký. Thiếu playlist thì bỏ hẳn dòng đó.
  * `short`: bản gọn cho Short — người lướt Shorts không đọc đoạn dài.
  */
-export function ctaComment(o: { seriesTitle: string; episodeNo?: number; playlistUrl: string | null; channelUrl: string; publishHour: string; short?: boolean }): string {
+/** `cadence`: có = kênh truyện độc lập (chuyện đời) — câu chữ theo "câu chuyện", nhịp đăng lấy từ hồ sơ kênh. */
+export function ctaComment(o: { seriesTitle: string; episodeNo?: number; playlistUrl: string | null; channelUrl: string; publishHour: string; short?: boolean; cadence?: string }): string {
+  if (o.cadence) {
+    const lines = o.short
+      ? [`Thấy chạm lòng thì THÍCH · CHIA SẺ giúp kênh nhé 🙏`, ...(o.playlistUrl ? [`📜 Nghe trọn câu chuyện: ${o.playlistUrl}`] : []), `🔔 ĐĂNG KÝ — ${o.cadence}: ${o.channelUrl}?sub_confirmation=1`]
+      : [
+          `Nếu câu chuyện này chạm tới bạn, để lại một lượt THÍCH và CHIA SẺ cho người thân cùng nghe nhé 🙏`,
+          `Bạn đã từng gặp chuyện giống vậy chưa? Kể cho mọi người nghe dưới bình luận nhé.`,
+          ...(o.playlistUrl ? [`📜 Nghe thêm những câu chuyện khác: ${o.playlistUrl}`] : []),
+          `🔔 ĐĂNG KÝ kênh để không lỡ ${o.cadence}: ${o.channelUrl}?sub_confirmation=1`,
+        ];
+    return noAngle(lines.join("\n")).slice(0, COMMENT_MAX);
+  }
   const what = o.episodeNo ? `tập ${o.episodeNo}` : "tập này";
   const lines = o.short
     ? [
@@ -79,12 +91,10 @@ export async function postComment(token: string, youtubeId: string, text: string
  * Chạy trong lượt daily. Không bao giờ ném — lỗi chỉ ghi log.
  */
 export async function commentOnPublished(now = new Date()): Promise<void> {
-  const auth = await getYoutubeAuth().catch(() => null);
-  if (!auth) return;
   const rows = await db()
     .select({
       id: videos.id, ytId: videos.youtubeVideoId, shortId: videos.youtubeShortId, publishAt: videos.publishAt,
-      meta: videos.meta, seriesId: chapters.seriesId, seriesTitle: series.title,
+      meta: videos.meta, seriesId: chapters.seriesId, seriesTitle: series.title, channel: series.channel,
     })
     .from(videos)
     .innerJoin(chapters, eq(chapters.id, videos.chapterId))
@@ -94,17 +104,29 @@ export async function commentOnPublished(now = new Date()): Promise<void> {
     .map((r) => ({ row: r, targets: commentTargets({ youtubeVideoId: r.ytId, youtubeShortId: r.shortId, publishAt: r.publishAt, meta: r.meta }, now) }))
     .filter((x) => x.targets.length);
   if (!todo.length) return;
-  const token = await accessToken(auth.refreshToken);
+  // Mỗi kênh bình luận bằng chính tài khoản kênh đó; kênh chưa kết nối thì bỏ qua.
+  const tokens = new Map<string, { token: string; url: string } | null>();
+  const tokenOf = async (ch: string) => {
+    if (!tokens.has(ch)) {
+      const auth = await getYoutubeAuth(ch).catch(() => null);
+      tokens.set(ch, auth ? { token: await accessToken(auth.refreshToken), url: await channelUrlOf(ch) } : null);
+    }
+    return tokens.get(ch)!;
+  };
   const pinLinks: string[] = [];
   for (const { row: r, targets } of todo) {
+    const acc = await tokenOf(r.channel).catch(() => null);
+    if (!acc) continue;
+    const token = acc.token;
     const pl = await seriesPlaylist(r.seriesId).catch(() => null);
     for (const t of targets) {
       const text = ctaComment({
         seriesTitle: r.seriesTitle,
         episodeNo: r.meta!.compilation?.episodeNo,
         playlistUrl: pl ? playlistUrl(pl) : null,
-        channelUrl: CHANNEL_URL,
+        channelUrl: acc.url,
         publishHour: `${PUBLISH_HOUR_UTC + 7}h`,
+        ...(r.channel !== "main" ? { cadence: channelProfile(r.channel).cadence } : {}),
         short: t.kind === "short",
       });
       const err = await postComment(token, t.youtubeId, text);

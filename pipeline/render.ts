@@ -9,7 +9,7 @@ import { QuotaExhaustedError, textProvider } from "@/lib/ai";
 import { escapeHtml, notify, WEB_URL } from "@/lib/notify";
 import { drawImage, imagesReady } from "./images";
 import { duration, escText, ffmpeg, ffmpegLog, filterPath, measureLufs, once, pool } from "./ffmpeg";
-import { blastFilter } from "./thumb-blast";
+import { blastFilter, type BlastLayout } from "./thumb-blast";
 import { Tracker } from "./progress";
 import { buildClipSegment, newI2vRun, type I2vRun } from "./i2v";
 import { newZImageRun, ZIMAGE_MODEL, type ZImageRun } from "./zimage";
@@ -23,7 +23,8 @@ import { heroRef } from "./hero";
 import { chapterNarration } from "./narration";
 import { dropStaleTts, markTts } from "./tts-cache";
 import { imageCount, isEpisodeOpener, planChapterScenes, planShots, shortSceneCount } from "./episode-plan";
-import { OPENER_CLIPS } from "./i2v-plan";
+import { isLifeStory, LIFE_IMAGE_SECONDS, LIFE_MAX_IMAGES } from "@/lib/story/life";
+import { OPENER_CLIPS, OPENER_SEGMENT_BUDGET } from "./i2v-plan";
 import { ensureRelease, uploadAsset } from "./release";
 import { keepOrNextSlot } from "./schedule";
 import { loadSecrets } from "@/lib/secrets";
@@ -586,12 +587,12 @@ async function ambientBed(dir: string) {
  * Thumbnail kiểu "chữ nổ" (thumb-blast.ts): mặt nhân vật nửa trái, 2–3 từ cực to nửa phải; không nhãn/số tập
  * (bản chủ kênh làm tay không nhãn được vidIQ chấm 98).
  */
-export async function thumbnail(dir: string, prompt: string, text: string, variant: { name?: string; seed?: number; refs?: string[] } = {}) {
+export async function thumbnail(dir: string, prompt: string, text: string, variant: { name?: string; seed?: number; refs?: string[]; layout?: BlastLayout } = {}) {
   const name = variant.name ?? "thumbnail";
   const img = path.join(dir, `${name}-src.jpg`);
   await drawImage(`${prompt}, YouTube thumbnail, 16:9`, img, { width: 1280, height: 720, seed: variant.seed ?? 42, refs: variant.refs });
   const out = path.join(dir, `${name}.jpg`);
-  const draw = BURN_TEXT ? blastFilter(text) : "";
+  const draw = BURN_TEXT ? blastFilter(text, variant.layout) : "";
   await ffmpeg(["-i", img, "-vf", `${LOGO_CROP}scale=1280:720:force_original_aspect_ratio=increase:flags=lanczos,crop=1280:720:(iw-ow)/2:(ih-oh)*0.3,eq=contrast=1.12:saturation=1.25,unsharp=5:5:0.8${draw}`, "-q:v", "2", out]);
   return out;
 }
@@ -673,7 +674,8 @@ async function renderInternalChapter(o: { videoId: number; s: Series; c: Chapter
   track.start("video");
   // Như video thường: ghi AI vẽ đã dùng + gửi từng ảnh lên kho để màn flow có "Ảnh từng cảnh" xem trước.
   const imageModels = new Set<string>();
-  const i2v = newI2vRun({ videoId, dir, track, scenes, prompts, logoCrop: LOGO_CROP, limits: opener ? OPENER_CLIPS : undefined });
+  // Chương mở tập: đầu video động LIỀN MẠCH như phim (cảnh nối 2–3 đoạn clip), các chương sau rải clip như cũ.
+  const i2v = newI2vRun({ videoId, dir, track, scenes, prompts, logoCrop: LOGO_CROP, limits: opener ? OPENER_CLIPS : undefined, continuous: opener ? OPENER_SEGMENT_BUDGET : undefined });
   if (i2v) track.start("i2v", { long: i2v.picks.length });
   const zimage = newZImageRun({ videoId, dir, scenes, prompts: prompts.map((p) => p.prompt), exclude: i2v?.picks ?? [], log: (t) => track.log("images", t) });
   const video = await buildStillVideo({
@@ -762,6 +764,8 @@ export async function renderVideo(videoId: number) {
       return;
     }
     const wantShort = s.makeShort;
+    /** Kênh chuyện đời: truyện độc lập, prompt/ảnh/SEO riêng (src/lib/story/life.ts). */
+    const life = isLifeStory(s);
 
     // ── AI Agent: tiêu đề, mô tả, kịch bản Short. Prompt ảnh làm sau khi có giọng đọc (chia cảnh theo thời gian).
     track.start("agent", { long: 2, ...(wantShort ? { short: 1 } : {}) });
@@ -804,7 +808,7 @@ export async function renderVideo(videoId: number) {
     };
     // Magic fill: điểm SEO tổng < 90 thì AI sửa đúng tiêu chí đang mất điểm (tối đa 3 lượt). Cache để chạy lại không tốn lượt.
     const fixed = await cached(path.join(dir, "meta-seo-v2.json"), () =>
-      optimizeMeta(draft, { seriesTitle: s.title, chapterNumber: c.number, chapterTitle: c.title, summary: c.summary }, { log: (t) => track.log("agent", t) }),
+      optimizeMeta(draft, { seriesTitle: life ? c.title : s.title, chapterNumber: c.number, chapterTitle: c.title, summary: c.summary, life }, { log: (t) => track.log("agent", t) }),
     );
     const music = await pickMusic(videoId);
     // Ghi công nhạc nền (bắt buộc với CC BY) — gắn sau bước tối ưu SEO để AI không xoá mất.
@@ -835,16 +839,17 @@ export async function renderVideo(videoId: number) {
 
     // ── AI Agent: prompt ảnh từng cảnh.
     // 1 ảnh ~25s (tách ~2–3 cảnh), tối đa 30 ảnh để vừa quota Cloudflare free 1 ngày (imageCount).
-    const n = imageCount(long.seconds, false);
+    // Chuyện đời ít hành động: 1 ảnh ~40s, tối đa 18 ảnh (10 phút ≈ 15 ảnh).
+    const n = life ? Math.min(LIFE_MAX_IMAGES, Math.max(6, Math.round(long.seconds / LIFE_IMAGE_SECONDS))) : imageCount(long.seconds, false);
     const longScenes = splitScenes(long.cues, n, long.seconds);
-    track.set({ prompts: { meta: clip(metaRequest(s, c, undefined, trendHints)), scenes: clip(scenesRequest(m.characterLook, longScenes.map((x) => x.text))) } });
-    const longPrompts = await cached(path.join(dir, `long-scenes-${n}.json`), () => scenePrompts(m.characterLook, longScenes.map((x) => x.text)));
+    track.set({ prompts: { meta: clip(metaRequest(s, c, undefined, trendHints)), scenes: clip(scenesRequest(m.characterLook, longScenes.map((x) => x.text), life)) } });
+    const longPrompts = await cached(path.join(dir, `long-scenes-${n}.json`), () => scenePrompts(m.characterLook, longScenes.map((x) => x.text), life));
     track.tick("agent", "long", `${n} prompt cảnh video dài`);
     let shortScenes = short ? splitScenes(short.cues, shortSceneCount(short.seconds), short.seconds) : [];
     let shortPrompts: ScenePrompt[] = [];
     if (short) {
       try {
-        const raw = await cached(path.join(shortDir, "scenes.json"), () => scenePrompts(m.characterLook, shortScenes.map((x) => x.text)));
+        const raw = await cached(path.join(shortDir, "scenes.json"), () => scenePrompts(m.characterLook, shortScenes.map((x) => x.text), life));
         shortPrompts = raw.map((p) => ({ ...p, prompt: `${p.prompt}, vertical portrait composition` }));
         track.tick("agent", "short", `${shortScenes.length} prompt cảnh Short`);
       } catch (e) {
@@ -888,7 +893,8 @@ export async function renderVideo(videoId: number) {
     const longVideo = await buildVideo({
       dir, name: "long", narration: long, prompts: longPrompts, scenes: longScenes,
       w: 1920, h: 1080, imgW: 1280, imgH: 768, fontSize: 62, marginV: 70,
-      titleCard: `${s.title}\n\nChương ${c.number}: ${c.title}`,
+      // Chuyện đời vào thẳng biến cố — không thẻ tên kênh/số chương ở đầu video.
+      titleCard: life ? undefined : `${s.title}\n\nChương ${c.number}: ${c.title}`,
       music,
       on: hooks("long"),
     });
@@ -939,7 +945,7 @@ export async function renderVideo(videoId: number) {
     const onYoutube = Boolean(v.youtubeVideoId);
     if (onYoutube) track.log("video", "Video đã có trên YouTube — YouTube giữ bản cũ, bản mới chỉ để tải về");
     // Lịch cũ đã qua (render lại muộn) thì lấy khung giờ mới.
-    const publishAt = onYoutube && v.publishAt ? v.publishAt : await keepOrNextSlot(v.publishAt);
+    const publishAt = onYoutube && v.publishAt ? v.publishAt : await keepOrNextSlot(v.publishAt, s.channel);
     const publish = !onYoutube && (await autoPublishEligible(videoId));
     // `ready` và `uploading` ghi cùng lúc để màn flow không ngừng cập nhật trực tiếp giữa hai bước.
     await db()
@@ -1016,6 +1022,7 @@ if (process.argv[1]?.endsWith("render.ts")) {
     if (arg.startsWith("thumbs:")) return import("./rethumb").then((x) => x.rethumb(Number(arg.slice(7))));
     if (arg === "trends") return import("./trends").then((x) => x.scanTrends());
     if (arg.startsWith("newseries:")) return import("./new-series").then((x) => x.newSeries(arg.slice(10).split(",")));
+    if (arg === "newlife" || arg.startsWith("newlife:")) return import("./new-series").then((x) => x.newLifeSeries(arg.slice(8) || undefined));
     if (arg.startsWith("pov:")) return import("./new-series").then((x) => x.firstPerson(arg.slice(4).split(",").map(Number)));
     if (arg === "series") return import("./new-series").then((x) => x.listSeries());
     if (arg.startsWith("compile:")) return import("./compile").then((x) => x.compileSeries(Number(arg.slice(8))));

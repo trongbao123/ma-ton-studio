@@ -48,25 +48,45 @@ export function blastFontSize(lines: string[]) {
 }
 
 /**
+ * Bố cục chữ: `right` = 2–3 từ dựng đứng nửa phải (ảnh cận mặt, nhân vật bên trái);
+ * `bottom` = chữ chạy ngang dải dưới (ảnh 2 nhân vật đối đầu chiếm 2/3 trên — chữ không che ai).
+ */
+export type BlastLayout = "right" | "bottom";
+
+/** Dải dưới: ≤ 16 ký tự một dòng; dài hơn thì 2 dòng chia đôi theo số từ. */
+export function bottomLines(text: string): string[] {
+  const words = text.trim().toUpperCase().split(/\s+/).filter(Boolean);
+  const one = words.join(" ");
+  if (one.length <= 16 || words.length < 2) return [one];
+  const mid = Math.ceil(words.length / 2);
+  return [words.slice(0, mid).join(" "), words.slice(mid).join(" ")];
+}
+
+/**
  * Đoạn filter nối sau chuỗi -vf của ảnh nền 1280×720 (bắt đầu bằng dấu phẩy).
  * Mặt nạ chữ (trắng trên đen) → nghiêng (perspective) + xoay nhẹ → làm alpha cho 3 lớp: bóng đổ, viền đen, ruột chuyển màu.
  */
-export function blastFilter(hook: string, font = BLAST_FONT) {
-  const lines = splitHookLines(hook);
-  const size = blastFontSize(lines);
+export function blastFilter(hook: string, layout: BlastLayout = "right", font = BLAST_FONT) {
+  const bottom = layout === "bottom";
+  const lines = bottom ? bottomLines(hook) : splitHookLines(hook);
+  const longest = Math.max(1, ...lines.map((l) => [...l].length));
+  const size = bottom ? Math.round(Math.min(lines.length === 1 ? 170 : 130, 1150 / (longest * CHAR_W))) : blastFontSize(lines);
   const lineH = Math.round(size * 1.1);
   const blockH = lineH * lines.length;
-  const top = Math.max(40, Math.round(350 - blockH / 2));
+  const top = bottom ? Math.max(300, 700 - blockH) : Math.max(40, Math.round(350 - blockH / 2));
   const stroke = Math.max(8, Math.round(size / 10));
   const ff = filterPath(font);
   // Căn phải từng dòng (như "THÁCH" / "ĐẤU" lệch phải), dòng sau thụt vào trái một chút cho có nhịp.
   const text = (border: number) =>
     lines
-      .map((l, i) => `drawtext=fontfile=${ff}:text='${escText(l)}':fontsize=${size}:fontcolor=white:borderw=${border}:bordercolor=white:x=w-tw-${RIGHT + (lines.length - 1 - i) * Math.round(size * 0.12)}:y=${top + i * lineH}`)
+      .map((l, i) => {
+        const x = bottom ? "(w-tw)/2" : `w-tw-${RIGHT + (lines.length - 1 - i) * Math.round(size * 0.12)}`;
+        return `drawtext=fontfile=${ff}:text='${escText(l)}':fontsize=${size}:fontcolor=white:borderw=${border}:bordercolor=white:x=${x}:y=${top + i * lineH}`;
+      })
       .join(",");
   // Nghiêng chữ ~12° (đỉnh lệch phải) rồi xoay -5° — Anton vốn đứng nên tự tạo dáng nghiêng như nét cọ.
   const skew = Math.round(720 * 0.2);
-  const tilt = `perspective=x0=${skew}:y0=0:x1=W+${skew}:y1=0:x2=0:y2=H:x3=W:y3=H:interpolation=linear:sense=destination,rotate=a=-5*PI/180:c=black`;
+  const tilt = `perspective=x0=${skew}:y0=0:x1=W+${skew}:y1=0:x2=0:y2=H:x3=W:y3=H:interpolation=linear:sense=destination,rotate=a=${bottom ? -3 : -5}*PI/180:c=black`;
   const blank = "drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill,format=gray";
   const solid = (c: string) => `drawbox=x=0:y=0:w=iw:h=ih:color=${c}:t=fill,format=rgb24`;
   // Ruột chữ: mỗi dòng vàng chanh ở đỉnh → cam ở chân; tính trong khung chưa nghiêng rồi nghiêng cùng mặt nạ.
@@ -75,7 +95,9 @@ export function blastFilter(hook: string, font = BLAST_FONT) {
   const f = `clip((Y-${top}-${row}*${lineH}-${Math.round(size * 0.2)})/${Math.round(size * 0.9)}\\,0\\,1)`;
   const grad = `format=rgb24,geq=r=255:g='238-110*${f}':b='70-70*${f}',${tilt}`;
   // Nửa phải tối dần để chữ nổi trên nền rối.
-  const shade = `format=rgba,geq=r=8:g=4:b=16:a='170*clip((X/W-0.45)/0.3\\,0\\,1)'`;
+  const shade = bottom
+    ? `format=rgba,geq=r=8:g=4:b=16:a='190*clip((Y/H-0.5)/0.3\\,0\\,1)'`
+    : `format=rgba,geq=r=8:g=4:b=16:a='170*clip((X/W-0.45)/0.3\\,0\\,1)'`;
   const parts = [
     `split=7[bg][sh][dm][sm][fm][sc][fc]`,
     `[sh]${shade}[shd]`,
