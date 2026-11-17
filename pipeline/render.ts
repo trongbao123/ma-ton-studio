@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { enrichDescription, segmentsFromCues } from "./description";
 import { playlistUrl, seriesPlaylist } from "./playlist";
 import { access, copyFile, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -766,6 +767,21 @@ export async function renderVideo(videoId: number) {
     const wantShort = s.makeShort;
     /** Kênh chuyện đời: truyện độc lập, prompt/ảnh/SEO riêng (src/lib/story/life.ts). */
     const life = isLifeStory(s);
+    // Chuyện đời hay được sửa tay rồi render lại: cache meta/cảnh gắn với nội dung truyện để bản sửa không dùng lại meta cũ.
+    const tag = life ? `-${createHash("sha1").update(c.content).digest("hex").slice(0, 8)}` : "";
+    if (life) {
+      // Truyện đã sửa từ lần render trước → bỏ ảnh/đoạn video/Short cũ (giọng đọc tts-* tự kiểm theo văn bản nên giữ).
+      const markFile = path.join(dir, "content.tag");
+      const prev = await readFile(markFile, "utf8").catch(() => null);
+      if (prev !== tag) {
+        for (const f of await readdir(dir).catch(() => [] as string[])) {
+          if (!/^tts-|^vidiq-|\.tag$/.test(f)) await rm(path.join(dir, f), { recursive: true, force: true });
+        }
+        await mkdir(shortDir, { recursive: true });
+        console.log("  Truyện đã sửa — dựng lại ảnh/video từ đầu");
+      }
+      await writeFile(markFile, tag);
+    }
 
     // ── AI Agent: tiêu đề, mô tả, kịch bản Short. Prompt ảnh làm sau khi có giọng đọc (chia cảnh theo thời gian).
     track.start("agent", { long: 2, ...(wantShort ? { short: 1 } : {}) });
@@ -781,7 +797,7 @@ export async function renderVideo(videoId: number) {
     // Mẫu tiêu đề/thumbnail đang ăn view (quét xu hướng trong 7 ngày) — không có thì SEO như cũ.
     const trendHints = seoHints(freshInsights(await loadTrends()));
     track.set({ prompts: { meta: clip(metaRequest(s, c, seo?.text, trendHints)) } });
-    const m = await cached(path.join(dir, "meta-v2.json"), () => videoMeta(s, c, seo?.text, trendHints));
+    const m = await cached(path.join(dir, `meta-v2${tag}.json`), () => videoMeta(s, c, seo?.text, trendHints));
     track.model("agent", textProvider().lastModel);
     // vidIQ chấm điểm tiêu đề gốc + 2 phương án (đều theo khuôn giật tít) → lấy tiêu đề điểm cao nhất.
     // Chuyện đời: tiêu đề truyện do chủ kênh đặt sẵn theo khuôn kênh — dùng nguyên (AI hay bịa chi tiết không có trong truyện).
@@ -808,7 +824,7 @@ export async function renderVideo(videoId: number) {
       ...(seoInfo ? { seo: seoInfo } : searchKeywords.length ? { seo: { keywords: searchKeywords } } : {}),
     };
     // Magic fill: điểm SEO tổng < 90 thì AI sửa đúng tiêu chí đang mất điểm (tối đa 3 lượt). Cache để chạy lại không tốn lượt.
-    const fixed = await cached(path.join(dir, "meta-seo-v2.json"), () =>
+    const fixed = await cached(path.join(dir, `meta-seo-v2${tag}.json`), () =>
       optimizeMeta(draft, { seriesTitle: life ? c.title : s.title, chapterNumber: c.number, chapterTitle: c.title, summary: c.summary, life }, { log: (t) => track.log("agent", t) }),
     );
     const music = await pickMusic(videoId);
@@ -844,13 +860,13 @@ export async function renderVideo(videoId: number) {
     const n = life ? Math.min(LIFE_MAX_IMAGES, Math.max(6, Math.round(long.seconds / LIFE_IMAGE_SECONDS))) : imageCount(long.seconds, false);
     const longScenes = splitScenes(long.cues, n, long.seconds);
     track.set({ prompts: { meta: clip(metaRequest(s, c, undefined, trendHints)), scenes: clip(scenesRequest(m.characterLook, longScenes.map((x) => x.text), life)) } });
-    const longPrompts = await cached(path.join(dir, `long-scenes-${n}.json`), () => scenePrompts(m.characterLook, longScenes.map((x) => x.text), life));
+    const longPrompts = await cached(path.join(dir, `long-scenes-${n}${tag}.json`), () => scenePrompts(m.characterLook, longScenes.map((x) => x.text), life));
     track.tick("agent", "long", `${n} prompt cảnh video dài`);
     let shortScenes = short ? splitScenes(short.cues, shortSceneCount(short.seconds), short.seconds) : [];
     let shortPrompts: ScenePrompt[] = [];
     if (short) {
       try {
-        const raw = await cached(path.join(shortDir, "scenes.json"), () => scenePrompts(m.characterLook, shortScenes.map((x) => x.text), life));
+        const raw = await cached(path.join(shortDir, `scenes${tag}.json`), () => scenePrompts(m.characterLook, shortScenes.map((x) => x.text), life));
         shortPrompts = raw.map((p) => ({ ...p, prompt: `${p.prompt}, vertical portrait composition` }));
         track.tick("agent", "short", `${shortScenes.length} prompt cảnh Short`);
       } catch (e) {

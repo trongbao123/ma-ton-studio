@@ -72,7 +72,7 @@ describe("prompt chuyện đời", () => {
   it("viết tiếp phải kết trọn vẹn", () => {
     const base = chapterPrompt(series(), [], chapter());
     const p = continuePrompt(base, "Mẹ ơi.", 1700, true);
-    expect(p.prompt).toContain("kết trọn vẹn");
+    expect(p.prompt).toContain("KẾT đủ 4 nhịp");
     expect(p.prompt).not.toContain("cliffhanger.");
   });
   it("hết truyện nạp sẵn: nghĩ truyện mới không trùng", () => {
