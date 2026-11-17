@@ -48,6 +48,8 @@ async function synth(outFile: string, input: unknown, speechConfig: unknown, str
   if (await access(outFile).then(() => true, () => false)) return;
   let last = "";
   let limited = 0;
+  /** Lỗi từng model (log khi hỏng hết — để phân biệt hết lượt / key sai / model bị khoá). */
+  const errors: string[] = [];
   for (const model of MODELS) {
     for (let attempt = 0; attempt < 4; attempt++) {
       const res = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
@@ -73,20 +75,26 @@ async function synth(outFile: string, input: unknown, speechConfig: unknown, str
         return;
       }
       last = `${model} ${res.status}: ${body?.error?.message ?? "không có audio"}`;
-      if (/per day/i.test(last)) {
+      // Google ghi hạn mức ngày bằng nhiều kiểu: "per day", "PerDay" (quotaId GenerateRequestsPerDay…), "daily".
+      if (/per ?day|daily/i.test(`${last} ${JSON.stringify(body?.error?.details ?? "")}`)) {
         void recordUsage(model, true);
         limited++;
         break;
       }
       // Kiểu nhiều lượt/nhiều giọng bị từ chối định dạng → báo người gọi đọc lại một giọng (không thử model khác vô ích).
       if (structured && res.status === 400) throw new SpeechFormatError(last);
+      errors.push(last.slice(0, 160));
       if (res.status !== 429 && res.status < 500) break;
       await new Promise((r) => setTimeout(r, 10_000 * (attempt + 1)));
     }
   }
   // Có model chạm giới hạn ngày (các model còn lại lỗi khác) → vẫn coi là hết quota để video quay về hàng đợi, không báo "lỗi".
   if (limited > 0) throw new QuotaExhaustedError(`Hết lượt giọng đọc free hôm nay. (${last})`);
-  throw new Error(`TTS lỗi: ${last}`);
+  // Mọi model đều 429 (bị giới hạn tốc độ / quota) mà không ghi rõ "ngày" → vẫn là hết lượt, không phải lỗi.
+  if (errors.length && errors.every((e) => / 429:| 401:| 403:/.test(e)) && errors.some((e) => / 429:/.test(e))) {
+    throw new QuotaExhaustedError(`Hết lượt giọng đọc (429) — ${[...new Set(errors)].join(" | ").slice(0, 600)}`);
+  }
+  throw new Error(`TTS lỗi: ${[...new Set(errors)].join(" | ").slice(0, 600) || last}`);
 }
 
 /** Một số model TTS trả PCM thô (audio/L16;rate=24000) thay vì WAV → gắn header WAV để ffmpeg đọc được. */
