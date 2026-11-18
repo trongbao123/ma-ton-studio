@@ -653,10 +653,11 @@ async function ambientBed(dir: string) {
  * Thumbnail kiểu "chữ nổ" (thumb-blast.ts): mặt nhân vật nửa trái, 2–3 từ cực to nửa phải; không nhãn/số tập
  * (bản chủ kênh làm tay không nhãn được vidIQ chấm 98).
  */
-export async function thumbnail(dir: string, prompt: string, text: string, variant: { name?: string; seed?: number; refs?: string[]; layout?: BlastLayout } = {}) {
+/** `src`: ảnh nền có sẵn (vd ảnh cảnh đầu) — dựng thẳng bằng ffmpeg, KHÔNG gọi AI vẽ (dự phòng khi hết lượt vẽ). */
+export async function thumbnail(dir: string, prompt: string, text: string, variant: { name?: string; seed?: number; refs?: string[]; layout?: BlastLayout; src?: string } = {}) {
   const name = variant.name ?? "thumbnail";
-  const img = path.join(dir, `${name}-src.jpg`);
-  await drawImage(`${prompt}, YouTube thumbnail, 16:9`, img, { width: 1280, height: 720, seed: variant.seed ?? 42, refs: variant.refs });
+  const img = variant.src ?? path.join(dir, `${name}-src.jpg`);
+  if (!variant.src) await drawImage(`${prompt}, YouTube thumbnail, 16:9`, img, { width: 1280, height: 720, seed: variant.seed ?? 42, refs: variant.refs });
   const out = path.join(dir, `${name}.jpg`);
   const draw = BURN_TEXT ? blastFilter(text, variant.layout) : "";
   await ffmpeg(["-i", img, "-vf", `${LOGO_CROP}scale=1280:720:force_original_aspect_ratio=increase:flags=lanczos,crop=1280:720:(iw-ow)/2:(ih-oh)*0.3,eq=contrast=1.12:saturation=1.25,unsharp=5:5:0.8${draw}`, "-q:v", "2", out]);
@@ -1090,8 +1091,7 @@ export async function renderVideo(videoId: number) {
     const thumb = await thumbnail(dir, `${m.thumbnailPrompt}, ${m.characterLook}`, m.thumbnailText).catch(async (e) => {
       console.warn("⚠ Thumbnail AI lỗi, dùng ảnh đầu video:", e instanceof Error ? e.message : e);
       track.warn("images", "Thumbnail AI lỗi — dùng ảnh đầu video");
-      await writeFile(path.join(dir, "thumb-src.jpg"), await readFile(path.join(dir, "long-img-0.jpg")));
-      return thumbnail(dir, "", m.thumbnailText);
+      return thumbnail(dir, "", m.thumbnailText, { src: path.join(dir, "long-img-0.jpg") });
     });
     track.finish("images");
     // Mô tả đủ checklist vidIQ: mục lục theo mốc giọng đọc thật, link danh sách phát / chương trước, hashtag.
