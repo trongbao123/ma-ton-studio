@@ -11,6 +11,7 @@ import { draftBible, planChapters, writeChapterStep, type WriteMode } from "@/li
 import { dispatchPublish, dispatchRender, dispatchTrends, queueVideo } from "@/lib/story/videos";
 import { isChannelKey, saveYoutubeAuth, updateYoutubeSnippet } from "@/lib/youtube";
 import { syncFromYoutube } from "@/lib/youtube-stats";
+import { isLifeStory } from "@/lib/story/life";
 import { optimizeMeta, SEO_TARGET } from "@/lib/seo-optimize";
 import { VOICES } from "@/lib/flow/voices";
 import { availableProviders, canRun, loadRouting, providerFor } from "@/lib/ai";
@@ -269,14 +270,15 @@ export async function optimizeSeoAction(videoId: number): Promise<ActionState> {
       if (fresh?.meta) row.v.meta = fresh.meta;
     }
     const { v, c, s } = row;
-    const r = await optimizeMeta(v.meta!, { seriesTitle: s.title, chapterNumber: c.number, chapterTitle: c.title, summary: c.summary });
+    const life = isLifeStory(s);
+    const r = await optimizeMeta(v.meta!, { seriesTitle: s.title, chapterNumber: c.number, chapterTitle: c.title, summary: c.summary, life });
     if (r.score <= r.from) return `Đã thử ${r.rounds} lượt nhưng chưa tăng được điểm (đang ${r.from}). Thử lại hoặc đổi AI viết tiêu đề/mô tả.`;
     await db().update(videos).set({ meta: r.meta, updatedAt: new Date() }).where(eq(videos.id, videoId));
     const notes: string[] = [];
     if (v.youtubeVideoId) {
       try {
-        await updateYoutubeSnippet(v.youtubeVideoId, r.meta);
-        if (v.youtubeShortId) await updateYoutubeSnippet(v.youtubeShortId, { title: r.meta.shortTitle, description: r.meta.shortDescription, tags: r.meta.tags });
+        await updateYoutubeSnippet(v.youtubeVideoId, r.meta, life);
+        if (v.youtubeShortId) await updateYoutubeSnippet(v.youtubeShortId, { title: r.meta.shortTitle, description: r.meta.shortDescription, tags: r.meta.tags }, life);
         notes.push("đã cập nhật lên YouTube");
       } catch (e) {
         notes.push(`chưa cập nhật được YouTube: ${e instanceof Error ? e.message.slice(0, 160) : e}`);

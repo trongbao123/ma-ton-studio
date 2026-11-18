@@ -25,15 +25,26 @@ export const FIXED_TAGS = [
   "audio truyện full",
 ];
 
+/**
+ * Bộ tag cố định kênh "Chuyện Đời Lắng Đọng" — xếp điểm vidIQ cao → thấp (đo trên video #68). KHÔNG dùng bộ tu tiên
+ * (#68 bị gắn "tu tiên", "xuyên không"… cho truyện người vợ).
+ */
+export const LIFE_FIXED_TAGS = ["audio truyện", "truyện audio", "truyện đêm khuya", "truyen audio", "audio truyện full", "chuyện đời"];
+
+/** Tag lạc thể loại với chuyện đời (AI/vidIQ hay kéo sang từ kênh gốc). */
+const OFF_LIFE = /tu tiên|tiên hiệp|tien hiep|tu tien|huyền huyễn|huyen huyen|xuyên không|xuyen khong|ma đạo|đô thị|kiếm hiệp/i;
+
 /** YouTube đếm tag có dấu cách như có thêm 2 dấu ngoặc kép. */
 export const tagCost = (t: string) => t.length + (t.includes(" ") ? 2 : 0);
 
 /** Bộ cố định trước, rồi tag AI (bỏ trùng không phân biệt hoa thường), dừng trước khi vượt 500 ký tự. */
-export function cleanTags(tags: string[]) {
+export function cleanTags(tags: string[], life = false) {
   const out: string[] = [];
   const seen = new Set<string>();
   let used = 0;
-  for (const raw of [...FIXED_TAGS, ...tags]) {
+  // Chuyện đời: bỏ tag lạc thể loại và tag dài như nguyên tiêu đề (vidIQ chấm 24 — không ai tìm cả câu đó).
+  const own = life ? tags.filter((t) => !OFF_LIFE.test(t) && t.trim().split(/\s+/).length <= 6) : tags;
+  for (const raw of [...(life ? LIFE_FIXED_TAGS : FIXED_TAGS), ...own]) {
     const t = raw.replace(/[<>,]/g, "").trim();
     const key = t.toLowerCase();
     if (!t || seen.has(key)) continue;
@@ -68,4 +79,5 @@ export const FIXED_TAG_SCORES: Record<string, number> = {
   "audio truyện": 79,
   "audio truyện tu tiên": 62,
   "audio truyện full": 64,
+  "chuyện đời": 60,
 };

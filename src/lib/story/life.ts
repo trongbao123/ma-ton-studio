@@ -94,16 +94,18 @@ export const LIFE_TITLE_RULE =
 
 /** Chữ thumbnail: 3–6 từ lớn như "MẸ KHÔNG CÒN NHÀ", "LÁ THƯ CUỐI CÙNG". */
 export const LIFE_THUMB_TEXT_RULE =
-  "3–6 từ IN HOA (tối đa ~22 ký tự) nói thẳng nỗi đau/bí mật của truyện (vd 'MẸ KHÔNG CÒN NHÀ', 'LÁ THƯ CUỐI CÙNG', 'BÍ MẬT 30 NĂM'), KHÔNG lặp nguyên văn tiêu đề, KHÔNG tên nhân vật";
+  "3–6 từ IN HOA (tối đa ~22 ký tự) nói THẲNG xung đột gây sốc giữa NGƯỜI THÂN — có vai vế (MẸ/CON/CHỒNG/VỢ/DÂU) + hành động phũ hoặc con số " +
+  "(vd 'BA CON KHÔNG NHẬN MẸ', 'CON DÂU ĐUỔI MẸ ĐI', 'CHỒNG GIẤU 30 NĂM', 'MẸ BÁN NHÀ NUÔI CON'); người lướt đọc 1 giây là hiểu ai làm gì ai và tò mò kết; " +
+  "CẤM hình ảnh ẩn dụ/văn vẻ không rõ ai làm gì (vd 'CÁNH CỔNG KHÉP LẠI', 'MÙA THU ẤY'), KHÔNG lặp nguyên văn tiêu đề, KHÔNG tên nhân vật";
 
 export const LIFE_STYLE =
   "Kể ngôi thứ nhất (nhân vật chính xưng 'tôi', như tâm sự với người nghe), chậm rãi, ấm; thoại ngắn, chi tiết đời thường; cảm xúc qua ký ức và hành động, không sến";
 
 export const LIFE_VOICE_STYLE = "giọng nam trung niên trầm ấm, kể chuyện đời chậm rãi, ngắt nghỉ tự nhiên, lắng xuống ở đoạn xúc động";
-/** Giọng Gemini TTS: Charon — nam, trầm, kể chuyện. */
-export const LIFE_TTS_VOICE = "Charon";
-/** Giọng nữ ấm cho truyện người kể là phụ nữ. */
-export const LIFE_TTS_VOICE_FEMALE = "Sulafat";
+/** Người kể là người già từng trải: Algenib (Google mô tả "Gravelly" — khàn, có tuổi). Charon nghe trẻ, kiểu đọc tin. */
+export const LIFE_TTS_VOICE = "Algenib";
+/** Bà mẹ / người vợ có tuổi: Gacrux (Google mô tả "Mature"). Sulafat nghe như phụ nữ trẻ. */
+export const LIFE_TTS_VOICE_FEMALE = "Gacrux";
 
 /**
  * Truyện kể ngôi "tôi": đoán giới tính người kể từ cách gọi bạn đời ("chồng tôi" → nữ, "vợ tôi" → nam).
@@ -126,7 +128,9 @@ export function lifeVoice(content: string, title = "") {
  * ~150 âm tiết/phút nghe lê thê; cảm xúc nằm ở độ ấm/nghẹn, không ở tốc độ.
  */
 export const LIFE_NARRATOR_STYLE =
-  "a middle-aged person confiding a painful life story to a close friend: warm, intimate and deeply emotional, natural conversational pace, voice softens and chokes up slightly at sad moments, never flat or robotic";
+  "an elderly Vietnamese person in their sixties who has lived through hardship, slowly recalling their own life to a grandchild: aged, weathered, slightly husky voice, calm and wise, " +
+  "voice softens and chokes up at painful memories; when quoting other people's lines, change tone naturally like real speech (a child's pleading, a harsh word, a sigh) instead of reading them flat; " +
+  "natural conversational rhythm, never theatrical, never robotic";
 
 /** Tăng nhẹ tốc độ (giữ cao độ) — đo #66: ~150 âm tiết/phút ở tốc độ gốc, ×1,1 ≈ 165–170, vẫn chậm rãi kể chuyện. */
 export const LIFE_TEMPO = 1.1;

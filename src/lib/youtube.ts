@@ -148,7 +148,7 @@ export { cleanTags } from "./youtube-tags";
 export const noAngle = (s: string) => s.replace(/[<>]/g, "");
 
 /** Sửa tiêu đề / mô tả / tag của video đã có trên YouTube (videos.update ghi đè cả snippet nên gửi đủ trường). */
-export async function updateYoutubeSnippet(youtubeId: string, s: { title: string; description: string; tags: string[] }) {
+export async function updateYoutubeSnippet(youtubeId: string, s: { title: string; description: string; tags: string[] }, life = false) {
   const auth = await getYoutubeAuth(await channelOfYoutubeId(youtubeId));
   if (!auth) throw new YoutubeAuthError("Chưa kết nối YouTube.");
   const res = await fetch("https://www.googleapis.com/youtube/v3/videos?part=snippet", {
@@ -156,7 +156,7 @@ export async function updateYoutubeSnippet(youtubeId: string, s: { title: string
     headers: { Authorization: `Bearer ${await accessToken(auth.refreshToken)}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       id: youtubeId,
-      snippet: { title: noAngle(s.title).slice(0, 100), description: noAngle(s.description).slice(0, 5000), tags: cleanTags(s.tags), categoryId: "24", defaultLanguage: "vi" },
+      snippet: { title: noAngle(s.title).slice(0, 100), description: noAngle(s.description).slice(0, 5000), tags: cleanTags(s.tags, life), categoryId: "24", defaultLanguage: "vi" },
     }),
   });
   await recordYoutubeUnits("videoUpdate");

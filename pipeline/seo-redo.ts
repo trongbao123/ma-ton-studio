@@ -8,6 +8,7 @@ import { scoreMeta, totalScore } from "@/lib/flow/seo";
 import { AI_NOTE, optimizeMeta } from "@/lib/seo-optimize";
 import { loadSecrets } from "@/lib/secrets";
 import { updateYoutubeSnippet } from "@/lib/youtube";
+import { isLifeStory } from "@/lib/story/life";
 import { enrichDescription, segmentsFromText } from "./description";
 import { playlistUrl, seriesPlaylist } from "./playlist";
 import { videoMeta } from "./prompts";
@@ -63,7 +64,7 @@ export async function redoSeo(videoId: number) {
   console.log(`  Điểm SEO app: ${before} → ${fixed.score}; vidIQ tiêu đề: ${best.score ?? "?"}`);
 
   if (v.youtubeVideoId) {
-    await updateYoutubeSnippet(v.youtubeVideoId, { title: meta.title, description: meta.description, tags: meta.tags });
+    await updateYoutubeSnippet(v.youtubeVideoId, { title: meta.title, description: meta.description, tags: meta.tags }, isLifeStory(s));
     console.log(`  ✔ Đã cập nhật YouTube ${v.youtubeVideoId}`);
   }
   await db().update(videos).set({ meta, updatedAt: new Date() }).where(eq(videos.id, videoId));

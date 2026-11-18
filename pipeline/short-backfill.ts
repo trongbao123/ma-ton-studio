@@ -1,4 +1,5 @@
 // Bù Short cho tập đã lên YouTube mà lúc dựng tập Short bị bỏ qua (hết quota giọng/ảnh, lỗi vẽ). Gọi từ daily.ts hoặc CLI "shorts".
+import { isLifeStory } from "@/lib/story/life";
 import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
@@ -75,7 +76,7 @@ async function backfillOne(v: typeof videos.$inferSelect): Promise<void> {
   if (!auth) throw new YoutubeAuthError("Chưa kết nối YouTube");
   const token = await accessToken(auth.refreshToken);
   const id = await uploadVideo(token, {
-    file, title: noAngle(meta.shortTitle), description: noAngle(meta.shortDescription), tags: cleanTags(meta.tags),
+    file, title: noAngle(meta.shortTitle), description: noAngle(meta.shortDescription), tags: cleanTags(meta.tags, isLifeStory(row.s)),
     publishAt: shortPublishAt(v.publishAt, new Date()),
   });
   // Lưu id ngay sau upload: lỗi bước sau không làm upload trùng.
