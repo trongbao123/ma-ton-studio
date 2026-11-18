@@ -1,4 +1,4 @@
-import { rm, writeFile } from "node:fs/promises";
+import { access, rename, rm, writeFile } from "node:fs/promises";
 import { ffmpeg } from "./ffmpeg";
 
 /** ivoi.io (TTS tiếng Việt, tính credit theo ký tự). Base URL có "/api/api" — đúng như trang API của họ. */
@@ -48,8 +48,23 @@ async function call(pathname: string, init?: RequestInit) {
   return body;
 }
 
+/** Thử lại lỗi mạng/tạm thời (không thử lại hết credit / key sai). */
+async function retry<T>(fn: () => Promise<T>, times = 4): Promise<T> {
+  for (let i = 0; ; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (e instanceof IvoiUnavailableError || i >= times - 1) throw e;
+      await new Promise((r) => setTimeout(r, 5_000 * (i + 1)));
+    }
+  }
+}
+
 /** Đọc `text` bằng giọng `voiceId`, ghi WAV 24kHz mono (cùng định dạng Gemini để nối/đo khoảng lặng như cũ). */
 export async function speakIvoi(text: string, outFile: string, voiceId: string) {
+  // Đã đọc ở lần chạy trước (cache .render trên Actions) → KHÔNG gọi lại: ivoi tính tiền mỗi lần gọi.
+  // Tên file do người gọi đặt theo nội dung (narrateScript: hash nhóm; narrate: dropStaleTts xoá khi chữ đổi).
+  if (await access(outFile).then(() => true, () => false)) return;
   if (text.length > IVOI_MAX_CHARS) throw new Error(`ivoi: đoạn ${text.length} ký tự > ${IVOI_MAX_CHARS}`);
   let job: { job_id?: string; status?: string; audio_url?: string | null; error_message?: string | null } = {};
   for (let attempt = 0; ; attempt++) {
@@ -67,14 +82,21 @@ export async function speakIvoi(text: string, outFile: string, voiceId: string) 
     if (job.status === "failed" || job.status === "error") throw new Error(`ivoi job lỗi: ${job.error_message ?? "không rõ"}`);
     if (Date.now() > until) throw new Error(`ivoi job ${job.job_id} quá 3 phút`);
     await new Promise((r) => setTimeout(r, 3000));
-    job = await call(`/tts/jobs/${job.job_id}`);
+    job = await retry(() => call(`/tts/jobs/${job.job_id}`));
   }
-  const audio = await fetch(job.audio_url!);
-  if (!audio.ok) throw new Error(`ivoi tải audio ${audio.status}`);
+  // Audio đã trả tiền → tải lại tới khi được (s3.ivoi.io từng timeout kết nối 10s), không bỏ job.
+  const data = await retry(async () => {
+    const audio = await fetch(job.audio_url!);
+    if (!audio.ok) throw new Error(`ivoi tải audio ${audio.status}`);
+    return Buffer.from(await audio.arrayBuffer());
+  }, 6);
   const mp3 = `${outFile}.mp3`;
-  await writeFile(mp3, Buffer.from(await audio.arrayBuffer()));
+  await writeFile(mp3, data);
   try {
-    await ffmpeg(["-y", "-i", mp3, "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le", outFile]);
+    // Ghi ra file tạm rồi đổi tên: file hỏng giữa chừng không bị lần sau coi là đã đọc.
+    const tmp = `${outFile}.tmp.wav`;
+    await ffmpeg(["-y", "-i", mp3, "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le", tmp]);
+    await rename(tmp, outFile);
   } finally {
     await rm(mp3, { force: true });
   }
