@@ -4,7 +4,7 @@ import { playlistUrl, seriesPlaylist } from "./playlist";
 import { access, copyFile, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { existsSync, readFileSync } from "node:fs";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, lt, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { chapters, series, videos, type Chapter, type Series, type VideoMeta } from "@/db/schema";
 import { QuotaExhaustedError, textProvider } from "@/lib/ai";
@@ -798,7 +798,8 @@ export async function renderVideo(videoId: number) {
       status: "rendering", error: null, runUrl, progress: { steps: {} }, updatedAt: new Date(),
       ...(v.youtubeVideoId ? {} : { uploadStatus: "none" as const, uploadError: null }),
     })
-    .where(and(eq(videos.id, videoId), eq(videos.status, "queued")))
+    // Job trước bị huỷ giữa chừng (không kịp trả trạng thái) → video kẹt "rendering": quá 30 phút không cập nhật thì nhận lại.
+    .where(and(eq(videos.id, videoId), or(eq(videos.status, "queued"), and(eq(videos.status, "rendering"), lt(videos.updatedAt, new Date(Date.now() - 30 * 60_000))))))
     .returning({ id: videos.id });
   if (!claimed.length) {
     console.log(`⏭ Video #${videoId} không ở hàng đợi (đang được job khác render hoặc đã xong) — bỏ qua.`);
