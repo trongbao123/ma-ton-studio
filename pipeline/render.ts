@@ -37,6 +37,7 @@ import { autoPublishEligible, publishToYoutube } from "./youtube";
 type ScenePrompt = Awaited<ReturnType<typeof scenePrompts>>[number];
 import { cuesForChunk, cuesForSegment, packChunks, parseSilenceMids, sentences, snapToSentences, titleCardFilter, toAss, type Cue } from "./text";
 import { speak, speakTurns, SpeechFormatError, type SpeechTurn } from "./tts";
+import { IVOI_PREFIX, IVOI_VOICE_FEMALE, IVOI_VOICE_MALE, IvoiUnavailableError, ivoiReady, speakIvoi } from "./tts-ivoi";
 import { castVoices, directScript, groupTurns, NARRATOR, stripTags } from "./voice-cast";
 
 // Đường dẫn tương đối (ffmpeg chạy ở gốc repo): đường dẫn tuyệt đối trên Windows có "C:" làm vỡ cú pháp filter của drawtext.
@@ -78,7 +79,8 @@ export async function narrate(text: string, dir: string, voice: string, onChunk?
     const said = chunk.join(" ");
     // Văn bản đoạn đổi so với lần đọc trước (cache) thì đọc lại — tránh audio cũ + phụ đề chữ mới (tts-cache.ts).
     await dropStaleTts(f, [fast], said);
-    await speak(said, f, voice);
+    if (voice.startsWith(IVOI_PREFIX)) await speakIvoi(said, f, voice.slice(IVOI_PREFIX.length));
+    else await speak(said, f, voice);
     await markTts(f, said);
     console.log(`  TTS ${i + 1}/${chunks.length}`);
     onChunk?.(i, chunks.length);
@@ -914,19 +916,35 @@ export async function renderVideo(videoId: number) {
     track.log("tts", `Giọng ${voice}`);
     console.log("● Video dài: đọc giọng");
     const onLong = (i: number, total: number) => track.tick("tts", "long", `Đoạn ${i + 1}/${total}`);
-    let long: Narration;
+    let long: Narration | undefined;
     // Chuyện đời: người kể giọng già đúng giới tính, mỗi nhân vật có thoại một giọng đúng giới tính; cảm xúc theo TỪNG LƯỢT
     // do AI đạo diễn gắn (nghẹn, uất, run…). KHÔNG thẻ <sigh>… trong chữ (bản #66 đọc lẫn thẻ hơi thở). Tăng nhẹ tốc độ.
     const lifeGroups = (text: string) =>
       ttsChunks(stripTags(text)).map((ch) => [{ speaker: NARRATOR, voice, style: LIFE_NARRATOR_STYLE, text: ch.join(" ") }]);
-    const directed = life
+    // Có key ivoi → người kể chuyện đời đọc bằng ivoi (một giọng, user chọn sau khi nghe thử); không cần AI đạo diễn giọng Gemini.
+    const ivoiVoice = life && ivoiReady() ? `${IVOI_PREFIX}${voice === LIFE_TTS_VOICE_FEMALE ? IVOI_VOICE_FEMALE : IVOI_VOICE_MALE}` : null;
+    let useIvoi = Boolean(ivoiVoice);
+    const directed = life && !useIvoi
       ? await cached(path.join(dir, `voice-script${tag}.json`), () => directScript(longText).catch((e) => {
           if (e instanceof QuotaExhaustedError) throw e;
           console.warn("  ⚠ Đạo diễn cảm xúc lỗi:", e instanceof Error ? e.message : e);
           return null;
         }))
       : null;
-    if (life) {
+    if (life && useIvoi) {
+      track.log("tts", `Giọng ivoi ${ivoiVoice!.slice(IVOI_PREFIX.length)}`);
+      try {
+        long = await narrate(stripTags(longText), dir, ivoiVoice!, onLong, 70, 1);
+      } catch (e) {
+        if (!(e instanceof IvoiUnavailableError)) throw e;
+        // Hết credit / key lỗi → đọc bằng Gemini một giọng người kể (vẫn có cảm xúc), không treo video.
+        track.warn("tts", `ivoi không dùng được (${e.message}) — quay về Gemini`);
+        useIvoi = false;
+      }
+    }
+    if (long) {
+      // đã đọc bằng ivoi
+    } else if (life) {
       // Người kể: giới tính theo tiêu đề (lifeVoice — AI từng đoán nhầm bà mẹ thành nam), luôn nhóm tuổi già (Gacrux/Algenib).
       // Nhân vật có thoại: giọng theo giới tính/tuổi AI đọc ra, không trùng giọng người kể.
       const cast = directed
@@ -957,7 +975,9 @@ export async function renderVideo(videoId: number) {
     if (wantShort) {
       try {
         const onShort = () => track.tick("tts", "short");
-        short = life ? await narrateScript(lifeGroups(m.shortScript), shortDir, voice, onShort, 34, LIFE_TEMPO) : await narrate(m.shortScript, shortDir, voice, onShort, 34);
+        short = life && useIvoi
+          ? await narrate(stripTags(m.shortScript), shortDir, ivoiVoice!, onShort, 34, 1)
+          : life ? await narrateScript(lifeGroups(m.shortScript), shortDir, voice, onShort, 34, LIFE_TEMPO) : await narrate(m.shortScript, shortDir, voice, onShort, 34);
         await uploadPreview(videoId, releaseId, await previewAudio(short.audio, path.join(shortDir, "short-narration.m4a")));
       } catch (e) {
         if (e instanceof QuotaExhaustedError) throw e;
