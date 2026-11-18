@@ -37,8 +37,8 @@ import { autoPublishEligible, publishToYoutube } from "./youtube";
 type ScenePrompt = Awaited<ReturnType<typeof scenePrompts>>[number];
 import { cuesForChunk, cuesForSegment, packChunks, parseSilenceMids, sentences, snapToSentences, titleCardFilter, toAss, type Cue } from "./text";
 import { speak, speakTurns, SpeechFormatError, type SpeechTurn } from "./tts";
-import { IVOI_PREFIX, IVOI_VOICE_FEMALE, IVOI_VOICE_MALE, IvoiUnavailableError, ivoiReady, speakIvoi } from "./tts-ivoi";
-import { castVoices, directScript, groupTurns, NARRATOR, stripTags } from "./voice-cast";
+import { IVOI_MAX_CHARS, IVOI_PREFIX, IVOI_VOICE_FEMALE, IVOI_VOICE_MALE, IVOI_VOICES, IvoiUnavailableError, ivoiReady, speakIvoi } from "./tts-ivoi";
+import { castVoices, directScript, groupTurns, ivoiSegments, NARRATOR, stripTags } from "./voice-cast";
 
 // Đường dẫn tương đối (ffmpeg chạy ở gốc repo): đường dẫn tuyệt đối trên Windows có "C:" làm vỡ cú pháp filter của drawtext.
 const FONT_DIR = "pipeline/fonts";
@@ -114,7 +114,8 @@ export async function narrateScript(groups: SpeechTurn[][], dir: string, narrato
     const key = createHash("sha1").update(JSON.stringify(g)).digest("hex").slice(0, 10);
     const f = path.join(dir, `tts-cast-${String(i).padStart(3, "0")}-${key}.wav`);
     try {
-      await speakTurns(g, f);
+      if (g[0].voice.startsWith(IVOI_PREFIX)) await speakIvoi(g.map((t) => t.text).join(" "), f, g[0].voice.slice(IVOI_PREFIX.length));
+      else await speakTurns(g, f);
     } catch (e) {
       if (!(e instanceof SpeechFormatError)) throw e;
       // Đọc tách từng lượt (mỗi lượt 1 giọng, giữ cảm xúc) rồi nối — KHÔNG đọc gộp một giọng trơn (nghe "giọng máy").
@@ -921,10 +922,10 @@ export async function renderVideo(videoId: number) {
     // do AI đạo diễn gắn (nghẹn, uất, run…). KHÔNG thẻ <sigh>… trong chữ (bản #66 đọc lẫn thẻ hơi thở). Tăng nhẹ tốc độ.
     const lifeGroups = (text: string) =>
       ttsChunks(stripTags(text)).map((ch) => [{ speaker: NARRATOR, voice, style: LIFE_NARRATOR_STYLE, text: ch.join(" ") }]);
-    // Có key ivoi → người kể chuyện đời đọc bằng ivoi (một giọng, user chọn sau khi nghe thử); không cần AI đạo diễn giọng Gemini.
+    // Có key ivoi → chuyện đời đọc bằng ivoi: người kể giọng user chọn, nhân vật có thoại giọng ivoi thường theo giới/tuổi.
     const ivoiVoice = life && ivoiReady() ? `${IVOI_PREFIX}${voice === LIFE_TTS_VOICE_FEMALE ? IVOI_VOICE_FEMALE : IVOI_VOICE_MALE}` : null;
     let useIvoi = Boolean(ivoiVoice);
-    const directed = life && !useIvoi
+    const directed = life
       ? await cached(path.join(dir, `voice-script${tag}.json`), () => directScript(longText).catch((e) => {
           if (e instanceof QuotaExhaustedError) throw e;
           console.warn("  ⚠ Đạo diễn cảm xúc lỗi:", e instanceof Error ? e.message : e);
@@ -932,12 +933,28 @@ export async function renderVideo(videoId: number) {
         }))
       : null;
     if (life && useIvoi) {
-      track.log("tts", `Giọng ivoi ${ivoiVoice!.slice(IVOI_PREFIX.length)}`);
+      const narratorId = ivoiVoice!.slice(IVOI_PREFIX.length);
+      // Phân vai (kịch bản AI chia lời — Gemini free, cache theo nội dung). Không có kịch bản → một giọng người kể.
+      const cast = directed
+        ? castVoices({ ...directed, narrator: { gender: narratorId === IVOI_VOICE_FEMALE ? "female" : "male", age: 60 } }, IVOI_VOICES)
+        : null;
+      if (cast) cast[NARRATOR] = narratorId;
       try {
-        long = await narrate(stripTags(longText), dir, ivoiVoice!, onLong, 70, 1);
+        if (directed && cast) {
+          const segments = ivoiSegments(directed.turns, cast, IVOI_MAX_CHARS - 1000);
+          track.log("tts", `ivoi phân vai: ${Object.entries(cast).map(([k, v]) => `${k === NARRATOR ? "người kể" : k}=${v}`).join(", ")} · ${segments.length} lượt gọi`);
+          track.total("tts", "long", segments.length);
+          long = await narrateScript(
+            segments.map((x) => [{ speaker: NARRATOR, voice: `${IVOI_PREFIX}${x.voice}`, style: "", text: x.text }]),
+            dir, ivoiVoice!, onLong, 70, 1,
+          );
+        } else {
+          track.log("tts", `Giọng ivoi ${narratorId} (một giọng — không có kịch bản phân vai)`);
+          long = await narrate(stripTags(longText), dir, ivoiVoice!, onLong, 70, 1);
+        }
       } catch (e) {
         if (!(e instanceof IvoiUnavailableError)) throw e;
-        // Hết credit / key lỗi → đọc bằng Gemini một giọng người kể (vẫn có cảm xúc), không treo video.
+        // Hết credit / key lỗi → đọc bằng Gemini, không treo video.
         track.warn("tts", `ivoi không dùng được (${e.message}) — quay về Gemini`);
         useIvoi = false;
       }

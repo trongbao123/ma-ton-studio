@@ -6,6 +6,23 @@ const BASE = process.env.IVOI_BASE_URL ?? "https://ivoi.io/api/api/v1";
 /** Người kể chuyện đời: nữ = Quỳnh Anh 3.0 (user chọn 18/11/2026 sau khi nghe thử), nam = Ngạn Anh ("người già"). */
 export const IVOI_VOICE_FEMALE = process.env.IVOI_VOICE_FEMALE ?? "vi_quynhanh_ipa";
 export const IVOI_VOICE_MALE = process.env.IVOI_VOICE_MALE ?? "vi_male_ngocngan_ipa";
+/**
+ * Giọng ivoi THƯỜNG (hệ số giá ×1,0 — không dùng giọng nhân bản ×2,5) theo giới/tuổi cho phân vai chuyện đời.
+ * Nữ chỉ có 2 giọng thường: người kể Quỳnh Anh 3.0, nhân vật nữ dùng chung Quỳnh Anh 5.0.
+ */
+export const IVOI_VOICES = {
+  female: {
+    old: [IVOI_VOICE_FEMALE, "vi_female_quynh_anh"],
+    mid: ["vi_female_quynh_anh", IVOI_VOICE_FEMALE],
+    young: ["vi_female_quynh_anh", IVOI_VOICE_FEMALE],
+  },
+  male: {
+    old: [IVOI_VOICE_MALE, "vi_taman_phat", "vi_male_duyonyx_1"],
+    mid: ["vi_hoangnam_story_ipa", "vi_male_duyonyx_1", "vi_male_baotrung_1"],
+    young: ["vi_male_anhquan_1", "vi_male_adam", "vi_hoangnam_story"],
+  },
+} as const;
+
 /** Giới hạn ký tự mỗi lượt của ivoi là 5.000 — chia đoạn ≤ 4.000 như Gemini là đủ. */
 export const IVOI_MAX_CHARS = 5000;
 /** Tiền tố tên giọng trong pipeline (`narrate`): "ivoi-<voice_id>" → đọc bằng ivoi, tên file cache tách khỏi giọng Gemini. */

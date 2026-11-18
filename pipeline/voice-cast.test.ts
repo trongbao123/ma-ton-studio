@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { castVoices, faithful, groupTurns, NARRATOR, stripTags, type Turn } from "./voice-cast";
+import { castVoices, faithful, groupTurns, ivoiSegments, NARRATOR, stripTags, type Turn } from "./voice-cast";
+import { IVOI_VOICE_FEMALE, IVOI_VOICES } from "./tts-ivoi";
 
 const turns: Turn[] = [
   { speaker: NARRATOR, style: "slow", text: "Tôi năm nay năm mươi lăm tuổi. <sigh>" },
@@ -66,5 +67,43 @@ describe("phân vai chuyện đời: người kể già đúng giới tính", ()
     expect(cast.narrator).toBe("Gacrux");
     expect(["Charon", "Iapetus", "Orus", "Algenib", "Schedar", "Achird", "Puck", "Umbriel"]).toContain(cast.Tuấn);
     expect(["Sulafat", "Vindemiatrix", "Achernar", "Leda", "Aoede", "Despina"]).toContain(cast.Lan);
+  });
+});
+
+describe("ivoi phân vai", () => {
+  const turns = [
+    { speaker: NARRATOR, style: "", text: "Tôi đứng yên. <sigh>" },
+    { speaker: NARRATOR, style: "", text: "Cái muôi còn trong tay." },
+    { speaker: "Khoa", style: "", text: "Mẹ đi đi." },
+    { speaker: "Vy", style: "", text: "Con chào mẹ." },
+    { speaker: "Linh", style: "", text: "Mẹ ở đây với con." },
+    { speaker: NARRATOR, style: "", text: "Tôi gật đầu." },
+  ];
+  const script = {
+    narrator: { gender: "female" as const, age: 60 },
+    characters: [
+      { name: "Khoa", gender: "male" as const, age: 33 },
+      { name: "Vy", gender: "female" as const, age: 30 },
+      { name: "Linh", gender: "female" as const, age: 28 },
+    ],
+    turns,
+  };
+  it("nhân vật nữ không trùng giọng người kể dù ivoi chỉ 2 giọng nữ", () => {
+    const cast = castVoices(script, IVOI_VOICES);
+    expect(cast[NARRATOR]).toBe(IVOI_VOICE_FEMALE);
+    expect(cast.Vy).not.toBe(IVOI_VOICE_FEMALE);
+    expect(cast.Linh).not.toBe(IVOI_VOICE_FEMALE);
+    expect(cast.Khoa).toBe("vi_hoangnam_story_ipa");
+  });
+  it("gom lượt liền nhau cùng giọng, bỏ thẻ, giữ đủ chữ", () => {
+    const cast = castVoices(script, IVOI_VOICES);
+    const seg = ivoiSegments(turns, cast, 4000);
+    expect(seg.map((s) => s.voice)).toEqual([IVOI_VOICE_FEMALE, "vi_hoangnam_story_ipa", "vi_female_quynh_anh", IVOI_VOICE_FEMALE]);
+    expect(seg[0].text).toBe("Tôi đứng yên. Cái muôi còn trong tay.");
+    expect(seg[2].text).toBe("Con chào mẹ. Mẹ ở đây với con.");
+  });
+  it("tách đoạn khi vượt maxChars", () => {
+    const seg = ivoiSegments([{ speaker: NARRATOR, style: "", text: "a".repeat(30) }, { speaker: NARRATOR, style: "", text: "b".repeat(30) }], { [NARRATOR]: "x" }, 50);
+    expect(seg).toHaveLength(2);
   });
 });
