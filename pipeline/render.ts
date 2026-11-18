@@ -115,8 +115,17 @@ export async function narrateScript(groups: SpeechTurn[][], dir: string, narrato
       await speakTurns(g, f);
     } catch (e) {
       if (!(e instanceof SpeechFormatError)) throw e;
-      console.warn(`  ⚠ TTS nhiều giọng bị từ chối (${e.message.slice(0, 120)}) — đọc một giọng`);
-      await speak(g.map((t) => t.text).join(" "), f, narratorVoice);
+      // Đọc tách từng lượt (mỗi lượt 1 giọng, giữ cảm xúc) rồi nối — KHÔNG đọc gộp một giọng trơn (nghe "giọng máy").
+      console.warn(`  ⚠ TTS nhiều giọng bị từ chối (${e.message.slice(0, 120)}) — đọc tách từng lượt`);
+      const parts: string[] = [];
+      for (const [j, t] of g.entries()) {
+        const pf = f.replace(/\.wav$/, `-t${j}.wav`);
+        await speakTurns([t], pf);
+        parts.push(pf);
+      }
+      const plist = f.replace(/\.wav$/, "-parts.txt");
+      await writeFile(plist, parts.map((x) => `file '${path.resolve(x)}'`).join("\n"));
+      await ffmpeg(["-y", "-f", "concat", "-safe", "0", "-i", plist, "-c", "copy", f]);
     }
     console.log(`  TTS ${i + 1}/${groups.length} (${[...new Set(g.map((t) => t.voice))].join(" + ")})`);
     onChunk?.(i, groups.length);
