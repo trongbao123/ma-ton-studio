@@ -72,13 +72,14 @@ const run = { rendered: 0, written: 0, quotaHit: false };
 async function renderQueue(failures: string[]) {
   await requeueStuck();
   // Video của kênh phụ (đang được ưu tiên) render trước, trong cùng kênh thì theo thứ tự id.
+  // Bộ truyện tắt autopilot (kênh gốc tạm dừng 18/11/2026) không render tự động — dồn giọng/ảnh cho kênh đang chạy; render tay vẫn được.
   const queue = (
     await db()
       .select({ id: videos.id, channel: series.channel })
       .from(videos)
       .innerJoin(chapters, eq(chapters.id, videos.chapterId))
       .innerJoin(series, eq(series.id, chapters.seriesId))
-      .where(eq(videos.status, "queued"))
+      .where(and(eq(videos.status, "queued"), eq(series.autopilot, true)))
       .orderBy(asc(videos.id))
   ).sort((a, b) => Number(a.channel === "main") - Number(b.channel === "main") || a.id - b.id);
   let quota: string | null = null;
@@ -284,13 +285,8 @@ async function main() {
   await dispatchCompilations().catch((e) => failures.push(`bản gộp: ${e instanceof Error ? e.message : e}`));
   // Tập dựng xong lên YouTube ở chế độ riêng tư + lịch; xếp lại lịch xoay vòng các bộ (mỗi ngày một bộ). Lỗi không làm hỏng job.
   await import("./schedule").then((x) => x.rotateSchedule()).catch((e) => console.warn("⚠ Xếp lịch xoay vòng lỗi:", e instanceof Error ? e.message : e));
-  // Tập đã lên mà thiếu Short (lúc dựng hết quota/lỗi) thì bù ở đây; lỗi không làm hỏng job.
-  await import("./short-backfill").then((x) => x.backfillEpisodeShorts()).catch((e) => console.warn("⚠ Bù Short lỗi:", e instanceof Error ? e.message : e));
-  // Short cắt cảnh (tối đa 2/ngày) chỉ làm sau khi đã ưu tiên render chương cho tập kế tiếp; hết quota thì dừng, lượt sau làm tiếp.
-  // Lượt sáng (8h17 VN) nhường giọng cho chương của tập; lượt tối (20h17 VN) luôn làm Short — kho chương chờ render
-  // có thể kéo dài nhiều ngày (giọng free), chặn hẳn thì không bao giờ có Short cắt cảnh.
-  const morning = new Date().getUTCHours() < 6;
-  if (quotaLeft) await import("./clips").then((x) => x.makeSceneClips({ afterRenders: morning })).catch((e) => console.warn("⚠ Short cắt cảnh lỗi:", e instanceof Error ? e.message : e));
+  // Chủ kênh 18/11/2026: NGƯNG Short (lên view nhanh nhưng ăn hết view video dài) — không bù Short, không cắt cảnh làm Short.
+  // Bật lại: gọi lại short-backfill.backfillEpisodeShorts() và clips.makeSceneClips() ở đây + bật makeShort của bộ truyện.
   await chainNextRun();
   if (failures.length) {
     await notify(`❌ <b>Job tự động có lỗi</b>\n${escapeHtml(failures.join("\n").slice(0, 800))}`);

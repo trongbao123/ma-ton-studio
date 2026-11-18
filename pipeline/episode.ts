@@ -216,6 +216,8 @@ export async function renderShort(o: ShortInput): Promise<string> {
 
 /** Short lúc dựng tập; lỗi/hết quota thì bỏ Short (tập vẫn lên, Short được bù sau bởi backfillEpisodeShorts). */
 async function makeShort(o: EpisodeInput, m: z.infer<typeof episodeSchema>, music: string | null) {
+  // Bộ truyện tắt Short (chủ kênh ngưng Short 18/11/2026) → không dựng, không tốn giọng/ảnh.
+  if (!o.s.makeShort) return null;
   try {
     return await renderShort({ dir: o.dir, voice: o.s.ttsVoice, script: m.shortScript, characterLook: m.characterLook, hook: m.thumbnailText, music, heroRef: o.heroRef });
   } catch (e) {
