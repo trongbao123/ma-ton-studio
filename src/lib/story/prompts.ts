@@ -154,8 +154,8 @@ export const LONG_CHAPTER_WORDS = 5000;
 const PART_WORDS = 3000;
 export const isLongChapter = (targetWords: number) => targetWords >= LONG_CHAPTER_WORDS;
 /** Số lượt "viết tiếp" tối đa tới khi đủ ~80% độ dài mục tiêu. */
-// Chuyện đời 12.000 từ: lượt đầu + 3 lượt tiếp (~3.000 từ/lượt) là đủ; 5 lượt chừa chỗ cho lượt AI viết hụt.
-export const maxContinues = (targetWords: number) => (isLongChapter(targetWords) ? 5 : 2);
+// Chuyện đời 17.000 từ: lượt đầu + 4–5 lượt tiếp (~3.000 từ/lượt); 7 lượt chừa chỗ cho lượt AI viết hụt.
+export const maxContinues = (targetWords: number) => (targetWords >= 15000 ? 7 : isLongChapter(targetWords) ? 5 : 2);
 
 /** `partial`: chương dài viết nhiều lượt — lượt đầu chỉ viết phần mở đầu, chưa kết chương. */
 export function chapterPrompt(s: Series, previous: RecalledChapter[], chapter: Chapter, opts: { partial?: boolean } = {}) {
@@ -190,7 +190,7 @@ Cách viết (bắt buộc):
 
 export function continuePrompt(base: { system: string; prompt: string }, written: string, targetWords: number, life = false) {
   const remaining = Math.max(targetWords - wordCount(written), 500);
-  // Chuyện đời (~1 tiếng): viết từng hồi, lượt cuối đi tới kết trọn vẹn, không cliffhanger.
+  // Chuyện đời (~1 tiếng 30): viết từng hồi, lượt cuối đi tới kết trọn vẹn, không cliffhanger.
   if (life) {
     return {
       system: base.system,
