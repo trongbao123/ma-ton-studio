@@ -3,6 +3,12 @@ import { QuotaExhaustedError } from "@/lib/ai";
 import { recordUsage } from "@/lib/ai/usage";
 
 const MODELS = (process.env.TTS_MODELS ?? "gemini-3.8-flash-tts,gemini-3.1-flash-tts-preview,gemini-2.5-flash-preview-tts,gemini-3.8-flash-lite-tts").split(",");
+/**
+ * Model cho lượt đọc có cảm xúc/phân vai (speakTurns): chỉ model hỗ trợ speech_metadata. KHÔNG rơi xuống 2.5-preview
+ * (400 "Speech annotations are not supported" → trước đây đọc lại một giọng không cảm xúc = "giọng máy") hay bản lite.
+ * Hết lượt → QuotaExhaustedError, video chờ lượt sau thay vì ra bản kém (render #66 ngày 18/11/2026).
+ */
+const STRUCTURED_MODELS = (process.env.TTS_STRUCTURED_MODELS ?? "gemini-3.8-flash-tts,gemini-3.1-flash-tts-preview").split(",");
 
 /**
  * Đọc một khối văn bản bằng Gemini TTS, ghi WAV (24kHz mono). Thử lần lượt model khi quá tải/hết quota.
@@ -50,7 +56,7 @@ async function synth(outFile: string, input: unknown, speechConfig: unknown, str
   let limited = 0;
   /** Lỗi từng model (log khi hỏng hết — để phân biệt hết lượt / key sai / model bị khoá). */
   const errors: string[] = [];
-  for (const model of MODELS) {
+  for (const model of structured ? STRUCTURED_MODELS : MODELS) {
     for (let attempt = 0; attempt < 4; attempt++) {
       const res = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
         method: "POST",
