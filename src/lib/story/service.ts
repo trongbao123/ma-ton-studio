@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { chapters, series, type Chapter, type Series } from "@/db/schema";
 import { textProvider } from "@/lib/ai";
 import { polishOpening, shouldPolishOpening } from "./editor";
-import { isLifeStory } from "./life";
+import { isLifeStory, lifeIsFinalPart } from "./life";
 import { freshInsights, loadTrends, trendsBrief } from "@/lib/trends";
 import {
   bibleSchema,
@@ -86,6 +86,12 @@ export async function writeChapterStep(chapterId: number, mode: WriteMode) {
     }
   }
   const words = wordCount(content);
+  if (isLifeStory(s)) {
+    // Chuyện đời ~1 tiếng: xong khi vừa viết lượt KẾT (dù dài/ngắn — viết thêm là dán đoạn sau đoạn kết). Lượt giữa viết dư
+    // chữ vẫn chưa xong vì truyện chưa kết; lượt sau sẽ là lượt KẾT.
+    const ended = mode === "continue" && lifeIsFinalPart(wordCount(chapter.content), s.targetWords);
+    return { words, enough: ended, warning };
+  }
   return { words, enough: words >= s.targetWords * 0.8, warning };
 }
 

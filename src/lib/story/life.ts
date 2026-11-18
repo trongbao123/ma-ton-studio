@@ -1,4 +1,4 @@
-// Thể loại "Chuyện đời" (kênh Chuyện Đời Lắng Đọng): mỗi chương là MỘT câu chuyện độc lập trọn vẹn 8–12 phút cho khán giả
+// Thể loại "Chuyện đời" (kênh Chuyện Đời Lắng Đọng): mỗi chương là MỘT câu chuyện độc lập trọn vẹn ~1 tiếng cho khán giả
 // trung niên — gia đình, hôn nhân, tình cha mẹ, nhân quả. Khác hẳn tiên hiệp: không bàn tay vàng, không cảnh giới, không cliffhanger.
 // Mọi nhánh "nếu là chuyện đời" trong prompt viết/meta/ảnh đọc từ file này.
 import type { Chapter, Series } from "@/db/schema";
@@ -6,8 +6,28 @@ import type { Chapter, Series } from "@/db/schema";
 export const LIFE_GENRE = "Chuyện đời";
 export const isLifeStory = (s: Pick<Series, "genre"> | null | undefined) => s?.genre === LIFE_GENRE;
 
-/** ~2.300 từ ≈ 10–11 phút sau tăng tốc giọng (1.700 từ chỉ ~7,5 phút và phải nhồi kết → kết bị cụt). */
-export const LIFE_TARGET_WORDS = 2300;
+/**
+ * Chủ kênh 18/11/2026: bản 10–14 phút "ngắn quá không ăn thua" → một truyện liền mạch ≥ 1 tiếng, không chia chương.
+ * Đo #68/#69 (ivoi, tốc độ gốc): ~177 từ/phút → 12.000 từ ≈ 68 phút (lượt KẾT luôn ≥ 3.000 từ nên tối thiểu ~ 10.800 từ ≈ 61 phút).
+ */
+export const LIFE_TARGET_WORDS = 12000;
+/** Mỗi lượt gọi AI viết ~1 hồi: lượt dài hơn AI hay tóm tắt, lặp, kết sớm. */
+export const LIFE_PART_WORDS = 3000;
+
+/**
+ * 5 hồi của truyện 1 tiếng (mỗi hồi ≈ 1 lượt viết). Truyện dài giữ người nghe bằng bậc thang biến cố + móc giữ chân cuối mỗi hồi,
+ * không phải bằng kể chậm — mỗi hồi phải có ít nhất một sự việc MỚI làm tình thế đổi hẳn.
+ */
+export const LIFE_ACTS = [
+  "HỒI 1 — mở đầu và biến cố: đoạn tự giới thiệu tóm nỗi đau (theo nhịp kênh), rồi 'Chuyện bắt đầu từ…'; dựng gia đình, những hy sinh lớn của tôi qua 2–3 ký ức cụ thể, và biến cố đầu tiên đẩy tôi vào thế có nguy cơ mất điều quan trọng nhất.",
+  "HỒI 2 — tổn thương leo thang: 2–3 lần bị làm đau, lần sau đau hơn lần trước, mỗi lần một câu nói tàn nhẫn nghe tận tai và một ký ức hy sinh đối chiếu; một tia hy vọng nhỏ (một người con có vẻ sắp bênh, một cơ hội) rồi bị dập tắt.",
+  "HỒI 3 — chạm đáy và một con đường mới: tôi mất thứ cuối cùng còn bám víu (nhà, tiền, chỗ dựa), phải rời đi; gặp người dưng/nơi chốn mới, một chút tử tế; gieo rõ manh mối của bí mật/sự thật sẽ lật ngược câu chuyện.",
+  "HỒI 4 — bước ngoặt: sự thật bị giấu hé lộ dần (người tưởng xấu hoá ra tốt, khoản tiền/giấy tờ/lá thư, người dưng đã âm thầm giúp), cán cân đảo chiều; kẻ có lỗi bắt đầu trả giá hoặc tìm đến tôi.",
+  "HỒI 5 — KẾT đủ 4 nhịp (không vội): màn đối mặt với chi tiết khiến kẻ có lỗi chết lặng; lời tôi nói bình thản mà thấm; 'một năm sau' khép số phận từng người theo nhân quả; tôi nói với người nghe và câu hỏi mời kể chuyện ở phần bình luận.",
+];
+
+/** Lượt viết tiếp này là lượt CUỐI (viết nốt tới KẾT) khi phần còn thiếu vừa một lượt dài — viết xong là truyện đã kết. */
+export const lifeIsFinalPart = (written: number, target = LIFE_TARGET_WORDS) => target - written <= LIFE_PART_WORDS * 1.4;
 
 /** Nhịp dựng của kênh (kế hoạch thử 4 tuần, 11/2026) — dùng cho cả người viết lẫn biên tập. */
 export const LIFE_PACING = [
@@ -15,8 +35,9 @@ export const LIFE_PACING = [
   "0–20 giây đầu (≈ 70–90 từ): NHÂN VẬT CHÍNH tự giới thiệu và tóm cả nỗi đau theo khuôn 'Tôi năm nay … tuổi. Tôi đã hy sinh gì (có con số) → vậy mà giờ tôi gặp chuyện gì đau nhất (hình ảnh cụ thể: ngồi ở bến xe với chiếc vali, đứng ngoài cổng cưới con…) → một câu úp mở về bước ngoặt (KHÔNG nói ra lời giải)'. Câu đầu tự hiểu được khi nghe riêng. Không chào hỏi, không giới thiệu kênh, không tả thời tiết.",
   "Ngay sau đó: 'Chuyện bắt đầu từ…' rồi vào cảnh biến cố đầu tiên; câu thoại nào cũng rõ ai nói với ai. Trong ~200 từ tiếp người nghe biết tôi đã hy sinh gì và tôi CÓ NGUY CƠ MẤT gì.",
   "ĐỘNG CƠ CẢM XÚC chính: mỗi lần bị đối xử tệ, đặt NGAY cạnh một KÝ ỨC HY SINH cụ thể gắn với một đồ vật/khoảnh khắc (bán nhẫn cưới mua xe cho con, cõng con sốt đi trạm xá giữa đêm, nhịn bữa để con có quả trứng, lời hứa của con ngày xưa) — người nghe đau vì sự tương phản 'ngày ấy – bây giờ'.",
-  "Bậc thang tổn thương: ít nhất 3 lần bị làm đau, lần sau đau hơn lần trước; mỗi lần có một CÂU NÓI tàn nhẫn cụ thể nhân vật chính nghe tận tai ('Bà ở đâu chẳng được, miễn đừng ở đây', 'đến lượt thằng Dũng'), và một khoảnh khắc chờ đợi bị dập tắt (chờ con bênh một câu mà nó im lặng). Xen một chút tử tế nhỏ của người dưng/đứa trẻ để làm nổi nỗi đau.",
+  "Bậc thang tổn thương: ít nhất 5 lần bị làm đau trải suốt truyện, lần sau đau hơn lần trước; mỗi lần có một CÂU NÓI tàn nhẫn cụ thể nhân vật chính nghe tận tai ('Bà ở đâu chẳng được, miễn đừng ở đây', 'đến lượt thằng Dũng'), và một khoảnh khắc chờ đợi bị dập tắt (chờ con bênh một câu mà nó im lặng). Xen một chút tử tế nhỏ của người dưng/đứa trẻ để làm nổi nỗi đau.",
   "Cho người nghe ở TRONG đầu nhân vật: suy nghĩ thật, tự hỏi, tự trách ('Tôi lấy tư cách gì mà gõ cổng nhà người ta?'), cảm giác cơ thể (tay bám vào tường, cổ họng nghẹn, ổ bánh mì nóng trong tay mà nước mắt cứ chảy). Thỉnh thoảng nói với người nghe ('Các bạn biết không, lúc ấy tôi không thấy giận…'). KHÔNG kể tóm tắt kiểu 'bà hiểu, chỉ gật đầu' — dựng thành cảnh có thoại.",
+  "TRUYỆN DÀI ~1 TIẾNG GIỮ NGƯỜI NGHE: cứ khoảng 1.500 từ phải có một sự việc mới làm tình thế đổi hẳn (không kể lan man, không lặp lại nỗi đau cũ bằng lời khác); cuối mỗi hồi một câu móc úp mở của người kể ('Tôi đâu biết, cái tin nhắn đêm ấy mới là thứ làm tôi mất tất cả'). Có 1–2 tuyến phụ (người dưng tử tế, một người con khác, chuyện cũ của vợ chồng) đan vào tuyến chính.",
   "Khoảng 2/3 truyện có BƯỚC NGOẶT bất ngờ nhưng hợp lý (sự thật bị giấu, người tưởng xấu hoá ra tốt, người dưng đã âm thầm giúp) — gieo chi tiết báo trước từ nửa đầu (cây khế, lời nói tưởng đùa).",
   "KẾT (≈ 1/4 cuối, KHÔNG được vội) đủ 4 nhịp: (1) màn đối mặt — kẻ có lỗi đứng trước nhân vật chính, nhận ra lỗi qua một chi tiết cụ thể khiến họ chết lặng (tin nhắn chỉ thả ngón tay cái lúc 3 giờ sáng…); (2) nhân vật chính nói 2–3 câu bình thản mà thấm, người nghe phải nghẹn; (3) 'Mùa xuân năm sau…' / 'Từ đó…': số phận từng người được khép rõ theo nhân quả, người sai thay đổi bằng hành động cụ thể, không bỏ lửng ai; (4) 2–3 câu nhân vật nói với người nghe một cách ấm áp (KHÔNG giảng đạo lý kiểu 'câu chuyện cho ta thấy'), câu cuối là câu hỏi mời người nghe kể chuyện của mình ở phần bình luận.",
 ];
@@ -36,10 +57,10 @@ CÁCH VIẾT CHO TAI NGHE:
 - Kể NGÔI THỨ NHẤT: nhân vật chính xưng "tôi", như đang tâm sự với người nghe; con cái gọi bằng "thằng Khoa", "con Linh"… đúng giọng người Việt trung niên.
 - Bối cảnh Việt Nam hiện nay, chi tiết đời thường cụ thể: bữa cơm, xe máy, tiền chợ, căn nhà cấp bốn, tin nhắn Zalo, bến xe. Xưng hô đúng vai vế.
 - Thoại chiếm khoảng 1/3: ngắn, mỗi người một giọng. Câu ngắn ở chỗ đau, dễ đọc to. Không sến kiểu "nước mắt lăn dài trên gò má", không lặp cùng một hình ảnh.
-- Mỗi truyện tối đa 6 nhân vật có tên, tên Việt bình thường.
+- Mỗi truyện tối đa 8 nhân vật có tên, tên Việt bình thường.
 - Không bạo lực ghê rợn, không tình dục, không xúc phạm vùng miền/tôn giáo; kẻ sai được quyền hối hận.
 - Không ký hiệu, chú thích, markdown, tiêu đề phụ.
-- Mỗi chương là một truyện trọn vẹn với nhân vật riêng — KHÔNG nhắc tới các truyện khác, KHÔNG "còn tiếp", KHÔNG cliffhanger.
+- Mỗi chương là một truyện trọn vẹn với nhân vật riêng — KHÔNG nhắc tới các truyện khác, KHÔNG "còn tiếp", KHÔNG cliffhanger ở cuối truyện (câu móc úp mở giữa các hồi trong truyện thì nên có).
 GIỌNG MẪU (chỉ học giọng, KHÔNG chép nội dung):
 ${LIFE_EXEMPLAR}`;
 
@@ -58,14 +79,22 @@ Viết trọn câu chuyện: "${chapter.title}".
 Cốt truyện / cảm xúc chính:
 ${chapter.outline}
 
-Độ dài khoảng ${s.targetWords} từ (≈ 10–11 phút đọc). Dành khoảng 1/4 cuối cho phần KẾT đủ 4 nhịp — thà rút ngắn phần giữa chứ không được kết vội. Chỉ trả về nội dung truyện, không lặp tiêu đề, không lời bình.
-Trước khi viết, tự lên (trong đầu, KHÔNG in ra) 8–10 nhịp: mỗi nhịp một cảnh có thoại + một ký ức hy sinh đối chiếu + mức đau tăng dần. Chia 6–8 cảnh liền mạch. Đi hết từ đoạn tự giới thiệu mở đầu tới kết thúc trọn vẹn trong lượt này.`,
+Cả truyện khoảng ${s.targetWords} từ (≈ 1 tiếng nghe), MỘT mạch liền, không chia chương, không tiêu đề phụ. Truyện viết theo nhiều lượt, mỗi lượt một hồi:
+${LIFE_ACTS.map((a) => `- ${a}`).join("\n")}
+
+Lượt ĐẦU (lượt này nếu chưa có phần đã viết) CHỈ viết HỒI 1 (khoảng ${LIFE_PART_WORDS} từ, 3–4 cảnh có thoại), dừng ở câu móc cuối hồi — CHƯA kết truyện, không tóm tắt. Chỉ trả về nội dung truyện, không lặp tiêu đề, không ghi "Hồi 1", không lời bình.
+Trước khi viết, tự lên (trong đầu, KHÔNG in ra) cả 5 hồi chi tiết: bí mật/bước ngoặt là gì, gieo manh mối ở đâu, mỗi hồi những sự việc mới nào — để các lượt sau đi tiếp không lệch.`,
   };
 }
 
-/** Viết tiếp khi AI trả thiếu độ dài: phải đi tới KẾT trọn vẹn (không cliffhanger). */
-export function lifeContinueTask(remaining: number) {
-  return `Viết TIẾP từ đúng chỗ dừng, thêm khoảng ${remaining} từ, đi hết cốt truyện: bước ngoặt rồi phần KẾT đủ 4 nhịp (đối mặt, lời nhân vật chính, "một năm sau" khép số phận từng người, người kể khép lại + câu hỏi cho người nghe). Không lặp đoạn đã viết, không tóm tắt.`;
+/** Viết tiếp hồi kế: AI tự nhìn phần đã viết để đi tiếp hồi đang dở; lượt cuối (chốt theo số từ còn thiếu) viết nốt tới KẾT. */
+export function lifeContinueTask(written: number, target = LIFE_TARGET_WORDS) {
+  const common = "Không lặp lại đoạn đã viết, không tóm tắt lại chuyện cũ, không ghi tên hồi; giữ đúng tên, tuổi, chi tiết đã có.";
+  if (lifeIsFinalPart(written, target)) {
+    const remaining = Math.max(target - written, LIFE_PART_WORDS);
+    return `Đã viết ${written}/${target} từ. Viết TIẾP từ đúng chỗ dừng, thêm khoảng ${remaining} từ — đây là lượt CUỐI: viết nốt các hồi còn lại (chưa có bước ngoặt HỒI 4 thì viết cả bước ngoặt) rồi ${LIFE_ACTS[LIFE_ACTS.length - 1]} Truyện phải kết trọn vẹn trong lượt này. ${common}`;
+  }
+  return `Đã viết ${written}/${target} từ. Xem phần đã viết đang ở hồi nào, rồi viết TIẾP từ đúng chỗ dừng thêm khoảng ${LIFE_PART_WORDS} từ: đi tiếp hồi đang dở hoặc sang hồi kế (không nhảy cóc, không dồn nhiều hồi), có ít nhất một sự việc MỚI làm tình thế đổi hẳn. Dừng ở câu móc cuối hồi — CHƯA kết truyện. ${common}`;
 }
 
 /** Hết cốt truyện đã lên sẵn: nghĩ thêm truyện mới cùng tinh thần, không trùng các truyện đã có. */
@@ -82,7 +111,7 @@ ${previous.map((c) => `- ${c.title}`).join("\n") || "(chưa có)"}
 
 Nghĩ ${count} câu chuyện độc lập MỚI (số ${startAt}–${startAt + count - 1}), mỗi truyện một xung đột gia đình/đời thường rõ ràng, dễ minh hoạ bằng ảnh, hợp người xem 35–60 tuổi; xen kẽ cảm xúc (xót xa, ấm lòng, hối hận, hy vọng).
 - title: tiêu đề YouTube theo khuôn của kênh: ${LIFE_TITLE_RULE}
-- outline: 4–6 gạch đầu dòng: biến cố mở đầu, nhân vật chính và điều có nguy cơ mất, 2–3 diễn biến, bước ngoặt, kết; dòng cuối "Cảm xúc chính: …".`,
+- outline: 7–9 gạch đầu dòng cho truyện dài ~1 tiếng: biến cố mở đầu, nhân vật chính và điều có nguy cơ mất, 4–5 diễn biến leo thang (mỗi cái một sự việc mới), bí mật/bước ngoặt, kết; dòng cuối "Cảm xúc chính: …".`,
   };
 }
 
@@ -135,7 +164,7 @@ export const LIFE_NARRATOR_STYLE =
 /** Tăng nhẹ tốc độ (giữ cao độ) — đo #66: ~150 âm tiết/phút ở tốc độ gốc, ×1,1 ≈ 165–170, vẫn chậm rãi kể chuyện. */
 export const LIFE_TEMPO = 1.1;
 
-export const LIFE_BIBLE = `Kênh truyện audio "chuyện đời" — mỗi video là MỘT câu chuyện độc lập trọn vẹn 8–12 phút, nhân vật mới mỗi truyện.
+export const LIFE_BIBLE = `Kênh truyện audio "chuyện đời" — mỗi video là MỘT câu chuyện độc lập trọn vẹn khoảng 1 tiếng, kể liền mạch không chia chương, nhân vật mới mỗi truyện.
 Khán giả: người Việt 35–60 tuổi, nghe khi nấu cơm, lái xe, trước giờ ngủ; thích chuyện gia đình, tình thân, hôn nhân, nhân quả, sự tử tế.
 Đề tài chính: hy sinh của cha mẹ và sự vô tâm của con cái; mẹ chồng – nàng dâu; phản bội và tha thứ trong hôn nhân; anh em tranh chấp tài sản; người nghèo tử tế; bắt đầu lại ở tuổi trung niên; bí mật gia đình hé lộ sau nhiều năm.
 Bối cảnh: Việt Nam hiện nay, thành phố và nông thôn; đời sống cụ thể (chợ, xe máy, nhà cấp bốn, tiền lương, tin nhắn Zalo).
@@ -143,7 +172,7 @@ Mọi truyện là HƯ CẤU, không trình bày như sự kiện có thật.
 Tông giọng: lắng đọng, ấm, chân thật; có xót xa nhưng luôn để lại hy vọng hoặc sự thức tỉnh; không giảng đạo lý.`;
 
 export const LIFE_PREMISE =
-  "Những câu chuyện đời độc lập về tình cha mẹ, con cái, hôn nhân và những biến cố tuổi trung niên — mỗi video một truyện trọn vẹn, mở bằng biến cố, kết bằng cảm xúc.";
+  "Những câu chuyện đời độc lập về tình cha mẹ, con cái, hôn nhân và những biến cố tuổi trung niên — mỗi video một truyện dài ~1 tiếng trọn vẹn, mở bằng biến cố, kết bằng cảm xúc.";
 
 /** 10 truyện thử nghiệm đầu tiên (chủ kênh lên kế hoạch 17/11/2026) — thứ tự đăng = thứ tự ở đây, truyện 1 làm trước. */
 export const LIFE_PILOT: { title: string; emotion: string; plot: string }[] = [
@@ -159,7 +188,7 @@ export const LIFE_PILOT: { title: string; emotion: string; plot: string }[] = [
   { title: "Tuổi 48 Bị Chồng Bỏ Rơi, Người Phụ Nữ Quyết Định Bắt Đầu Lại", emotion: "Hy vọng, truyền cảm hứng", plot: "Bị chồng bỏ ở tuổi 48, tay trắng và bị chê già, người phụ nữ học lại từ đầu và dựng lại cuộc đời mình." },
 ];
 
-export const pilotOutline = (p: (typeof LIFE_PILOT)[number]) => `- ${p.plot}\n- Phát triển thành truyện trọn vẹn theo nhịp kênh: biến cố mở đầu → nhân vật và điều có nguy cơ mất → diễn biến liên tục → bước ngoặt → kết lắng đọng.\nCảm xúc chính: ${p.emotion}`;
+export const pilotOutline = (p: (typeof LIFE_PILOT)[number]) => `- ${p.plot}\n- Phát triển thành truyện dài ~1 tiếng trọn vẹn theo 5 hồi của kênh: biến cố mở đầu → tổn thương leo thang → chạm đáy và con đường mới → bước ngoặt → kết lắng đọng.\nCảm xúc chính: ${p.emotion}`;
 
 // ── Ảnh / meta cho render ──────────────────────────────────────────────────────────────────────────────
 
@@ -177,9 +206,9 @@ export const LIFE_LOOK_RULE =
 
 export const LIFE_SCENES_SYSTEM = "You write prompts for an image model illustrating a realistic contemporary Vietnamese family-drama audio story.";
 
-/** Ít ảnh hơn tiên hiệp: chuyện đời ít hành động, 1 ảnh ~40 giây là đủ (10 phút ≈ 15 ảnh). */
-export const LIFE_IMAGE_SECONDS = 40;
-export const LIFE_MAX_IMAGES = 18;
+/** Ít ảnh hơn tiên hiệp: chuyện đời ít hành động. Truyện 1 tiếng: 1 ảnh ~75 giây ≈ 48 ảnh (ảnh GPT có hạn lượt — đã vẽ thì cache). */
+export const LIFE_IMAGE_SECONDS = 75;
+export const LIFE_MAX_IMAGES = 50;
 
 /** Từ khóa gốc nghiên cứu vidIQ. */
 export const LIFE_SEEDS = ["chuyện đời", "truyện audio cảm động", "câu chuyện cuộc sống"];

@@ -106,16 +106,49 @@ export function ivoiSegments(turns: Turn[], cast: Record<string, string>, maxCha
   return out;
 }
 
-/** AI dựng kịch bản đọc. Không giữ đúng chữ truyện → null (người gọi đọc một giọng như cũ). */
-export async function directScript(content: string): Promise<Script | null> {
+/** Mỗi lượt gọi đạo diễn tối đa ngần này từ: truyện 1 tiếng (~12.000 từ) gửi một lần thì JSON vượt giới hạn đầu ra 32k token. */
+export const DIRECT_PART_WORDS = 2500;
+
+// Chương lưu đoạn văn cách nhau bởi xuống dòng (một hoặc hai) — tách theo mọi xuống dòng.
+const paragraphs = (t: string) => t.split(/\n+/).map((x) => x.trim()).filter(Boolean);
+
+/** Cắt truyện theo đoạn văn thành các phần ≤ maxWords từ (không cắt giữa đoạn). */
+export function splitForDirecting(content: string, maxWords = DIRECT_PART_WORDS): string[] {
+  const parts: string[] = [];
+  let cur: string[] = [];
+  let words = 0;
+  for (const para of paragraphs(content)) {
+    const w = para.split(/\s+/).length;
+    if (cur.length && words + w > maxWords) {
+      parts.push(cur.join("\n\n"));
+      cur = [];
+      words = 0;
+    }
+    cur.push(para);
+    words += w;
+  }
+  if (cur.length) parts.push(cur.join("\n\n"));
+  return parts;
+}
+
+/** Ghép kịch bản từng phần: người kể lấy phần đầu, nhân vật gộp theo tên (phần sau không ghi đè phần trước). */
+export function mergeScripts(parts: Script[]): Script {
+  const characters: Person[] = [];
+  for (const p of parts) for (const c of p.characters) if (!characters.some((x) => x.name === c.name)) characters.push(c);
+  return { narrator: parts[0].narrator, characters, turns: parts.flatMap((p) => p.turns) };
+}
+
+async function directPart(content: string, known: Person[]): Promise<Script | null> {
   const script = await textProvider().generateJson({
     system: "You are an audiobook director casting and directing a Vietnamese emotional family-drama story told in first person ('tôi').",
-    prompt: `Chia truyện dưới đây thành các LƯỢT ĐỌC theo đúng thứ tự, phủ TOÀN BỘ văn bản, KHÔNG sửa, KHÔNG bỏ, KHÔNG thêm chữ nào của truyện.
+    prompt: `Chia ${known.length ? "đoạn truyện" : "truyện"} dưới đây thành các LƯỢT ĐỌC theo đúng thứ tự, phủ TOÀN BỘ văn bản, KHÔNG sửa, KHÔNG bỏ, KHÔNG thêm chữ nào của truyện.
 - speaker: "${NARRATOR}" cho lời kể của nhân vật "tôi" (kể cả khi "tôi" nói thoại); tên nhân vật cho lời thoại của nhân vật đó (chỉ phần trong lời thoại; phần dẫn "– Khoa nói" vẫn thuộc ${NARRATOR}).
 - style: tiếng Anh ≤ 8 từ, cảm xúc + nhịp của lượt đó (vd "speaking slowly, holding back tears", "cold, dismissive, impatient", "warm, gentle, very slow", "trembling, choked up"). Người kể là người già từng trải: nhịp kể tự nhiên, cảm xúc rõ (nghẹn, run, uất, nhẹ nhõm…) đổi theo từng đoạn, KHÔNG đều đều.
 - text: nguyên văn đoạn đó; được CHÈN thẻ hơi thở bằng tiếng Anh trong ngoặc nhọn ở chỗ thật sự xúc động (tối đa 1 thẻ / 2–3 câu): ${TAGS}. Không thẻ nào khác.
 - Lượt người kể dài tối đa ~6 câu; đổi cảm xúc thì tách lượt mới.
-- narrator: giới tính + tuổi của "tôi". characters: mọi nhân vật có lời thoại (tên đúng như speaker), giới tính, tuổi ước lượng.
+- narrator: giới tính + tuổi của "tôi". characters: mọi nhân vật có lời thoại (tên đúng như speaker), giới tính, tuổi ước lượng.${
+      known.length ? `\n- Đây là một đoạn giữa truyện. Nhân vật đã xuất hiện ở các đoạn trước — người nào nói lại thì dùng ĐÚNG tên này làm speaker: ${known.map((c) => `${c.name} (${c.gender}, ${c.age})`).join(", ")}.` : ""
+    }
 
 TRUYỆN:
 ${content}`,
@@ -128,4 +161,20 @@ ${content}`,
   const turns = script.turns.filter((t) => stripTags(t.text));
   if (!faithful(content, turns)) return null;
   return { ...script, turns };
+}
+
+/**
+ * AI dựng kịch bản đọc, chia phần ≤ DIRECT_PART_WORDS từ cho truyện dài. Phần nào AI không giữ đúng chữ thì phần đó
+ * đọc bằng giọng người kể (không bỏ cả kịch bản); không phần nào dựng được → null (người gọi đọc một giọng như cũ).
+ */
+export async function directScript(content: string): Promise<Script | null> {
+  const chunks = splitForDirecting(content);
+  const parts: (Script | null)[] = [];
+  for (const chunk of chunks) {
+    const known = parts.flatMap((p) => p?.characters ?? []);
+    parts.push(await directPart(chunk, known));
+  }
+  const ok = parts.filter((p): p is Script => p != null);
+  if (!ok.length) return null;
+  return mergeScripts(parts.map((p, i) => p ?? { narrator: ok[0].narrator, characters: [], turns: paragraphs(chunks[i]).map((text) => ({ speaker: NARRATOR, style: "", text })) }));
 }

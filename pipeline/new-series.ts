@@ -54,7 +54,7 @@ export async function newLifeSeries(channel = "chuyen-doi") {
     .values({
       title: "Chuyện Đời Lắng Đọng", genre: LIFE_GENRE, premise: LIFE_PREMISE, bible: LIFE_BIBLE, style: LIFE_STYLE, channel,
       targetWords: LIFE_TARGET_WORDS, autopilot: true, autoApprove: true, chaptersPerDay: 1, episodeChapters: 0,
-      ttsVoice: LIFE_TTS_VOICE, voiceStyle: LIFE_VOICE_STYLE, makeShort: true, autoPublish: true,
+      ttsVoice: LIFE_TTS_VOICE, voiceStyle: LIFE_VOICE_STYLE, makeShort: false, autoPublish: true,
     })
     .returning({ id: series.id });
   await db()
