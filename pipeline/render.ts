@@ -25,7 +25,7 @@ import { heroRef } from "./hero";
 import { chapterNarration } from "./narration";
 import { dropStaleTts, markTts } from "./tts-cache";
 import { imageCount, isEpisodeOpener, planChapterScenes, planShots, shortSceneCount } from "./episode-plan";
-import { isLifeStory, LIFE_IMAGE_SECONDS, LIFE_MAX_IMAGES, LIFE_NARRATOR_STYLE, LIFE_TEMPO, lifeVoice } from "@/lib/story/life";
+import { isLifeStory, LIFE_IMAGE_SECONDS, LIFE_MAX_IMAGES, LIFE_NARRATOR_STYLE, LIFE_TEMPO, LIFE_TTS_VOICE_FEMALE, lifeVoice } from "@/lib/story/life";
 import { OPENER_CLIPS, OPENER_SEGMENT_BUDGET } from "./i2v-plan";
 import { ensureRelease, uploadAsset } from "./release";
 import { keepOrNextSlot } from "./schedule";
@@ -37,7 +37,7 @@ import { autoPublishEligible, publishToYoutube } from "./youtube";
 type ScenePrompt = Awaited<ReturnType<typeof scenePrompts>>[number];
 import { cuesForChunk, cuesForSegment, packChunks, parseSilenceMids, sentences, snapToSentences, titleCardFilter, toAss, type Cue } from "./text";
 import { speak, speakTurns, SpeechFormatError, type SpeechTurn } from "./tts";
-import { directScript, groupTurns, NARRATOR, stripTags } from "./voice-cast";
+import { castVoices, directScript, groupTurns, NARRATOR, stripTags } from "./voice-cast";
 
 // Đường dẫn tương đối (ffmpeg chạy ở gốc repo): đường dẫn tuyệt đối trên Windows có "C:" làm vỡ cú pháp filter của drawtext.
 const FONT_DIR = "pipeline/fonts";
@@ -899,9 +899,8 @@ export async function renderVideo(videoId: number) {
     console.log("● Video dài: đọc giọng");
     const onLong = (i: number, total: number) => track.tick("tts", "long", `Đoạn ${i + 1}/${total}`);
     let long: Narration;
-    // Chuyện đời: MỘT giọng người kể (theo giới tính người kể), tăng nhẹ tốc độ. KHÔNG phân vai, KHÔNG thẻ <sigh>…
-    // (bản #66 đọc lẫn thẻ hơi thở, đổi giọng lung tung, truyện mẹ kể ra giọng nam). Cảm xúc theo TỪNG ĐOẠN: AI đạo diễn
-    // gắn style mỗi lượt (nghẹn, uất, run…) → cùng giọng người kể đọc, lời nhân vật khác chỉ đổi tông.
+    // Chuyện đời: người kể giọng già đúng giới tính, mỗi nhân vật có thoại một giọng đúng giới tính; cảm xúc theo TỪNG LƯỢT
+    // do AI đạo diễn gắn (nghẹn, uất, run…). KHÔNG thẻ <sigh>… trong chữ (bản #66 đọc lẫn thẻ hơi thở). Tăng nhẹ tốc độ.
     const lifeGroups = (text: string) =>
       ttsChunks(stripTags(text)).map((ch) => [{ speaker: NARRATOR, voice, style: LIFE_NARRATOR_STYLE, text: ch.join(" ") }]);
     const directed = life
@@ -912,12 +911,26 @@ export async function renderVideo(videoId: number) {
         }))
       : null;
     if (life) {
-      const groups = directed
-        ? groupTurns(directed.turns, { [NARRATOR]: voice }).map((g) =>
-            g.map((t) => ({ speaker: NARRATOR, voice, style: `${LIFE_NARRATOR_STYLE}. This passage: ${t.style}`, text: stripTags(t.text) })),
+      // Người kể: giới tính theo tiêu đề (lifeVoice — AI từng đoán nhầm bà mẹ thành nam), luôn nhóm tuổi già (Gacrux/Algenib).
+      // Nhân vật có thoại: giọng theo giới tính/tuổi AI đọc ra, không trùng giọng người kể.
+      const cast = directed
+        ? castVoices({ ...directed, narrator: { gender: voice === LIFE_TTS_VOICE_FEMALE ? "female" : "male", age: Math.max(60, directed.narrator.age) } })
+        : null;
+      if (cast) cast[NARRATOR] = voice;
+      const groups = directed && cast
+        ? groupTurns(directed.turns, cast).map((g) =>
+            g.map((t) => {
+              const narrator = t.speaker === NARRATOR || !cast[t.speaker];
+              return {
+                speaker: narrator ? NARRATOR : t.speaker,
+                voice: narrator ? voice : cast[t.speaker],
+                style: narrator ? `${LIFE_NARRATOR_STYLE}. This passage: ${t.style}` : `natural Vietnamese speech, ${t.style}`,
+                text: stripTags(t.text),
+              };
+            }),
           )
         : lifeGroups(longText);
-      track.log("tts", directed ? `Cảm xúc theo đoạn: ${directed.turns.length} lượt, giọng ${voice}` : `Một cảm xúc chung, giọng ${voice}`);
+      track.log("tts", cast ? `Phân vai: ${Object.entries(cast).map(([k, v]) => `${k === NARRATOR ? "người kể" : k}=${v}`).join(", ")}` : `Một giọng người kể ${voice}`);
       track.total("tts", "long", groups.length);
       long = await narrateScript(groups, dir, voice, onLong, 70, LIFE_TEMPO);
     } else {
