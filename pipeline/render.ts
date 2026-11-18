@@ -27,7 +27,7 @@ import { dropStaleTts, markTts } from "./tts-cache";
 import { imageCount, isEpisodeOpener, planChapterScenes, planShots, shortSceneCount } from "./episode-plan";
 import { isLifeStory, LIFE_IMAGE_SECONDS, LIFE_MAX_IMAGES, LIFE_NARRATOR_STYLE, LIFE_TEMPO, LIFE_TTS_VOICE_FEMALE, lifeVoice } from "@/lib/story/life";
 import { OPENER_CLIPS, OPENER_SEGMENT_BUDGET } from "./i2v-plan";
-import { ensureRelease, uploadAsset } from "./release";
+import { ensureRelease, restoreImages, uploadAsset } from "./release";
 import { keepOrNextSlot } from "./schedule";
 import { loadSecrets } from "@/lib/secrets";
 import { chooseTitle, genreSeeds, keywordResearch, scoreTitles } from "./vidiq";
@@ -811,7 +811,13 @@ export async function renderVideo(videoId: number) {
     console.log(`▶ Video #${videoId}: ${s.title} — chương ${c.number}`);
     // Hết quota ảnh đẹp thì chờ 7h sáng (lần chạy 00:17 UTC) thay vì ra video ảnh mờ Pollinations.
     // Video đã vẽ dở (ảnh nằm trong cache) thì cứ chạy: ảnh có sẵn không tốn quota, thiếu ảnh thì drawImage tự báo hết quota.
-    const hasImages = (await readdir(dir).catch(() => [] as string[])).some((f) => /-img-\d+\.jpg$/.test(f));
+    let hasImages = (await readdir(dir).catch(() => [] as string[])).some((f) => /-img-\d+\.jpg$/.test(f));
+    // Cache mất ảnh nhưng release cũ còn → tải về TRƯỚC khi ensureRelease xoá release (không vẽ lại ảnh đã có).
+    if (!hasImages) {
+      const n = await restoreImages(videoId, dir, shortDir);
+      if (n) console.log(`  Lấy lại ${n} ảnh có sẵn từ release — không vẽ lại`);
+      hasImages = n > 0;
+    }
     if (!hasImages && !(await imagesReady())) throw new QuotaExhaustedError("Hết lượt vẽ ảnh (GPT gói Plus) — chờ lượt sau.");
     // Video đã lên YouTube thì giữ release cũ (thay dần từng file); chưa thì làm sạch để xem tiến độ từ đầu.
     const releaseId = await ensureRelease(videoId, !v.youtubeVideoId);
@@ -834,15 +840,16 @@ export async function renderVideo(videoId: number) {
     // Chuyện đời kể ngôi "tôi": giọng theo giới tính người kể (mẹ kể → giọng nữ), không cố định theo bộ.
     const voice = life ? lifeVoice(c.content, c.title) : s.ttsVoice;
     if (life) {
-      // Truyện đã sửa từ lần render trước → bỏ ảnh/đoạn video/Short cũ (giọng đọc tts-* tự kiểm theo văn bản nên giữ).
+      // Truyện đã sửa từ lần render trước → bỏ đoạn video/Short cũ; GIỮ ảnh đã vẽ (user chốt: không vẽ lại) và giọng tts-* (tự kiểm theo văn bản).
       const markFile = path.join(dir, "content.tag");
       const prev = await readFile(markFile, "utf8").catch(() => null);
       if (prev !== tag) {
         for (const f of await readdir(dir).catch(() => [] as string[])) {
-          if (!/^tts-|^vidiq-|\.tag$/.test(f)) await rm(path.join(dir, f), { recursive: true, force: true });
+          if (!/^tts-|^vidiq-|\.tag$|-img-\d+\.jpg$|^short$/.test(f)) await rm(path.join(dir, f), { recursive: true, force: true });
         }
         await mkdir(shortDir, { recursive: true });
-        console.log("  Truyện đã sửa — dựng lại ảnh/video từ đầu");
+        for (const f of await readdir(shortDir)) if (!/-img-\d+\.jpg$/.test(f)) await rm(path.join(shortDir, f), { recursive: true, force: true });
+        console.log("  Truyện đã sửa — dựng lại giọng/video (giữ ảnh đã vẽ)");
       }
       await writeFile(markFile, tag);
     }

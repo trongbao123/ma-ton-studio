@@ -87,3 +87,20 @@ export async function signedAssetUrl(videoId: number, name: string): Promise<str
   });
   return res.headers.get("location");
 }
+
+/**
+ * Máy render không còn ảnh (cache Actions mất / truyện sửa) mà release cũ còn ảnh → tải về để dùng lại, khỏi vẽ lại.
+ * Ảnh Short (`short-img-*`) về `shortDir`. Trả số ảnh tải được (0 nếu không có release hoặc không chạy trên Actions).
+ */
+export async function restoreImages(videoId: number, dir: string, shortDir: string): Promise<number> {
+  const g = gh();
+  if (!g) return 0;
+  const tag = `video-${videoId}`;
+  const get = (pattern: string, to: string) =>
+    run("gh", ["release", "download", tag, "--repo", g.repo, "-p", pattern, "-D", to, "--skip-existing"]).catch(() => null);
+  await get("long-img-*", dir);
+  await get("short-img-*", shortDir);
+  const { readdir } = await import("node:fs/promises");
+  const count = async (d: string) => (await readdir(d).catch(() => [] as string[])).filter((f) => /-img-\d+\.jpg$/.test(f)).length;
+  return (await count(dir)) + (await count(shortDir));
+}
