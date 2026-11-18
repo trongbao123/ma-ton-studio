@@ -92,7 +92,7 @@ export async function directScript(content: string): Promise<Script | null> {
     system: "You are an audiobook director casting and directing a Vietnamese emotional family-drama story told in first person ('tôi').",
     prompt: `Chia truyện dưới đây thành các LƯỢT ĐỌC theo đúng thứ tự, phủ TOÀN BỘ văn bản, KHÔNG sửa, KHÔNG bỏ, KHÔNG thêm chữ nào của truyện.
 - speaker: "${NARRATOR}" cho lời kể của nhân vật "tôi" (kể cả khi "tôi" nói thoại); tên nhân vật cho lời thoại của nhân vật đó (chỉ phần trong lời thoại; phần dẫn "– Khoa nói" vẫn thuộc ${NARRATOR}).
-- style: tiếng Anh ≤ 8 từ, cảm xúc + nhịp của lượt đó (vd "speaking slowly, holding back tears", "cold, dismissive, impatient", "warm, gentle, very slow", "trembling, choked up"). Người kể luôn chậm rãi, có ngừng nghỉ.
+- style: tiếng Anh ≤ 8 từ, cảm xúc + nhịp của lượt đó (vd "speaking slowly, holding back tears", "cold, dismissive, impatient", "warm, gentle, very slow", "trembling, choked up"). Người kể là người già từng trải: nhịp kể tự nhiên, cảm xúc rõ (nghẹn, run, uất, nhẹ nhõm…) đổi theo từng đoạn, KHÔNG đều đều.
 - text: nguyên văn đoạn đó; được CHÈN thẻ hơi thở bằng tiếng Anh trong ngoặc nhọn ở chỗ thật sự xúc động (tối đa 1 thẻ / 2–3 câu): ${TAGS}. Không thẻ nào khác.
 - Lượt người kể dài tối đa ~6 câu; đổi cảm xúc thì tách lượt mới.
 - narrator: giới tính + tuổi của "tôi". characters: mọi nhân vật có lời thoại (tên đúng như speaker), giới tính, tuổi ước lượng.

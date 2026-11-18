@@ -135,20 +135,6 @@ export const LIFE_NARRATOR_STYLE =
 /** Tăng nhẹ tốc độ (giữ cao độ) — đo #66: ~150 âm tiết/phút ở tốc độ gốc, ×1,1 ≈ 165–170, vẫn chậm rãi kể chuyện. */
 export const LIFE_TEMPO = 1.1;
 
-export type LifeMood = "sad" | "warm" | "mystery";
-
-/**
- * Thế truyện để chọn nhạc nền (pipeline/music/life/<mood>/): đọc dòng "Cảm xúc chính" của dàn ý + tiêu đề.
- * Mặc định "sad" — kênh chủ yếu là chuyện xót xa.
- */
-export function lifeMood(outline: string, title = ""): LifeMood {
-  const emo = (outline.match(/Cảm xúc chính:\s*(.+)/i)?.[1] ?? "").normalize("NFC").toLowerCase();
-  const t = `${emo} ${title.normalize("NFC").toLowerCase()}`;
-  if (/tử tế|ấm lòng|hy vọng|hi vọng|truyền cảm hứng|bắt đầu lại/.test(emo || t)) return "warm";
-  if (/bí ẩn|bí mật|bất ngờ|tò mò/.test(emo || t)) return "mystery";
-  return "sad";
-}
-
 export const LIFE_BIBLE = `Kênh truyện audio "chuyện đời" — mỗi video là MỘT câu chuyện độc lập trọn vẹn 8–12 phút, nhân vật mới mỗi truyện.
 Khán giả: người Việt 35–60 tuổi, nghe khi nấu cơm, lái xe, trước giờ ngủ; thích chuyện gia đình, tình thân, hôn nhân, nhân quả, sự tử tế.
 Đề tài chính: hy sinh của cha mẹ và sự vô tâm của con cái; mẹ chồng – nàng dâu; phản bội và tha thứ trong hôn nhân; anh em tranh chấp tài sản; người nghèo tử tế; bắt đầu lại ở tuổi trung niên; bí mật gia đình hé lộ sau nhiều năm.

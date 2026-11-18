@@ -25,7 +25,7 @@ import { heroRef } from "./hero";
 import { chapterNarration } from "./narration";
 import { dropStaleTts, markTts } from "./tts-cache";
 import { imageCount, isEpisodeOpener, planChapterScenes, planShots, shortSceneCount } from "./episode-plan";
-import { isLifeStory, LIFE_IMAGE_SECONDS, LIFE_MAX_IMAGES, LIFE_NARRATOR_STYLE, LIFE_TEMPO, lifeMood, lifeVoice, type LifeMood } from "@/lib/story/life";
+import { isLifeStory, LIFE_IMAGE_SECONDS, LIFE_MAX_IMAGES, LIFE_NARRATOR_STYLE, LIFE_TEMPO, lifeVoice } from "@/lib/story/life";
 import { OPENER_CLIPS, OPENER_SEGMENT_BUDGET } from "./i2v-plan";
 import { ensureRelease, uploadAsset } from "./release";
 import { keepOrNextSlot } from "./schedule";
@@ -37,7 +37,7 @@ import { autoPublishEligible, publishToYoutube } from "./youtube";
 type ScenePrompt = Awaited<ReturnType<typeof scenePrompts>>[number];
 import { cuesForChunk, cuesForSegment, packChunks, parseSilenceMids, sentences, snapToSentences, titleCardFilter, toAss, type Cue } from "./text";
 import { speak, speakTurns, SpeechFormatError, type SpeechTurn } from "./tts";
-import { NARRATOR, stripTags } from "./voice-cast";
+import { directScript, groupTurns, NARRATOR, stripTags } from "./voice-cast";
 
 // Đường dẫn tương đối (ffmpeg chạy ở gốc repo): đường dẫn tuyệt đối trên Windows có "C:" làm vỡ cú pháp filter của drawtext.
 const FONT_DIR = "pipeline/fonts";
@@ -291,8 +291,8 @@ export async function buildVideo(opts: {
   heroRef?: string | null;
   /** Mặc định NORMAL. */
   quality?: Quality;
-  /** Hệ số nhạc nền thay mức mặc định 0,28 (chuyện đời: chuẩn theo LUFS từng bài — lifeMusicGain). */
-  musicGain?: number;
+  /** Không nhạc nền, chỉ giọng (+ hiệu ứng nếu có) — kênh chuyện đời: chủ kênh chọn chỉ giọng kể. */
+  noMusic?: boolean;
   /** Báo tiến độ cho màn flow: ảnh vẽ xong (lần đầu), tổng số shot, từng shot xong, việc ghép. */
   on?: { image?: (i: number, file: string, model?: string) => Promise<void>; shots?: (n: number) => void; shot?: () => void; log?: (text: string) => void };
 }) {
@@ -381,19 +381,25 @@ export async function buildVideo(opts: {
     : "";
   // Thanh tiến độ vàng mảnh trên đỉnh Short: người xem thấy còn bao lâu nên ít lướt qua.
   const bar = opts.progressBar ? `,drawbox=x=0:y=0:w='iw*t/${narration.seconds.toFixed(2)}':h=12:color=0xFFD23F@0.95:t=fill` : "";
-  on?.log?.(`Trộn giọng đọc, nhạc nền${opts.sfx ? ", tiếng hiệu ứng" : ""}, phụ đề`);
-  const music = opts.music ?? (await ambientBed(dir));
+  on?.log?.(`Trộn giọng đọc${opts.noMusic ? "" : ", nhạc nền"}${opts.sfx ? ", tiếng hiệu ứng" : ""}, phụ đề`);
   // Tiếng hiệu ứng (intro): input thứ 4, trộn thẳng ở SFX_GAIN như bên chương tĩnh.
-  const audio = [
+  const audio = opts.noMusic ? [
+    ...(opts.sfx ? ["-i", opts.sfx, "-filter_complex", `[2:a]volume=${SFX_GAIN}[sx];[1:a][sx]amix=inputs=2:duration=first:normalize=0[a]`] : []),
+    "-map", "0:v", "-map", opts.sfx ? "[a]" : "1:a",
+  ] : await musicArgs();
+  async function musicArgs() {
+    const music = opts.music ?? (await ambientBed(dir));
+    return [
     "-stream_loop", "-1", "-i", music,
     ...(opts.sfx ? ["-i", opts.sfx] : []),
     "-filter_complex",
-    `[2:a]volume=${(opts.musicGain ?? (music.endsWith("ambient.wav") ? 0.4 : 0.28)).toFixed(3)}[m];` +
+    `[2:a]volume=${music.endsWith("ambient.wav") ? 0.4 : 0.28}[m];` +
       (opts.sfx
         ? `[3:a]volume=${SFX_GAIN}[sx];[1:a][m][sx]amix=inputs=3:duration=first:normalize=0[a]`
         : `[1:a][m]amix=inputs=2:duration=first:normalize=0[a]`),
     "-map", "0:v", "-map", "[a]",
-  ];
+    ];
+  }
   await once(out, (tmp) =>
     ffmpeg([
       "-i", silent, "-i", narration.audio, ...audio,
@@ -589,25 +595,6 @@ function hookText(hook: string, w: number) {
         `,drawtext=fontfile=${filterPath(FONT)}:text='${escText(line)}':fontsize=${size}:fontcolor=#FFD23F:borderw=${Math.round(size / 11)}:bordercolor=black:x=(w-tw)/2:y=${top}+${i * lineH}:alpha='if(lt(t,0.25),t/0.25,if(lt(t,1.9),1,max(0,(2.3-t)/0.4)))':enable='lt(t,2.3)'`,
     )
     .join("");
-}
-
-/**
- * Nhạc chuyện đời theo thế truyện: pipeline/music/life/<mood>/ (piano/dây cảm động, Kevin MacLeod — CC BY 4.0).
- * Không dùng chung kho nhạc tu tiên (trống/hùng tráng — #66 ra "Lord of the Land" cho truyện người mẹ bị con bỏ).
- */
-export async function pickLifeMusic(seed: number, mood: LifeMood) {
-  const dir = path.resolve("pipeline/music/life", mood);
-  const files = (await readdir(dir).catch(() => [] as string[])).filter((f) => f.endsWith(".mp3")).sort();
-  return files.length ? path.join(dir, files[seed % files.length]) : pickMusic(seed);
-}
-
-/** Nhạc chuyện đời nằm cố định ~18 dB dưới giọng (-16 LUFS): các bài lệch nhau tới 20 dB (-17…-37 LUFS) nên chuẩn từng bài. */
-export const LIFE_MUSIC_LUFS = -34;
-
-/** Hệ số nhân đưa bài nhạc (đã đo LUFS) về LIFE_MUSIC_LUFS; không đo được thì 0,1 (≈ -20 dB). */
-export function lifeMusicGain(measuredLufs: number | null) {
-  if (measuredLufs == null || !Number.isFinite(measuredLufs)) return 0.1;
-  return Math.min(1.5, 10 ** ((LIFE_MUSIC_LUFS - measuredLufs) / 20));
 }
 
 /**
@@ -895,8 +882,8 @@ export async function renderVideo(videoId: number) {
     const fixed = await cached(path.join(dir, `meta-seo-v2${tag}.json`), () =>
       optimizeMeta(draft, { seriesTitle: life ? c.title : s.title, chapterNumber: c.number, chapterTitle: c.title, summary: c.summary, life }, { log: (t) => track.log("agent", t) }),
     );
-    const music = life ? await pickLifeMusic(videoId, lifeMood(c.outline ?? "", c.title)) : await pickMusic(videoId);
-    const musicGain = life && music ? lifeMusicGain(await measureLufs(music)) : undefined;
+    // Chuyện đời: không nhạc nền (chủ kênh chốt 18/11/2026 — chỉ giọng kể).
+    const music = life ? null : await pickMusic(videoId);
     // Ghi công nhạc nền (bắt buộc với CC BY) — gắn sau bước tối ưu SEO để AI không xoá mất.
     const credit = music ? musicCredit(music) : "";
     let meta: VideoMeta = credit
@@ -912,12 +899,25 @@ export async function renderVideo(videoId: number) {
     console.log("● Video dài: đọc giọng");
     const onLong = (i: number, total: number) => track.tick("tts", "long", `Đoạn ${i + 1}/${total}`);
     let long: Narration;
-    // Chuyện đời: MỘT giọng người kể (theo giới tính người kể), cảm xúc qua speech_metadata.style, tăng nhẹ tốc độ.
-    // Bỏ "đạo diễn giọng" (phân vai + thẻ <sigh>…): bản #66 đọc lẫn thẻ hơi thở, đổi giọng lung tung, truyện mẹ kể ra giọng nam.
+    // Chuyện đời: MỘT giọng người kể (theo giới tính người kể), tăng nhẹ tốc độ. KHÔNG phân vai, KHÔNG thẻ <sigh>…
+    // (bản #66 đọc lẫn thẻ hơi thở, đổi giọng lung tung, truyện mẹ kể ra giọng nam). Cảm xúc theo TỪNG ĐOẠN: AI đạo diễn
+    // gắn style mỗi lượt (nghẹn, uất, run…) → cùng giọng người kể đọc, lời nhân vật khác chỉ đổi tông.
     const lifeGroups = (text: string) =>
       ttsChunks(stripTags(text)).map((ch) => [{ speaker: NARRATOR, voice, style: LIFE_NARRATOR_STYLE, text: ch.join(" ") }]);
+    const directed = life
+      ? await cached(path.join(dir, `voice-script${tag}.json`), () => directScript(longText).catch((e) => {
+          if (e instanceof QuotaExhaustedError) throw e;
+          console.warn("  ⚠ Đạo diễn cảm xúc lỗi:", e instanceof Error ? e.message : e);
+          return null;
+        }))
+      : null;
     if (life) {
-      const groups = lifeGroups(longText);
+      const groups = directed
+        ? groupTurns(directed.turns, { [NARRATOR]: voice }).map((g) =>
+            g.map((t) => ({ speaker: NARRATOR, voice, style: `${LIFE_NARRATOR_STYLE}. This passage: ${t.style}`, text: stripTags(t.text) })),
+          )
+        : lifeGroups(longText);
+      track.log("tts", directed ? `Cảm xúc theo đoạn: ${directed.turns.length} lượt, giọng ${voice}` : `Một cảm xúc chung, giọng ${voice}`);
       track.total("tts", "long", groups.length);
       long = await narrateScript(groups, dir, voice, onLong, 70, LIFE_TEMPO);
     } else {
@@ -995,7 +995,7 @@ export async function renderVideo(videoId: number) {
       w: 1920, h: 1080, imgW: 1280, imgH: 768, fontSize: 62, marginV: 70,
       // Chuyện đời vào thẳng biến cố — không thẻ tên kênh/số chương ở đầu video.
       titleCard: life ? undefined : `${s.title}\n\nChương ${c.number}: ${c.title}`,
-      music, musicGain,
+      music, noMusic: life,
       on: hooks("long"),
     });
 
@@ -1007,7 +1007,7 @@ export async function renderVideo(videoId: number) {
         const shortVideo = await buildVideo({
           dir: shortDir, name: "short", narration: short, prompts: shortPrompts, scenes: shortScenes,
           w: 1080, h: 1920, imgW: 768, imgH: 1408, fontSize: 80, marginV: 520,
-          hook: m.thumbnailText, progressBar: true, music, musicGain,
+          hook: m.thumbnailText, progressBar: true, music, noMusic: life,
           on: hooks("short"),
         });
         extras.push(shortVideo.out);
