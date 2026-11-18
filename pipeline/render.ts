@@ -114,8 +114,20 @@ export async function narrateScript(groups: SpeechTurn[][], dir: string, narrato
     const key = createHash("sha1").update(JSON.stringify(g)).digest("hex").slice(0, 10);
     const f = path.join(dir, `tts-cast-${String(i).padStart(3, "0")}-${key}.wav`);
     try {
-      if (g[0].voice.startsWith(IVOI_PREFIX)) await speakIvoi(g.map((t) => t.text).join(" "), f, g[0].voice.slice(IVOI_PREFIX.length));
-      else await speakTurns(g, f);
+      if (g[0].voice.startsWith(IVOI_PREFIX)) {
+        await speakIvoi(g.map((t) => t.text).join(" "), f, g[0].voice.slice(IVOI_PREFIX.length));
+        // Nhấn nhá: đổi nhịp theo cảm xúc (giữ cao độ) + khoảng lặng thật sau đoạn. File gốc ivoi giữ nguyên (đã trả tiền).
+        const speed = g[0].speed ?? 1;
+        const pause = g.at(-1)!.pauseAfter ?? 0;
+        if (speed !== 1 || pause > 0) {
+          const paced = f.replace(/\.wav$/, `-p${speed}-${pause}.wav`);
+          const af = [speed !== 1 ? `atempo=${speed}` : "", pause > 0 ? `apad=pad_dur=${pause}` : ""].filter(Boolean).join(",");
+          await once(paced, (tmp) => ffmpeg(["-i", f, "-af", af, "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le", tmp]));
+          console.log(`  TTS ${i + 1}/${groups.length} (${g[0].voice}, nhịp ×${speed}, lặng ${pause}s)`);
+          onChunk?.(i, groups.length);
+          return paced;
+        }
+      } else await speakTurns(g, f);
     } catch (e) {
       if (!(e instanceof SpeechFormatError)) throw e;
       // Đọc tách từng lượt (mỗi lượt 1 giọng, giữ cảm xúc) rồi nối — KHÔNG đọc gộp một giọng trơn (nghe "giọng máy").
@@ -947,7 +959,7 @@ export async function renderVideo(videoId: number) {
           track.log("tts", `ivoi phân vai: ${Object.entries(cast).map(([k, v]) => `${k === NARRATOR ? "người kể" : k}=${v}`).join(", ")} · ${segments.length} lượt gọi`);
           track.total("tts", "long", segments.length);
           long = await narrateScript(
-            segments.map((x) => [{ speaker: NARRATOR, voice: `${IVOI_PREFIX}${x.voice}`, style: "", text: x.text }]),
+            segments.map((x) => [{ speaker: NARRATOR, voice: `${IVOI_PREFIX}${x.voice}`, style: "", text: x.text, speed: x.speed, pauseAfter: x.pauseAfter }]),
             dir, ivoiVoice!, onLong, 70, 1,
           );
         } else {
