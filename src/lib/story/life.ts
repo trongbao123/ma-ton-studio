@@ -18,13 +18,40 @@ export const LIFE_PART_WORDS = 3000;
  * 5 hồi của truyện 1 tiếng (mỗi hồi ≈ 1 lượt viết). Truyện dài giữ người nghe bằng bậc thang biến cố + móc giữ chân cuối mỗi hồi,
  * không phải bằng kể chậm — mỗi hồi phải có ít nhất một sự việc MỚI làm tình thế đổi hẳn.
  */
+// Chủ kênh 18/11/2026: "viết truyện 1 mẫu quá, mở đầu nào cũng y chang" → hồi chỉ là KHUNG NHỊP, nội dung đi theo cốt truyện
+// riêng (không phải truyện nào cũng bị đuổi khỏi nhà rồi gặp người dưng); mở đầu/kết xoay vòng theo số truyện (LIFE_OPENINGS/ENDINGS).
 export const LIFE_ACTS = [
-  "HỒI 1 — mở đầu và biến cố: đoạn tự giới thiệu tóm nỗi đau (theo nhịp kênh), rồi 'Chuyện bắt đầu từ…'; dựng gia đình, những hy sinh lớn của tôi qua 2–3 ký ức cụ thể, và biến cố đầu tiên đẩy tôi vào thế có nguy cơ mất điều quan trọng nhất.",
-  "HỒI 2 — tổn thương leo thang: 2–3 lần bị làm đau, lần sau đau hơn lần trước, mỗi lần một câu nói tàn nhẫn nghe tận tai và một ký ức hy sinh đối chiếu; một tia hy vọng nhỏ (một người con có vẻ sắp bênh, một cơ hội) rồi bị dập tắt.",
-  "HỒI 3 — chạm đáy và một con đường mới: tôi mất thứ cuối cùng còn bám víu (nhà, tiền, chỗ dựa), phải rời đi; gặp người dưng/nơi chốn mới, một chút tử tế; gieo rõ manh mối của bí mật/sự thật sẽ lật ngược câu chuyện.",
-  "HỒI 4 — bước ngoặt: sự thật bị giấu hé lộ dần (người tưởng xấu hoá ra tốt, khoản tiền/giấy tờ/lá thư, người dưng đã âm thầm giúp), cán cân đảo chiều; kẻ có lỗi bắt đầu trả giá hoặc tìm đến tôi.",
-  "HỒI 5 — KẾT đủ 4 nhịp (không vội): màn đối mặt với chi tiết khiến kẻ có lỗi chết lặng; lời tôi nói bình thản mà thấm; 'một năm sau' khép số phận từng người theo nhân quả; tôi nói với người nghe và câu hỏi mời kể chuyện ở phần bình luận.",
+  "HỒI 1 — mở đầu và biến cố: mở theo KIỂU MỞ ĐẦU được giao cho truyện này; dựng nhân vật, điều tôi quý nhất / đã đánh đổi nhiều nhất qua 2–3 ký ức cụ thể; biến cố đầu tiên đúng cốt truyện đẩy tôi vào thế có nguy cơ mất điều đó.",
+  "HỒI 2 — leo thang: xung đột của CHÍNH cốt truyện này tăng 2–3 nấc (bị làm đau, nghi ngờ lớn dần, bị dồn ép, bí mật phình to… tuỳ truyện), mỗi nấc một sự việc mới và một câu nói/khoảnh khắc khó quên; một tia hy vọng rồi vụt tắt.",
+  "HỒI 3 — chạm đáy: tình thế tồi tệ nhất CỦA TRUYỆN NÀY (mất chỗ dựa, mất niềm tin, một quyết định đau đớn, một cuộc chia ly…), không lặp lại kiểu chạm đáy của truyện khác; gieo rõ manh mối của sự thật sẽ lật ngược câu chuyện.",
+  "HỒI 4 — bước ngoặt: sự thật bị giấu hé lộ dần qua một chi tiết cụ thể đã gieo từ trước, cán cân đảo chiều; người có lỗi (có thể là chính tôi) phải đối diện.",
+  "HỒI 5 — KẾT theo KIỂU KẾT được giao cho truyện này (không vội): màn đối mặt có chi tiết khiến người ta chết lặng, lời nói bình thản mà thấm, số phận từng người được khép rõ, rồi lời cuối với người nghe.",
 ];
+
+/**
+ * Kiểu mở 20 giây đầu — xoay vòng theo số truyện để mỗi video mở một kiểu. Kiểu nào cũng: câu đầu tự hiểu khi nghe riêng,
+ * trong ~80 từ người nghe biết tôi là ai, đang đau chuyện gì, và có một câu úp mở (KHÔNG nói lời giải).
+ */
+export const LIFE_OPENINGS = [
+  "TỰ GIỚI THIỆU: 'Tôi năm nay … tuổi', tôi đã đánh đổi gì (có con số) → vậy mà giờ gặp chuyện đau nhất (một hình ảnh cụ thể) → câu úp mở.",
+  "CÂU NÓI TÀN NHẪN: mở bằng nguyên văn một câu nói đau nhất tôi từng nghe trong truyện (trong ngoặc kép, rõ ai nói), rồi ngay câu sau: ai nói, nói với tôi lúc nào, và tôi đã làm gì cho người đó.",
+  "GIỮA KHOẢNH KHẮC: thả người nghe vào ngay giây phút căng nhất (giờ giấc, nơi chốn, đồ vật trong tay — 'Ba giờ sáng, tôi ngồi dưới bếp, tay cầm điện thoại của chồng…'), rồi lùi lại: 'Để kể vì sao tôi ở đó, phải quay về …'.",
+  "ĐỒ VẬT / BÍ MẬT: mở bằng một đồ vật cụ thể chứa bí mật (chiếc hộp thiếc, cuốn sổ tiết kiệm, lá thư chưa bóc, tấm ảnh bị cắt đôi) và một con số lạ gắn với nó; tôi kể mình tìm thấy nó thế nào.",
+  "LỜI THÚ NHẬN: tôi tự nhận một điều mình hối hận hoặc xấu hổ nhất ('Có một việc tôi chưa từng dám kể với ai…'), người nghe chưa biết vì sao — chuyện đi dần tới lời giải.",
+  "SỰ ĐỐI LẬP CON SỐ: một câu so sánh 'ngày ấy – bây giờ' có con số gây sốc ('Ba mươi năm tôi nấu cơm cho nhà ấy, chưa một lần được ngồi mâm trên'), rồi biến cố khiến mọi thứ vỡ ra.",
+];
+
+/** Kiểu kết — xoay vòng (lệch nhịp với kiểu mở) để truyện không cùng một khuôn "một năm sau + câu hỏi". */
+export const LIFE_ENDINGS = [
+  "KẾT NHÂN QUẢ: '… năm sau' khép số phận từng người theo nhân quả bằng hành động cụ thể (người sai thay đổi hoặc trả giá), không bỏ lửng ai; câu cuối là câu hỏi mời người nghe kể chuyện của mình ở phần bình luận.",
+  "KẾT VÒNG TRÒN: quay lại đúng hình ảnh/đồ vật/câu nói ở mở đầu nhưng giờ mang nghĩa ngược lại; vài câu tôi nói với người nghe; lời mời bình luận nhẹ nhàng, hỏi một điều cụ thể liên quan đồ vật/khoảnh khắc ấy.",
+  "KẾT LÁ THƯ / LỜI NHẮN: khép bằng một lá thư, tin nhắn hay lời dặn (của tôi hoặc của người trong truyện) đọc nguyên văn, rồi một câu ngắn của tôi; lời mời người nghe để lại một câu muốn nói với người thân của họ.",
+  "KẾT LẶNG: không tổng kết; dừng ở một cảnh nhỏ đời thường sau tất cả (bữa cơm, ấm trà, đứa cháu gọi), để người nghe tự thấm; một câu cuối hỏi người nghe đã từng ở vị trí của ai trong truyện.",
+];
+
+/** Kiểu mở / kết của truyện số `n` (xoay vòng, kết lệch 1 nhịp so với mở). */
+export const lifeOpening = (n: number) => LIFE_OPENINGS[((n % LIFE_OPENINGS.length) + LIFE_OPENINGS.length) % LIFE_OPENINGS.length];
+export const lifeEnding = (n: number) => LIFE_ENDINGS[(((n + 1) % LIFE_ENDINGS.length) + LIFE_ENDINGS.length) % LIFE_ENDINGS.length];
 
 /** Lượt viết tiếp này là lượt CUỐI (viết nốt tới KẾT) khi phần còn thiếu vừa một lượt dài — viết xong là truyện đã kết. */
 export const lifeIsFinalPart = (written: number, target = LIFE_TARGET_WORDS) => target - written <= LIFE_PART_WORDS * 1.4;
@@ -32,14 +59,15 @@ export const lifeIsFinalPart = (written: number, target = LIFE_TARGET_WORDS) => 
 /** Nhịp dựng của kênh (kế hoạch thử 4 tuần, 11/2026) — dùng cho cả người viết lẫn biên tập. */
 export const LIFE_PACING = [
   // Chủ kênh 17/11/2026: mở bằng câu thoại trơ trọi nghe cụt; kể ngôi thứ ba kiểu tóm tắt thì "đéo có cảm xúc" → kể ngôi "tôi".
-  "0–20 giây đầu (≈ 70–90 từ): NHÂN VẬT CHÍNH tự giới thiệu và tóm cả nỗi đau theo khuôn 'Tôi năm nay … tuổi. Tôi đã hy sinh gì (có con số) → vậy mà giờ tôi gặp chuyện gì đau nhất (hình ảnh cụ thể: ngồi ở bến xe với chiếc vali, đứng ngoài cổng cưới con…) → một câu úp mở về bước ngoặt (KHÔNG nói ra lời giải)'. Câu đầu tự hiểu được khi nghe riêng. Không chào hỏi, không giới thiệu kênh, không tả thời tiết.",
-  "Ngay sau đó: 'Chuyện bắt đầu từ…' rồi vào cảnh biến cố đầu tiên; câu thoại nào cũng rõ ai nói với ai. Trong ~200 từ tiếp người nghe biết tôi đã hy sinh gì và tôi CÓ NGUY CƠ MẤT gì.",
+  "0–20 giây đầu (≈ 70–90 từ): mở theo đúng KIỂU MỞ ĐẦU được giao cho truyện này (mỗi truyện một kiểu khác nhau — KHÔNG mặc định 'Tôi năm nay … tuổi'). Câu đầu tự hiểu được khi nghe riêng; trong 20 giây người nghe biết tôi là ai, đang đau chuyện gì, và có một câu úp mở (KHÔNG nói lời giải). Không chào hỏi, không giới thiệu kênh, không tả thời tiết.",
+  "Ngay sau đó vào cảnh biến cố đầu tiên (tự tìm câu chuyển của riêng truyện này, đừng dùng mãi 'Chuyện bắt đầu từ…'); câu thoại nào cũng rõ ai nói với ai. Trong ~200 từ tiếp người nghe biết tôi quý/đã đánh đổi gì và tôi CÓ NGUY CƠ MẤT gì.",
   "ĐỘNG CƠ CẢM XÚC chính: mỗi lần bị đối xử tệ, đặt NGAY cạnh một KÝ ỨC HY SINH cụ thể gắn với một đồ vật/khoảnh khắc (bán nhẫn cưới mua xe cho con, cõng con sốt đi trạm xá giữa đêm, nhịn bữa để con có quả trứng, lời hứa của con ngày xưa) — người nghe đau vì sự tương phản 'ngày ấy – bây giờ'.",
   "Bậc thang tổn thương: ít nhất 5 lần bị làm đau trải suốt truyện, lần sau đau hơn lần trước; mỗi lần có một CÂU NÓI tàn nhẫn cụ thể nhân vật chính nghe tận tai ('Bà ở đâu chẳng được, miễn đừng ở đây', 'đến lượt thằng Dũng'), và một khoảnh khắc chờ đợi bị dập tắt (chờ con bênh một câu mà nó im lặng). Xen một chút tử tế nhỏ của người dưng/đứa trẻ để làm nổi nỗi đau.",
   "Cho người nghe ở TRONG đầu nhân vật: suy nghĩ thật, tự hỏi, tự trách ('Tôi lấy tư cách gì mà gõ cổng nhà người ta?'), cảm giác cơ thể (tay bám vào tường, cổ họng nghẹn, ổ bánh mì nóng trong tay mà nước mắt cứ chảy). Thỉnh thoảng nói với người nghe ('Các bạn biết không, lúc ấy tôi không thấy giận…'). KHÔNG kể tóm tắt kiểu 'bà hiểu, chỉ gật đầu' — dựng thành cảnh có thoại.",
   "TRUYỆN DÀI ~1 TIẾNG GIỮ NGƯỜI NGHE: cứ khoảng 1.500 từ phải có một sự việc mới làm tình thế đổi hẳn (không kể lan man, không lặp lại nỗi đau cũ bằng lời khác); cuối mỗi hồi một câu móc úp mở của người kể ('Tôi đâu biết, cái tin nhắn đêm ấy mới là thứ làm tôi mất tất cả'). Có 1–2 tuyến phụ (người dưng tử tế, một người con khác, chuyện cũ của vợ chồng) đan vào tuyến chính.",
   "Khoảng 2/3 truyện có BƯỚC NGOẶT bất ngờ nhưng hợp lý (sự thật bị giấu, người tưởng xấu hoá ra tốt, người dưng đã âm thầm giúp) — gieo chi tiết báo trước từ nửa đầu (cây khế, lời nói tưởng đùa).",
-  "KẾT (≈ 1/4 cuối, KHÔNG được vội) đủ 4 nhịp: (1) màn đối mặt — kẻ có lỗi đứng trước nhân vật chính, nhận ra lỗi qua một chi tiết cụ thể khiến họ chết lặng (tin nhắn chỉ thả ngón tay cái lúc 3 giờ sáng…); (2) nhân vật chính nói 2–3 câu bình thản mà thấm, người nghe phải nghẹn; (3) 'Mùa xuân năm sau…' / 'Từ đó…': số phận từng người được khép rõ theo nhân quả, người sai thay đổi bằng hành động cụ thể, không bỏ lửng ai; (4) 2–3 câu nhân vật nói với người nghe một cách ấm áp (KHÔNG giảng đạo lý kiểu 'câu chuyện cho ta thấy'), câu cuối là câu hỏi mời người nghe kể chuyện của mình ở phần bình luận.",
+  "KẾT (KHÔNG được vội): (1) màn đối mặt — người có lỗi nhận ra lỗi qua một chi tiết cụ thể khiến họ chết lặng; (2) nhân vật chính nói 2–3 câu bình thản mà thấm, người nghe phải nghẹn; (3) khép theo đúng KIỂU KẾT được giao cho truyện này; KHÔNG giảng đạo lý kiểu 'câu chuyện cho ta thấy'.",
+  "KHÔNG ĐƯỢC RẬP KHUÔN giữa các truyện: không dùng lại các câu chuyển quen ('Chuyện bắt đầu từ…', 'Các bạn biết không', 'Tôi đâu biết…') quá 1 lần mỗi truyện; mỗi truyện tự tìm hình ảnh, đồ vật, câu nói riêng của nó; nhân vật chính không phải lúc nào cũng là người mẹ hy sinh — đúng vai trong tiêu đề/cốt truyện.",
 ];
 
 /** Trích bản mẫu chủ kênh đã duyệt (truyện 1, viết lại 17/11/2026) — cho AI thấy giọng, không chép nội dung. */
@@ -61,7 +89,7 @@ CÁCH VIẾT CHO TAI NGHE:
 - Không bạo lực ghê rợn, không tình dục, không xúc phạm vùng miền/tôn giáo; kẻ sai được quyền hối hận.
 - Không ký hiệu, chú thích, markdown, tiêu đề phụ.
 - Mỗi chương là một truyện trọn vẹn với nhân vật riêng — KHÔNG nhắc tới các truyện khác, KHÔNG "còn tiếp", KHÔNG cliffhanger ở cuối truyện (câu móc úp mở giữa các hồi trong truyện thì nên có).
-GIỌNG MẪU (chỉ học giọng, KHÔNG chép nội dung):
+GIỌNG MẪU (chỉ học độ ấm và cách dựng cảnh; KHÔNG chép nội dung, KHÔNG bắt chước câu mở đầu, cấu trúc hay các câu chuyển của bản mẫu):
 ${LIFE_EXEMPLAR}`;
 
 export function lifeWriterSystem(s: Pick<Series, "style">) {
@@ -79,7 +107,10 @@ Viết trọn câu chuyện: "${chapter.title}".
 Cốt truyện / cảm xúc chính:
 ${chapter.outline}
 
-Cả truyện khoảng ${s.targetWords} từ (≈ 1 tiếng nghe), MỘT mạch liền, không chia chương, không tiêu đề phụ. Truyện viết theo nhiều lượt, mỗi lượt một hồi:
+KIỂU MỞ ĐẦU của truyện này: ${lifeOpening(chapter.number)}
+KIỂU KẾT của truyện này: ${lifeEnding(chapter.number)}
+
+Cả truyện khoảng ${s.targetWords} từ (≈ 1 tiếng nghe), MỘT mạch liền, không chia chương, không tiêu đề phụ. Truyện viết theo nhiều lượt, mỗi lượt một hồi (hồi là khung nhịp — nội dung đi theo cốt truyện riêng ở trên):
 ${LIFE_ACTS.map((a) => `- ${a}`).join("\n")}
 
 Lượt ĐẦU (lượt này nếu chưa có phần đã viết) CHỈ viết HỒI 1 (khoảng ${LIFE_PART_WORDS} từ, 3–4 cảnh có thoại), dừng ở câu móc cuối hồi — CHƯA kết truyện, không tóm tắt. Chỉ trả về nội dung truyện, không lặp tiêu đề, không ghi "Hồi 1", không lời bình.
