@@ -3,6 +3,7 @@ import { enrichDescription, segmentsFromCues } from "./description";
 import { playlistUrl, seriesPlaylist } from "./playlist";
 import { access, copyFile, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { existsSync, readFileSync } from "node:fs";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { chapters, series, videos, type Chapter, type Series, type VideoMeta } from "@/db/schema";
@@ -619,8 +620,13 @@ export async function pickMusic(seed: number) {
   return files.length ? path.join(dir, files[seed % files.length]) : null;
 }
 
-/** Dòng ghi công bắt buộc của giấy phép CC BY 4.0. */
+/**
+ * Dòng ghi công trong mô tả. File `<tên bài>.txt` cạnh bài nhạc thì dùng nội dung đó (rỗng = nhạc không cần ghi công,
+ * vd YouTube Audio Library loại không yêu cầu); không có thì là bài Kevin MacLeod — ghi công bắt buộc của CC BY 4.0.
+ */
 export function musicCredit(file: string) {
+  const sidecar = file.replace(/\.mp3$/, ".txt");
+  if (existsSync(sidecar)) return readFileSync(sidecar, "utf8").trim();
   const title = path.basename(file, ".mp3");
   return `Nhạc nền: "${title}" – Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/`;
 }
@@ -892,8 +898,9 @@ export async function renderVideo(videoId: number) {
     const music = life ? await pickLifeMusic(videoId, lifeMood(c.outline ?? "", c.title)) : await pickMusic(videoId);
     const musicGain = life && music ? lifeMusicGain(await measureLufs(music)) : undefined;
     // Ghi công nhạc nền (bắt buộc với CC BY) — gắn sau bước tối ưu SEO để AI không xoá mất.
-    let meta: VideoMeta = music
-      ? { ...fixed.meta, description: `${fixed.meta.description}\n\n${musicCredit(music)}`, shortDescription: `${fixed.meta.shortDescription}\n\n${musicCredit(music)}` }
+    const credit = music ? musicCredit(music) : "";
+    let meta: VideoMeta = credit
+      ? { ...fixed.meta, description: `${fixed.meta.description}\n\n${credit}`, shortDescription: `${fixed.meta.shortDescription}\n\n${credit}` }
       : fixed.meta;
     track.log("agent", fixed.rounds ? `Điểm SEO: ${fixed.from} → ${fixed.score} sau ${fixed.rounds} lượt tối ưu` : `Điểm SEO: ${fixed.score} (đạt)`);
     await db().update(videos).set({ meta }).where(eq(videos.id, videoId));
