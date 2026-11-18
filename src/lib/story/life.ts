@@ -94,27 +94,46 @@ export const LIFE_TITLE_RULE =
 
 /** Chữ thumbnail: 3–6 từ lớn như "MẸ KHÔNG CÒN NHÀ", "LÁ THƯ CUỐI CÙNG". */
 export const LIFE_THUMB_TEXT_RULE =
-  "3–6 từ IN HOA (tối đa ~22 ký tự) nói thẳng nỗi đau/bí mật của truyện (vd 'MẸ KHÔNG CÒN NHÀ', 'LÁ THƯ CUỐI CÙNG', 'BÍ MẬT 30 NĂM'), KHÔNG lặp nguyên văn tiêu đề, KHÔNG tên nhân vật";
+  "3–6 từ IN HOA (tối đa ~22 ký tự) nói THẲNG xung đột gây sốc giữa NGƯỜI THÂN — có vai vế (MẸ/CON/CHỒNG/VỢ/DÂU) + hành động phũ hoặc con số " +
+  "(vd 'BA CON KHÔNG NHẬN MẸ', 'CON DÂU ĐUỔI MẸ ĐI', 'CHỒNG GIẤU 30 NĂM', 'MẸ BÁN NHÀ NUÔI CON'); người lướt đọc 1 giây là hiểu ai làm gì ai và tò mò kết; " +
+  "CẤM hình ảnh ẩn dụ/văn vẻ không rõ ai làm gì (vd 'CÁNH CỔNG KHÉP LẠI', 'MÙA THU ẤY'), KHÔNG lặp nguyên văn tiêu đề, KHÔNG tên nhân vật";
 
 export const LIFE_STYLE =
   "Kể ngôi thứ nhất (nhân vật chính xưng 'tôi', như tâm sự với người nghe), chậm rãi, ấm; thoại ngắn, chi tiết đời thường; cảm xúc qua ký ức và hành động, không sến";
 
 export const LIFE_VOICE_STYLE = "giọng nam trung niên trầm ấm, kể chuyện đời chậm rãi, ngắt nghỉ tự nhiên, lắng xuống ở đoạn xúc động";
-/** Giọng Gemini TTS: Charon — nam, trầm, kể chuyện. */
-export const LIFE_TTS_VOICE = "Charon";
-/** Giọng nữ ấm cho truyện người kể là phụ nữ. */
-export const LIFE_TTS_VOICE_FEMALE = "Sulafat";
+/** Người kể là người già từng trải: Algenib (Google mô tả "Gravelly" — khàn, có tuổi). Charon nghe trẻ, kiểu đọc tin. */
+export const LIFE_TTS_VOICE = "Algenib";
+/** Bà mẹ / người vợ có tuổi: Gacrux (Google mô tả "Mature"). Sulafat nghe như phụ nữ trẻ. */
+export const LIFE_TTS_VOICE_FEMALE = "Gacrux";
 
 /**
  * Truyện kể ngôi "tôi": đoán giới tính người kể từ cách gọi bạn đời ("chồng tôi" → nữ, "vợ tôi" → nam).
  * Không rõ thì giọng nam mặc định.
  */
-export function lifeVoice(content: string) {
+export function lifeVoice(content: string, title = "") {
+  // Tiêu đề chủ kênh đặt nói thẳng vai người kể ("Bà Mẹ", "Người Vợ", "Người Cha") — tin tiêu đề trước nội dung.
+  const t = title.normalize("NFC").toLowerCase();
+  const femaleTitle = /bà mẹ|người mẹ|người vợ|con dâu|mẹ chồng|bà lão|người phụ nữ|cô gái|người con gái/.test(t);
+  const maleTitle = /người cha|người bố|người chồng|người đàn ông|ông lão|chàng trai/.test(t);
+  if (femaleTitle !== maleTitle) return femaleTitle ? LIFE_TTS_VOICE_FEMALE : LIFE_TTS_VOICE;
   const count = (re: RegExp) => (content.match(re) ?? []).length;
-  const female = count(/chồng tôi|tôi là mẹ|bà mẹ như tôi|tôi làm dâu|mẹ chồng tôi/gi);
-  const male = count(/vợ tôi|tôi là bố|tôi là cha|bố vợ tôi|mẹ vợ tôi/gi);
+  const female = count(/chồng tôi|tôi là mẹ|bà mẹ như tôi|tôi làm dâu|mẹ chồng tôi|người làm mẹ|đứa con tôi đẻ|tôi mang nặng đẻ đau|tôi sinh thằng|tôi sinh con|tôi đi lấy chồng|làm vợ/gi);
+  const male = count(/vợ tôi|tôi là bố|tôi là cha|bố vợ tôi|mẹ vợ tôi|người làm cha|tôi lấy vợ/gi);
   return female > male ? LIFE_TTS_VOICE_FEMALE : LIFE_TTS_VOICE;
 }
+
+/**
+ * Giọng người kể chuyện đời (speech_metadata.style — không bị đọc thành tiếng). KHÔNG "slowly": bản #66 bị đọc
+ * ~150 âm tiết/phút nghe lê thê; cảm xúc nằm ở độ ấm/nghẹn, không ở tốc độ.
+ */
+export const LIFE_NARRATOR_STYLE =
+  "an elderly Vietnamese person in their sixties who has lived through hardship, slowly recalling their own life to a grandchild: aged, weathered, slightly husky voice, calm and wise, " +
+  "voice softens and chokes up at painful memories; when quoting other people's lines, change tone naturally like real speech (a child's pleading, a harsh word, a sigh) instead of reading them flat; " +
+  "natural conversational rhythm, never theatrical, never robotic";
+
+/** Tăng nhẹ tốc độ (giữ cao độ) — đo #66: ~150 âm tiết/phút ở tốc độ gốc, ×1,1 ≈ 165–170, vẫn chậm rãi kể chuyện. */
+export const LIFE_TEMPO = 1.1;
 
 export const LIFE_BIBLE = `Kênh truyện audio "chuyện đời" — mỗi video là MỘT câu chuyện độc lập trọn vẹn 8–12 phút, nhân vật mới mỗi truyện.
 Khán giả: người Việt 35–60 tuổi, nghe khi nấu cơm, lái xe, trước giờ ngủ; thích chuyện gia đình, tình thân, hôn nhân, nhân quả, sự tử tế.

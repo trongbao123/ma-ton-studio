@@ -55,3 +55,16 @@ describe("giữ đúng chữ truyện", () => {
     expect(stripTags("Tôi đứng yên. <long pause> Rồi tôi đi.")).toBe("Tôi đứng yên. Rồi tôi đi.");
   });
 });
+
+describe("phân vai chuyện đời: người kể già đúng giới tính", () => {
+  it("bà mẹ kể → Gacrux, con trai → giọng nam, không trùng người kể", () => {
+    const cast = castVoices({
+      narrator: { gender: "female", age: 60 },
+      characters: [{ name: "Tuấn", gender: "male", age: 32 }, { name: "Lan", gender: "female", age: 30 }],
+      turns: [{ speaker: "Tuấn", style: "", text: "Mẹ về quê đi." }, { speaker: "Lan", style: "", text: "Nhà chật lắm." }],
+    });
+    expect(cast.narrator).toBe("Gacrux");
+    expect(["Charon", "Iapetus", "Orus", "Algenib", "Schedar", "Achird", "Puck", "Umbriel"]).toContain(cast.Tuấn);
+    expect(["Sulafat", "Vindemiatrix", "Achernar", "Leda", "Aoede", "Despina"]).toContain(cast.Lan);
+  });
+});

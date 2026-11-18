@@ -9,6 +9,7 @@ import { escapeHtml, notify, WEB_URL } from "@/lib/notify";
 import { accessToken, channelOfVideo, cleanTags, getYoutubeAuth, noAngle, YoutubeAuthError } from "@/lib/youtube";
 import { recordYoutubeUnits } from "@/lib/yt-units";
 import { Tracker } from "./progress";
+import { isLifeStory } from "@/lib/story/life";
 import { keepOrNextSlot } from "./schedule";
 import { DEFAULT_THUMB, pickBestThumb, type ThumbId, type ThumbScores } from "./thumb-plan";
 import { scoreThumbnail } from "./vidiq";
@@ -137,7 +138,8 @@ export async function publishToYoutube(videoId: number, files: { long: string; s
     const meta = v.meta;
 
     track.log("youtube", "Upload video dài");
-    const tags = cleanTags(meta.tags);
+    const [ser] = await db().select({ genre: series.genre }).from(videos).innerJoin(chapters, eq(chapters.id, videos.chapterId)).innerJoin(series, eq(series.id, chapters.seriesId)).where(eq(videos.id, videoId));
+    const tags = cleanTags(meta.tags, isLifeStory(ser));
     const id = await uploadVideo(token, { file: files.long, title: noAngle(meta.title), description: noAngle(meta.description), tags, publishAt });
     // Lưu id ngay: lỗi ở bước sau cũng không upload trùng lần nữa.
     await db().update(videos).set({ youtubeVideoId: id, youtubeUrl: `https://youtu.be/${id}`, publishAt }).where(eq(videos.id, videoId));

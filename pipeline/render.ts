@@ -3,6 +3,7 @@ import { enrichDescription, segmentsFromCues } from "./description";
 import { playlistUrl, seriesPlaylist } from "./playlist";
 import { access, copyFile, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { existsSync, readFileSync } from "node:fs";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { chapters, series, videos, type Chapter, type Series, type VideoMeta } from "@/db/schema";
@@ -24,7 +25,7 @@ import { heroRef } from "./hero";
 import { chapterNarration } from "./narration";
 import { dropStaleTts, markTts } from "./tts-cache";
 import { imageCount, isEpisodeOpener, planChapterScenes, planShots, shortSceneCount } from "./episode-plan";
-import { isLifeStory, LIFE_IMAGE_SECONDS, LIFE_MAX_IMAGES, lifeVoice } from "@/lib/story/life";
+import { isLifeStory, LIFE_IMAGE_SECONDS, LIFE_MAX_IMAGES, LIFE_NARRATOR_STYLE, LIFE_TEMPO, LIFE_TTS_VOICE_FEMALE, lifeVoice } from "@/lib/story/life";
 import { OPENER_CLIPS, OPENER_SEGMENT_BUDGET } from "./i2v-plan";
 import { ensureRelease, uploadAsset } from "./release";
 import { keepOrNextSlot } from "./schedule";
@@ -102,14 +103,11 @@ export async function narrate(text: string, dir: string, voice: string, onChunk?
   return { audio, cues, seconds: t };
 }
 
-/** Người kể chuyện đời: chậm, ấm, có ngừng nghỉ (khi đạo diễn để trống cảm xúc). */
-const NARRATOR_STYLE = "speaking slowly, warm and heartfelt, natural pauses";
-
 /**
  * Đọc kịch bản đã phân vai (voice-cast.ts): mỗi nhóm ≤ 2 giọng là một lượt gọi TTS, tốc độ gốc. File cache đặt tên theo
  * nội dung nhóm nên sửa truyện không dùng nhầm audio cũ. Kiểu gọi nhiều giọng bị từ chối → nhóm đó đọc một giọng người kể.
  */
-export async function narrateScript(groups: SpeechTurn[][], dir: string, narratorVoice: string, onChunk?: (i: number, total: number) => void, cueChars = 70): Promise<Narration> {
+export async function narrateScript(groups: SpeechTurn[][], dir: string, narratorVoice: string, onChunk?: (i: number, total: number) => void, cueChars = 70, tempo = 1): Promise<Narration> {
   const files = await pool(groups, 3, async (g, i) => {
     const key = createHash("sha1").update(JSON.stringify(g)).digest("hex").slice(0, 10);
     const f = path.join(dir, `tts-cast-${String(i).padStart(3, "0")}-${key}.wav`);
@@ -122,7 +120,10 @@ export async function narrateScript(groups: SpeechTurn[][], dir: string, narrato
     }
     console.log(`  TTS ${i + 1}/${groups.length} (${[...new Set(g.map((t) => t.voice))].join(" + ")})`);
     onChunk?.(i, groups.length);
-    return f;
+    if (tempo === 1) return f;
+    const fast = f.replace(/\.wav$/, `-x${tempo}.wav`);
+    await once(fast, (tmp) => ffmpeg(["-i", f, "-af", `atempo=${tempo}`, "-c:a", "pcm_s16le", tmp]));
+    return fast;
   });
   const cues: Cue[] = [];
   let t = 0;
@@ -290,6 +291,8 @@ export async function buildVideo(opts: {
   heroRef?: string | null;
   /** Mặc định NORMAL. */
   quality?: Quality;
+  /** Không nhạc nền, chỉ giọng (+ hiệu ứng nếu có) — kênh chuyện đời: chủ kênh chọn chỉ giọng kể. */
+  noMusic?: boolean;
   /** Báo tiến độ cho màn flow: ảnh vẽ xong (lần đầu), tổng số shot, từng shot xong, việc ghép. */
   on?: { image?: (i: number, file: string, model?: string) => Promise<void>; shots?: (n: number) => void; shot?: () => void; log?: (text: string) => void };
 }) {
@@ -378,10 +381,15 @@ export async function buildVideo(opts: {
     : "";
   // Thanh tiến độ vàng mảnh trên đỉnh Short: người xem thấy còn bao lâu nên ít lướt qua.
   const bar = opts.progressBar ? `,drawbox=x=0:y=0:w='iw*t/${narration.seconds.toFixed(2)}':h=12:color=0xFFD23F@0.95:t=fill` : "";
-  on?.log?.(`Trộn giọng đọc, nhạc nền${opts.sfx ? ", tiếng hiệu ứng" : ""}, phụ đề`);
-  const music = opts.music ?? (await ambientBed(dir));
+  on?.log?.(`Trộn giọng đọc${opts.noMusic ? "" : ", nhạc nền"}${opts.sfx ? ", tiếng hiệu ứng" : ""}, phụ đề`);
   // Tiếng hiệu ứng (intro): input thứ 4, trộn thẳng ở SFX_GAIN như bên chương tĩnh.
-  const audio = [
+  const audio = opts.noMusic ? [
+    ...(opts.sfx ? ["-i", opts.sfx, "-filter_complex", `[2:a]volume=${SFX_GAIN}[sx];[1:a][sx]amix=inputs=2:duration=first:normalize=0[a]`] : []),
+    "-map", "0:v", "-map", opts.sfx ? "[a]" : "1:a",
+  ] : await musicArgs();
+  async function musicArgs() {
+    const music = opts.music ?? (await ambientBed(dir));
+    return [
     "-stream_loop", "-1", "-i", music,
     ...(opts.sfx ? ["-i", opts.sfx] : []),
     "-filter_complex",
@@ -390,7 +398,8 @@ export async function buildVideo(opts: {
         ? `[3:a]volume=${SFX_GAIN}[sx];[1:a][m][sx]amix=inputs=3:duration=first:normalize=0[a]`
         : `[1:a][m]amix=inputs=2:duration=first:normalize=0[a]`),
     "-map", "0:v", "-map", "[a]",
-  ];
+    ];
+  }
   await once(out, (tmp) =>
     ffmpeg([
       "-i", silent, "-i", narration.audio, ...audio,
@@ -598,8 +607,13 @@ export async function pickMusic(seed: number) {
   return files.length ? path.join(dir, files[seed % files.length]) : null;
 }
 
-/** Dòng ghi công bắt buộc của giấy phép CC BY 4.0. */
+/**
+ * Dòng ghi công trong mô tả. File `<tên bài>.txt` cạnh bài nhạc thì dùng nội dung đó (rỗng = nhạc không cần ghi công,
+ * vd YouTube Audio Library loại không yêu cầu); không có thì là bài Kevin MacLeod — ghi công bắt buộc của CC BY 4.0.
+ */
 export function musicCredit(file: string) {
+  const sidecar = file.replace(/\.mp3$/, ".txt");
+  if (existsSync(sidecar)) return readFileSync(sidecar, "utf8").trim();
   const title = path.basename(file, ".mp3");
   return `Nhạc nền: "${title}" – Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/`;
 }
@@ -809,7 +823,7 @@ export async function renderVideo(videoId: number) {
     // Chuyện đời hay được sửa tay rồi render lại: cache meta/cảnh gắn với nội dung truyện để bản sửa không dùng lại meta cũ.
     const tag = life ? `-${createHash("sha1").update(c.content).digest("hex").slice(0, 8)}` : "";
     // Chuyện đời kể ngôi "tôi": giọng theo giới tính người kể (mẹ kể → giọng nữ), không cố định theo bộ.
-    const voice = life ? lifeVoice(c.content) : s.ttsVoice;
+    const voice = life ? lifeVoice(c.content, c.title) : s.ttsVoice;
     if (life) {
       // Truyện đã sửa từ lần render trước → bỏ ảnh/đoạn video/Short cũ (giọng đọc tts-* tự kiểm theo văn bản nên giữ).
       const markFile = path.join(dir, "content.tag");
@@ -868,10 +882,12 @@ export async function renderVideo(videoId: number) {
     const fixed = await cached(path.join(dir, `meta-seo-v2${tag}.json`), () =>
       optimizeMeta(draft, { seriesTitle: life ? c.title : s.title, chapterNumber: c.number, chapterTitle: c.title, summary: c.summary, life }, { log: (t) => track.log("agent", t) }),
     );
-    const music = await pickMusic(videoId);
+    // Chuyện đời: không nhạc nền (chủ kênh chốt 18/11/2026 — chỉ giọng kể).
+    const music = life ? null : await pickMusic(videoId);
     // Ghi công nhạc nền (bắt buộc với CC BY) — gắn sau bước tối ưu SEO để AI không xoá mất.
-    let meta: VideoMeta = music
-      ? { ...fixed.meta, description: `${fixed.meta.description}\n\n${musicCredit(music)}`, shortDescription: `${fixed.meta.shortDescription}\n\n${musicCredit(music)}` }
+    const credit = music ? musicCredit(music) : "";
+    let meta: VideoMeta = credit
+      ? { ...fixed.meta, description: `${fixed.meta.description}\n\n${credit}`, shortDescription: `${fixed.meta.shortDescription}\n\n${credit}` }
       : fixed.meta;
     track.log("agent", fixed.rounds ? `Điểm SEO: ${fixed.from} → ${fixed.score} sau ${fixed.rounds} lượt tối ưu` : `Điểm SEO: ${fixed.score} (đạt)`);
     await db().update(videos).set({ meta }).where(eq(videos.id, videoId));
@@ -883,29 +899,49 @@ export async function renderVideo(videoId: number) {
     console.log("● Video dài: đọc giọng");
     const onLong = (i: number, total: number) => track.tick("tts", "long", `Đoạn ${i + 1}/${total}`);
     let long: Narration;
-    // Chuyện đời: đạo diễn giọng đọc + phân vai từng nhân vật, đọc tốc độ gốc. Kịch bản lệch chữ truyện → một giọng như cũ.
-    const script = life ? await cached(path.join(dir, `voice-script${tag}.json`), () => directScript(longText).catch((e) => {
-      if (e instanceof QuotaExhaustedError) throw e;
-      console.warn("  ⚠ Đạo diễn giọng đọc lỗi:", e instanceof Error ? e.message : e);
-      return null;
-    })) : null;
-    if (script) {
-      const cast = castVoices(script);
-      track.log("tts", `Phân vai: ${Object.entries(cast).map(([k, v]) => `${k === NARRATOR ? "người kể" : k}=${v}`).join(", ")}`);
-      const groups = groupTurns(script.turns, cast).map((g) =>
-        g.map((t) => ({ speaker: t.speaker, voice: cast[t.speaker] ?? cast[NARRATOR], style: t.style || (t.speaker === NARRATOR ? NARRATOR_STYLE : ""), text: t.text })),
-      );
+    // Chuyện đời: người kể giọng già đúng giới tính, mỗi nhân vật có thoại một giọng đúng giới tính; cảm xúc theo TỪNG LƯỢT
+    // do AI đạo diễn gắn (nghẹn, uất, run…). KHÔNG thẻ <sigh>… trong chữ (bản #66 đọc lẫn thẻ hơi thở). Tăng nhẹ tốc độ.
+    const lifeGroups = (text: string) =>
+      ttsChunks(stripTags(text)).map((ch) => [{ speaker: NARRATOR, voice, style: LIFE_NARRATOR_STYLE, text: ch.join(" ") }]);
+    const directed = life
+      ? await cached(path.join(dir, `voice-script${tag}.json`), () => directScript(longText).catch((e) => {
+          if (e instanceof QuotaExhaustedError) throw e;
+          console.warn("  ⚠ Đạo diễn cảm xúc lỗi:", e instanceof Error ? e.message : e);
+          return null;
+        }))
+      : null;
+    if (life) {
+      // Người kể: giới tính theo tiêu đề (lifeVoice — AI từng đoán nhầm bà mẹ thành nam), luôn nhóm tuổi già (Gacrux/Algenib).
+      // Nhân vật có thoại: giọng theo giới tính/tuổi AI đọc ra, không trùng giọng người kể.
+      const cast = directed
+        ? castVoices({ ...directed, narrator: { gender: voice === LIFE_TTS_VOICE_FEMALE ? "female" : "male", age: Math.max(60, directed.narrator.age) } })
+        : null;
+      if (cast) cast[NARRATOR] = voice;
+      const groups = directed && cast
+        ? groupTurns(directed.turns, cast).map((g) =>
+            g.map((t) => {
+              const narrator = t.speaker === NARRATOR || !cast[t.speaker];
+              return {
+                speaker: narrator ? NARRATOR : t.speaker,
+                voice: narrator ? voice : cast[t.speaker],
+                style: narrator ? `${LIFE_NARRATOR_STYLE}. This passage: ${t.style}` : `natural Vietnamese speech, ${t.style}`,
+                text: stripTags(t.text),
+              };
+            }),
+          )
+        : lifeGroups(longText);
+      track.log("tts", cast ? `Phân vai: ${Object.entries(cast).map(([k, v]) => `${k === NARRATOR ? "người kể" : k}=${v}`).join(", ")}` : `Một giọng người kể ${voice}`);
       track.total("tts", "long", groups.length);
-      long = await narrateScript(groups, dir, cast[NARRATOR], onLong);
+      long = await narrateScript(groups, dir, voice, onLong, 70, LIFE_TEMPO);
     } else {
-      if (life) track.log("tts", "Không phân vai được — đọc một giọng, tốc độ gốc");
-      long = await narrate(longText, dir, voice, onLong, 70, life ? 1 : NARRATION_TEMPO);
+      long = await narrate(longText, dir, voice, onLong);
     }
     await uploadPreview(videoId, releaseId, await previewAudio(long.audio, path.join(dir, "narration.m4a")));
     let short: Narration | null = null;
     if (wantShort) {
       try {
-        short = await narrate(m.shortScript, shortDir, script ? castVoices(script)[NARRATOR] : voice, () => track.tick("tts", "short"), 34, life ? 1 : NARRATION_TEMPO);
+        const onShort = () => track.tick("tts", "short");
+        short = life ? await narrateScript(lifeGroups(m.shortScript), shortDir, voice, onShort, 34, LIFE_TEMPO) : await narrate(m.shortScript, shortDir, voice, onShort, 34);
         await uploadPreview(videoId, releaseId, await previewAudio(short.audio, path.join(shortDir, "short-narration.m4a")));
       } catch (e) {
         if (e instanceof QuotaExhaustedError) throw e;
@@ -972,7 +1008,7 @@ export async function renderVideo(videoId: number) {
       w: 1920, h: 1080, imgW: 1280, imgH: 768, fontSize: 62, marginV: 70,
       // Chuyện đời vào thẳng biến cố — không thẻ tên kênh/số chương ở đầu video.
       titleCard: life ? undefined : `${s.title}\n\nChương ${c.number}: ${c.title}`,
-      music,
+      music, noMusic: life,
       on: hooks("long"),
     });
 
@@ -984,7 +1020,7 @@ export async function renderVideo(videoId: number) {
         const shortVideo = await buildVideo({
           dir: shortDir, name: "short", narration: short, prompts: shortPrompts, scenes: shortScenes,
           w: 1080, h: 1920, imgW: 768, imgH: 1408, fontSize: 80, marginV: 520,
-          hook: m.thumbnailText, progressBar: true, music,
+          hook: m.thumbnailText, progressBar: true, music, noMusic: life,
           on: hooks("short"),
         });
         extras.push(shortVideo.out);

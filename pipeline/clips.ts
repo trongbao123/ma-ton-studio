@@ -1,5 +1,6 @@
 // Short cắt cảnh: mỗi ngày tối đa 2 Short dựng từ đoạn kịch tính nhất của các chương đã viết (cộng 1 Short của tập = 3 Short/ngày).
 // Gọi từ daily.ts (sau khi đã ưu tiên render chương cho tập kế tiếp) hoặc CLI "clips[:N]".
+import { isLifeStory } from "@/lib/story/life";
 import { rm } from "node:fs/promises";
 import path from "node:path";
 import { and, eq, inArray, lt, sql } from "drizzle-orm";
@@ -157,7 +158,7 @@ async function makeOne(c: Ctx): Promise<number> {
     .values({ chapterId: c.src.chapterId, status: "published", uploadStatus: "uploading", meta, publishAt: c.slot, durationSec: Math.round(await duration(file)) })
     .returning({ id: videos.id });
   try {
-    const id = await uploadVideo(token, { file, title: noAngle(best.title), description: noAngle(description), tags: cleanTags(tags), publishAt: c.slot });
+    const id = await uploadVideo(token, { file, title: noAngle(best.title), description: noAngle(description), tags: cleanTags(tags, isLifeStory(c.s)), publishAt: c.slot });
     await db().update(videos).set({ youtubeShortId: id, uploadStatus: "scheduled", updatedAt: new Date() }).where(eq(videos.id, row.id));
     console.log(`  Short cắt cảnh: youtu.be/${id} lúc ${c.slot.toISOString()}`);
     await addToShortsPlaylist(c.s.id, id).catch((e) => console.warn("  ⚠ Không thêm được vào playlist Short:", e instanceof Error ? e.message : e));

@@ -112,8 +112,8 @@ describe("chữ theo kênh", () => {
 describe("giọng theo người kể", () => {
   it("mẹ kể (chồng tôi) → giọng nữ, bố kể (vợ tôi) → giọng nam", async () => {
     const { lifeVoice } = await import("@/lib/story/life");
-    expect(lifeVoice("Chồng tôi mất khi thằng út lên bốn. Chồng tôi để lại…")).toBe("Sulafat");
-    expect(lifeVoice("Vợ tôi bỏ đi năm con bé lên ba.")).toBe("Charon");
-    expect(lifeVoice("Tôi đứng ngoài cổng.")).toBe("Charon");
+    expect(lifeVoice("Chồng tôi mất khi thằng út lên bốn. Chồng tôi để lại…")).toBe("Gacrux");
+    expect(lifeVoice("Vợ tôi bỏ đi năm con bé lên ba.")).toBe("Algenib");
+    expect(lifeVoice("Tôi đứng ngoài cổng.")).toBe("Algenib");
   });
 });
