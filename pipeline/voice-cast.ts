@@ -24,15 +24,19 @@ const band = (age: number) => (age >= 50 ? "old" : age >= 28 ? "mid" : "young");
  * Phân vai: người kể trước, rồi nhân vật nhiều lời thoại trước; mỗi người lấy giọng đầu tiên còn trống trong nhóm tuổi/giới
  * của mình (hết thì lấy nhóm khác cùng giới, rồi mới dùng lại). Trả map speaker → voice.
  */
-export function castVoices(s: Pick<Script, "narrator" | "characters" | "turns">): Record<string, string> {
+export type VoiceTable = Record<Gender, Record<"old" | "mid" | "young", readonly string[]>>;
+
+export function castVoices(s: Pick<Script, "narrator" | "characters" | "turns">, table: VoiceTable = VOICES): Record<string, string> {
   const used = new Set<string>();
+  let narrator = "";
   const pick = (g: Gender, age: number) => {
-    const order = [...VOICES[g][band(age)], ...Object.values(VOICES[g]).flat()];
-    const v = order.find((x) => !used.has(x)) ?? VOICES[g][band(age)][0];
+    const order = [...table[g][band(age)], ...Object.values(table[g]).flat()];
+    // Hết giọng trống (vd ivoi chỉ 2 giọng nữ thường) → dùng lại, nhưng tránh trùng giọng người kể.
+    const v = order.find((x) => !used.has(x)) ?? order.find((x) => x !== narrator) ?? table[g][band(age)][0];
     used.add(v);
     return v;
   };
-  const cast: Record<string, string> = { [NARRATOR]: pick(s.narrator.gender, s.narrator.age) };
+  const cast: Record<string, string> = { [NARRATOR]: (narrator = pick(s.narrator.gender, s.narrator.age)) };
   const lines = (n: string) => s.turns.filter((t) => t.speaker === n).length;
   for (const c of [...s.characters].sort((a, b) => lines(b.name) - lines(a.name))) cast[c.name] = pick(c.gender, c.age);
   return cast;
@@ -85,6 +89,22 @@ const scriptSchema = z.object({
 });
 
 const TAGS = "<sigh> <sob> <cry> <breath> <exhales> <gasp> <whispers> <short pause> <long pause> <chuckle> <whimper>";
+/**
+ * Gom lượt cho TTS một-giọng-mỗi-lượt-gọi (ivoi): lượt liền nhau cùng giọng nối thành một đoạn ≤ maxChars, bỏ thẻ hơi thở.
+ * ivoi tính tiền theo ký tự nên số lượt gọi không đổi giá — gom chỉ để ít job, ít chỗ nối audio.
+ */
+export function ivoiSegments(turns: Turn[], cast: Record<string, string>, maxChars: number): { voice: string; text: string }[] {
+  const out: { voice: string; text: string }[] = [];
+  for (const t of turns) {
+    const voice = cast[t.speaker] ?? cast[NARRATOR];
+    const text = stripTags(t.text);
+    if (!text) continue;
+    const last = out.at(-1);
+    if (last && last.voice === voice && last.text.length + 1 + text.length <= maxChars) last.text += ` ${text}`;
+    else out.push({ voice, text });
+  }
+  return out;
+}
 
 /** AI dựng kịch bản đọc. Không giữ đúng chữ truyện → null (người gọi đọc một giọng như cũ). */
 export async function directScript(content: string): Promise<Script | null> {
