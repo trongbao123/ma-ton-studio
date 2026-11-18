@@ -109,11 +109,40 @@ export const LIFE_TTS_VOICE_FEMALE = "Sulafat";
  * Truyện kể ngôi "tôi": đoán giới tính người kể từ cách gọi bạn đời ("chồng tôi" → nữ, "vợ tôi" → nam).
  * Không rõ thì giọng nam mặc định.
  */
-export function lifeVoice(content: string) {
+export function lifeVoice(content: string, title = "") {
+  // Tiêu đề chủ kênh đặt nói thẳng vai người kể ("Bà Mẹ", "Người Vợ", "Người Cha") — tin tiêu đề trước nội dung.
+  const t = title.normalize("NFC").toLowerCase();
+  const femaleTitle = /bà mẹ|người mẹ|người vợ|con dâu|mẹ chồng|bà lão|người phụ nữ|cô gái|người con gái/.test(t);
+  const maleTitle = /người cha|người bố|người chồng|người đàn ông|ông lão|chàng trai/.test(t);
+  if (femaleTitle !== maleTitle) return femaleTitle ? LIFE_TTS_VOICE_FEMALE : LIFE_TTS_VOICE;
   const count = (re: RegExp) => (content.match(re) ?? []).length;
-  const female = count(/chồng tôi|tôi là mẹ|bà mẹ như tôi|tôi làm dâu|mẹ chồng tôi/gi);
-  const male = count(/vợ tôi|tôi là bố|tôi là cha|bố vợ tôi|mẹ vợ tôi/gi);
+  const female = count(/chồng tôi|tôi là mẹ|bà mẹ như tôi|tôi làm dâu|mẹ chồng tôi|người làm mẹ|đứa con tôi đẻ|tôi mang nặng đẻ đau|tôi sinh thằng|tôi sinh con|tôi đi lấy chồng|làm vợ/gi);
+  const male = count(/vợ tôi|tôi là bố|tôi là cha|bố vợ tôi|mẹ vợ tôi|người làm cha|tôi lấy vợ/gi);
   return female > male ? LIFE_TTS_VOICE_FEMALE : LIFE_TTS_VOICE;
+}
+
+/**
+ * Giọng người kể chuyện đời (speech_metadata.style — không bị đọc thành tiếng). KHÔNG "slowly": bản #66 bị đọc
+ * ~150 âm tiết/phút nghe lê thê; cảm xúc nằm ở độ ấm/nghẹn, không ở tốc độ.
+ */
+export const LIFE_NARRATOR_STYLE =
+  "a middle-aged person confiding a painful life story to a close friend: warm, intimate and deeply emotional, natural conversational pace, voice softens and chokes up slightly at sad moments, never flat or robotic";
+
+/** Tăng nhẹ tốc độ (giữ cao độ) — đo #66: ~150 âm tiết/phút ở tốc độ gốc, ×1,1 ≈ 165–170, vẫn chậm rãi kể chuyện. */
+export const LIFE_TEMPO = 1.1;
+
+export type LifeMood = "sad" | "warm" | "mystery";
+
+/**
+ * Thế truyện để chọn nhạc nền (pipeline/music/life/<mood>/): đọc dòng "Cảm xúc chính" của dàn ý + tiêu đề.
+ * Mặc định "sad" — kênh chủ yếu là chuyện xót xa.
+ */
+export function lifeMood(outline: string, title = ""): LifeMood {
+  const emo = (outline.match(/Cảm xúc chính:\s*(.+)/i)?.[1] ?? "").normalize("NFC").toLowerCase();
+  const t = `${emo} ${title.normalize("NFC").toLowerCase()}`;
+  if (/tử tế|ấm lòng|hy vọng|hi vọng|truyền cảm hứng|bắt đầu lại/.test(emo || t)) return "warm";
+  if (/bí ẩn|bí mật|bất ngờ|tò mò/.test(emo || t)) return "mystery";
+  return "sad";
 }
 
 export const LIFE_BIBLE = `Kênh truyện audio "chuyện đời" — mỗi video là MỘT câu chuyện độc lập trọn vẹn 8–12 phút, nhân vật mới mỗi truyện.
