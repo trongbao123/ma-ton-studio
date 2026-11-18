@@ -799,8 +799,8 @@ export async function renderVideo(videoId: number) {
       status: "rendering", error: null, runUrl, progress: { steps: {} }, updatedAt: new Date(),
       ...(v.youtubeVideoId ? {} : { uploadStatus: "none" as const, uploadError: null }),
     })
-    // Job trước bị huỷ giữa chừng (không kịp trả trạng thái) → video kẹt "rendering": quá 30 phút không cập nhật thì nhận lại.
-    .where(and(eq(videos.id, videoId), or(eq(videos.status, "queued"), and(eq(videos.status, "rendering"), lt(videos.updatedAt, new Date(Date.now() - 30 * 60_000))))))
+    // Nhận: hàng đợi; "failed" (lỗi mạng… — chạy render là chủ ý render lại); kẹt "rendering" quá 30 phút (job trước bị huỷ).
+    .where(and(eq(videos.id, videoId), or(eq(videos.status, "queued"), eq(videos.status, "failed"), and(eq(videos.status, "rendering"), lt(videos.updatedAt, new Date(Date.now() - 30 * 60_000))))))
     .returning({ id: videos.id });
   if (!claimed.length) {
     console.log(`⏭ Video #${videoId} không ở hàng đợi (đang được job khác render hoặc đã xong) — bỏ qua.`);
