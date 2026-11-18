@@ -7,8 +7,9 @@ const MODELS = (process.env.TTS_MODELS ?? "gemini-3.8-flash-tts,gemini-3.1-flash
  * Model cho lượt đọc có cảm xúc/phân vai (speakTurns): chỉ model hỗ trợ speech_metadata. KHÔNG rơi xuống 2.5-preview
  * (400 "Speech annotations are not supported" → trước đây đọc lại một giọng không cảm xúc = "giọng máy") hay bản lite.
  * Hết lượt → QuotaExhaustedError, video chờ lượt sau thay vì ra bản kém (render #66 ngày 18/11/2026).
+ * 3.1-flash-tts-preview cũng 400 "Speech metadata is not supported" (đo 18/11/2026) → chỉ còn 3.8-flash-tts (10 lượt/ngày).
  */
-const STRUCTURED_MODELS = (process.env.TTS_STRUCTURED_MODELS ?? "gemini-3.8-flash-tts,gemini-3.1-flash-tts-preview").split(",");
+const STRUCTURED_MODELS = (process.env.TTS_STRUCTURED_MODELS ?? "gemini-3.8-flash-tts").split(",");
 
 /**
  * Đọc một khối văn bản bằng Gemini TTS, ghi WAV (24kHz mono). Thử lần lượt model khi quá tải/hết quota.
