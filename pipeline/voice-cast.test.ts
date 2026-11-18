@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { castVoices, faithful, groupTurns, ivoiSegments, NARRATOR, stripTags, type Turn } from "./voice-cast";
+import { castVoices, faithful, groupTurns, ivoiSegments, NARRATOR, PACE, paceOf, stripTags, TURN_GAP, type Turn } from "./voice-cast";
 import { IVOI_VOICE_FEMALE, IVOI_VOICES } from "./tts-ivoi";
 
 const turns: Turn[] = [
@@ -98,12 +98,39 @@ describe("ivoi phân vai", () => {
   it("gom lượt liền nhau cùng giọng, bỏ thẻ, giữ đủ chữ", () => {
     const cast = castVoices(script, IVOI_VOICES);
     const seg = ivoiSegments(turns, cast, 4000);
-    expect(seg.map((s) => s.voice)).toEqual([IVOI_VOICE_FEMALE, "vi_hoangnam_story_ipa", "vi_female_quynh_anh", IVOI_VOICE_FEMALE]);
-    expect(seg[0].text).toBe("Tôi đứng yên. Cái muôi còn trong tay.");
-    expect(seg[2].text).toBe("Con chào mẹ. Mẹ ở đây với con.");
+    // <sigh> → cắt đoạn + lặng thật; đổi người nói → ngừng một nhịp.
+    expect(seg.map((s) => s.voice)).toEqual([IVOI_VOICE_FEMALE, IVOI_VOICE_FEMALE, "vi_hoangnam_story_ipa", "vi_female_quynh_anh", IVOI_VOICE_FEMALE]);
+    expect(seg[0]).toMatchObject({ text: "Tôi đứng yên.", pauseAfter: 0.7 });
+    expect(seg[1]).toMatchObject({ text: "Cái muôi còn trong tay.", pauseAfter: TURN_GAP });
+    expect(seg[3].text).toBe("Con chào mẹ. Mẹ ở đây với con.");
+    expect(seg.at(-1)!.pauseAfter).toBe(0);
   });
   it("tách đoạn khi vượt maxChars", () => {
     const seg = ivoiSegments([{ speaker: NARRATOR, style: "", text: "a".repeat(30) }, { speaker: NARRATOR, style: "", text: "b".repeat(30) }], { [NARRATOR]: "x" }, 50);
     expect(seg).toHaveLength(2);
+  });
+});
+
+describe("ivoi nhấn nhá", () => {
+  it("cảm xúc → nhịp đọc", () => {
+    expect(paceOf("speaking slowly, holding back tears")).toBe(PACE.slow);
+    expect(paceOf("trembling, choked up")).toBe(PACE.slow);
+    expect(paceOf("cold, dismissive, impatient")).toBe(PACE.fast);
+    expect(paceOf("")).toBe(PACE.normal);
+  });
+  it("cùng giọng nhưng đổi nhịp → tách đoạn; thẻ giữa câu → lặng giữa câu", () => {
+    const seg = ivoiSegments(
+      [
+        { speaker: NARRATOR, style: "calm", text: "Tôi về nhà." },
+        { speaker: NARRATOR, style: "holding back tears", text: "Con không ra mở cửa. <long pause> Tôi đứng đó." },
+      ],
+      { [NARRATOR]: "x" },
+      4000,
+    );
+    expect(seg).toEqual([
+      { voice: "x", text: "Tôi về nhà.", speed: PACE.normal, pauseAfter: 0 },
+      { voice: "x", text: "Con không ra mở cửa.", speed: PACE.slow, pauseAfter: 1.2 },
+      { voice: "x", text: "Tôi đứng đó.", speed: PACE.slow, pauseAfter: 0 },
+    ]);
   });
 });

@@ -22,7 +22,8 @@ export async function speak(text: string, outFile: string, voice = process.env.T
 }
 
 /** Một lượt đọc có người nói + cảm xúc (speech_metadata) — văn bản được chèn thẻ hơi thở <sigh>… */
-export type SpeechTurn = { speaker: string; voice: string; style: string; text: string };
+/** speed / pauseAfter: chỉ dùng cho ivoi (nhấn nhá bằng nhịp + khoảng lặng — ivoi không nhận chỉ đạo cảm xúc). */
+export type SpeechTurn = { speaker: string; voice: string; style: string; text: string; speed?: number; pauseAfter?: number };
 
 /** Lỗi định dạng (400) của kiểu gọi nhiều giọng — người gọi quay về đọc một giọng. */
 export class SpeechFormatError extends Error {}

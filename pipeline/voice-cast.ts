@@ -90,18 +90,60 @@ const scriptSchema = z.object({
 
 const TAGS = "<sigh> <sob> <cry> <breath> <exhales> <gasp> <whispers> <short pause> <long pause> <chuckle> <whimper>";
 /**
- * Gom lượt cho TTS một-giọng-mỗi-lượt-gọi (ivoi): lượt liền nhau cùng giọng nối thành một đoạn ≤ maxChars, bỏ thẻ hơi thở.
- * ivoi tính tiền theo ký tự nên số lượt gọi không đổi giá — gom chỉ để ít job, ít chỗ nối audio.
+ * Nhấn nhá cho TTS không nhận chỉ đạo cảm xúc (ivoi, chủ kênh chọn 18/11/2026): đổi NHỊP theo cảm xúc AI đạo diễn gắn
+ * cho từng lượt (đau/nghẹn đọc chậm lại, gay gắt/hoảng đọc nhanh hơn chút) — tốc độ đổi bằng ffmpeg atempo, giữ cao độ.
  */
-export function ivoiSegments(turns: Turn[], cast: Record<string, string>, maxChars: number): { voice: string; text: string }[] {
-  const out: { voice: string; text: string }[] = [];
+export const PACE = { slow: 0.9, normal: 1, fast: 1.07 } as const;
+const SLOW = /slow|tear|chok|trembl|sob|cry|whisper|grief|griev|sad|sorrow|gentle|soft|hesitant|broken|weak|tired|regret|quiet|numb|heavy|lonely|wistful|tender|pain/i;
+const FAST = /angry|anger|harsh|shout|yell|urgent|panic|impatient|furious|rage|excited|quick|fast|sharp|cold|dismissive|scold|mock|sneer|frantic|agitat/i;
+export function paceOf(style: string) {
+  if (SLOW.test(style)) return PACE.slow;
+  if (FAST.test(style)) return PACE.fast;
+  return PACE.normal;
+}
+
+/** Thẻ hơi thở AI chèn → khoảng lặng THẬT (giây) khi TTS không đọc được thẻ. */
+const TAG_PAUSE: Record<string, number> = {
+  "long pause": 1.2, "short pause": 0.5, sigh: 0.7, sob: 0.8, cry: 0.8, whimper: 0.7, breath: 0.45, exhales: 0.6, gasp: 0.3,
+};
+/** Đổi người nói thì ngừng một nhịp như người thật đối đáp. */
+export const TURN_GAP = 0.3;
+
+export type IvoiSegment = { voice: string; text: string; speed: number; pauseAfter: number };
+
+/**
+ * Gom lượt cho TTS một-giọng-mỗi-lượt-gọi (ivoi). Lượt liền nhau cùng giọng + cùng nhịp nối thành một đoạn ≤ maxChars;
+ * chỗ có thẻ ngừng/thở thì cắt đoạn và chèn khoảng lặng (`pauseAfter`), đổi nhịp thì cắt đoạn (`speed`).
+ * ivoi tính tiền theo ký tự nên cắt nhiều đoạn không tốn thêm — chỉ thêm job.
+ */
+export function ivoiSegments(turns: Turn[], cast: Record<string, string>, maxChars: number): IvoiSegment[] {
+  const out: IvoiSegment[] = [];
   for (const t of turns) {
     const voice = cast[t.speaker] ?? cast[NARRATOR];
-    const text = stripTags(t.text);
-    if (!text) continue;
-    const last = out.at(-1);
-    if (last && last.voice === voice && last.text.length + 1 + text.length <= maxChars) last.text += ` ${text}`;
-    else out.push({ voice, text });
+    const speed = paceOf(t.style);
+    // Tách lượt theo thẻ: "câu A <sigh> câu B" → [A, ngừng 0,7s], [B, 0].
+    const pieces: { text: string; pause: number }[] = [];
+    let rest = t.text;
+    for (;;) {
+      const m = /<([^>]{1,30})>/.exec(rest);
+      const before = stripTags(m ? rest.slice(0, m.index) : rest);
+      const pause = m ? (TAG_PAUSE[m[1].trim().toLowerCase()] ?? 0) : 0;
+      if (before) pieces.push({ text: before, pause });
+      else if (pause && pieces.length) pieces[pieces.length - 1].pause = Math.max(pieces[pieces.length - 1].pause, pause);
+      else if (pause && out.length) out[out.length - 1].pauseAfter = Math.max(out[out.length - 1].pauseAfter, pause);
+      if (!m) break;
+      rest = rest.slice(m.index + m[0].length);
+    }
+    for (const p of pieces) {
+      const last = out.at(-1);
+      if (last && last.voice === voice && last.speed === speed && last.pauseAfter === 0 && last.text.length + 1 + p.text.length <= maxChars) {
+        last.text += ` ${p.text}`;
+        last.pauseAfter = p.pause;
+      } else {
+        if (last && last.voice !== voice) last.pauseAfter = Math.max(last.pauseAfter, TURN_GAP);
+        out.push({ voice, text: p.text, speed, pauseAfter: p.pause });
+      }
+    }
   }
   return out;
 }
