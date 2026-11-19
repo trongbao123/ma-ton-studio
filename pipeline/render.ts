@@ -187,6 +187,35 @@ const ACTION_SHOT_SECONDS = 5;
 const MOTIONS = ["in", "left", "out", "right", "up", "in"] as const;
 type Motion = (typeof MOTIONS)[number];
 
+/**
+ * Vẽ ảnh cảnh `i`. Một cảnh vẽ hỏng (Codex "I can't generate the image in this turn", lỗi mạng…) không được làm hỏng
+ * cả video 90 phút (#89 ngày 19/11/2026): thử lại 1 lần seed khác (gói Plus, không tốn tiền), vẫn hỏng thì dùng tạm ảnh
+ * cảnh gần nhất đã có. Hết lượt (QuotaExhaustedError) thì ném ra để video chờ lượt sau.
+ */
+async function drawSceneSafe(o: { i: number; total: number; prompt: string; imgOf: (j: number) => string; width: number; height: number; refs?: string[]; log?: (text: string) => void }) {
+  const draw = (seed: number) => drawImage(o.prompt, o.imgOf(o.i), { width: o.width, height: o.height, seed, refs: o.refs });
+  try {
+    return await draw(1000 + o.i * 7);
+  } catch (e) {
+    if (e instanceof QuotaExhaustedError) throw e;
+    console.warn(`  ⚠ Cảnh ${o.i} vẽ lỗi — thử lại: ${e instanceof Error ? e.message.slice(-200) : e}`);
+  }
+  try {
+    return await draw(1000 + o.i * 7 + 1);
+  } catch (e) {
+    if (e instanceof QuotaExhaustedError) throw e;
+    const order = [...Array(o.total).keys()].filter((j) => j !== o.i).sort((a, b) => Math.abs(a - o.i) - Math.abs(b - o.i));
+    for (const j of order) {
+      if (!(await access(o.imgOf(j)).then(() => true, () => false))) continue;
+      await copyFile(o.imgOf(j), o.imgOf(o.i));
+      console.warn(`  ⚠ Cảnh ${o.i} vẫn lỗi — dùng tạm ảnh cảnh ${j}`);
+      o.log?.(`Cảnh ${o.i} vẽ lỗi — dùng tạm ảnh cảnh ${j}`);
+      return undefined;
+    }
+    throw e;
+  }
+}
+
 /** Biểu thức zoompan cho một kiểu máy quay; `e` là tiến độ có easing (chậm–nhanh–chậm). */
 function motionExpr(m: Motion, frames: number) {
   const e = `(0.5-0.5*cos(PI*on/${frames}))`;
@@ -342,7 +371,8 @@ export async function buildVideo(opts: {
     if (!drawn.has(i)) {
       drawn.set(i, (async () => {
         const refs = opts.heroRef && prompts[i].hero ? [opts.heroRef] : undefined;
-        const model = await drawImage(prompts[i].prompt, img, { width: opts.imgW, height: opts.imgH, seed: 1000 + i * 7, refs });
+        const imgOf = (j: number) => path.join(dir, `${name}-img-${j}.jpg`);
+        const model = await drawSceneSafe({ i, total: prompts.length, prompt: prompts[i].prompt, imgOf, width: opts.imgW, height: opts.imgH, refs, log: on?.log });
         await on?.image?.(i, img, model);
       })());
     }
@@ -471,28 +501,7 @@ export async function buildStillVideo(opts: {
     if (!drawn.has(i)) {
       drawn.set(i, (async () => {
         const refs = opts.heroRef && prompts[i].hero ? [opts.heroRef] : undefined;
-        const draw = (seed: number) => drawImage(prompts[i].prompt, imgOf(i), { width: opts.imgW, height: opts.imgH, seed, refs });
-        let model: string | undefined;
-        try {
-          model = await draw(1000 + i * 7);
-        } catch (e) {
-          if (e instanceof QuotaExhaustedError) throw e;
-          // Một cảnh vẽ hỏng (Codex không ra ảnh, lỗi mạng…) không được làm hỏng cả video 90 phút (#89 ngày 19/11/2026):
-          // thử lại 1 lần (gói Plus, không tốn tiền), vẫn hỏng thì dùng tạm ảnh cảnh gần nhất đã có.
-          console.warn(`  ⚠ Cảnh ${i} vẽ lỗi — thử lại: ${e instanceof Error ? e.message.slice(-200) : e}`);
-          try {
-            model = await draw(1000 + i * 7 + 1);
-          } catch (e2) {
-            if (e2 instanceof QuotaExhaustedError) throw e2;
-            const order = [...Array(prompts.length).keys()].filter((j) => j !== i).sort((a, b) => Math.abs(a - i) - Math.abs(b - i));
-            let near: string | undefined;
-            for (const j of order) if (await access(imgOf(j)).then(() => true, () => false)) { near = imgOf(j); break; }
-            if (!near) throw e2;
-            await copyFile(near, imgOf(i));
-            console.warn(`  ⚠ Cảnh ${i} vẫn lỗi — dùng tạm ${path.basename(near)}`);
-            on?.log?.(`Cảnh ${i} vẽ lỗi — dùng tạm ảnh ${path.basename(near)}`);
-          }
-        }
+        const model = await drawSceneSafe({ i, total: prompts.length, prompt: prompts[i].prompt, imgOf, width: opts.imgW, height: opts.imgH, refs, log: on?.log });
         await on?.image?.(i, imgOf(i), model);
       })());
     }
