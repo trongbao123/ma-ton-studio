@@ -136,7 +136,8 @@ const QUOTA = /usage limit|rate.?limit|quota|\b429\b|resource.?exhausted|limit r
 const AUTH = /\b401\b|unauthori[sz]ed|not logged in|please log ?in|invalid.{0,20}(token|credential|grant)|expired|authenticat/i;
 
 export function classify(kind: CliKind, message: string): Error {
-  const msg = message.replace(/\s+/g, " ").trim().slice(0, 300) || "lỗi không rõ";
+  // Lý do lỗi thường ở CUỐI log (đầu log là prompt lặp lại) → giữ 300 ký tự cuối (#89: thông báo chỉ còn prompt, mất lý do).
+  const msg = message.replace(/\s+/g, " ").trim().slice(-300) || "lỗi không rõ";
   if (QUOTA.test(msg)) return new QuotaExhaustedError(`${kind} (gói) hết lượt: ${msg}`);
   if (AUTH.test(msg)) return new Error(`${kind} (gói) đăng nhập hết hạn — chạy lại "node scripts/ai-login.mjs ${kind}" rồi dán vào Cài đặt AI. (${msg})`);
   return new Error(`${kind} (gói) lỗi: ${msg}`);
