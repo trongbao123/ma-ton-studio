@@ -471,7 +471,28 @@ export async function buildStillVideo(opts: {
     if (!drawn.has(i)) {
       drawn.set(i, (async () => {
         const refs = opts.heroRef && prompts[i].hero ? [opts.heroRef] : undefined;
-        const model = await drawImage(prompts[i].prompt, imgOf(i), { width: opts.imgW, height: opts.imgH, seed: 1000 + i * 7, refs });
+        const draw = (seed: number) => drawImage(prompts[i].prompt, imgOf(i), { width: opts.imgW, height: opts.imgH, seed, refs });
+        let model: string | undefined;
+        try {
+          model = await draw(1000 + i * 7);
+        } catch (e) {
+          if (e instanceof QuotaExhaustedError) throw e;
+          // Một cảnh vẽ hỏng (Codex không ra ảnh, lỗi mạng…) không được làm hỏng cả video 90 phút (#89 ngày 19/11/2026):
+          // thử lại 1 lần (gói Plus, không tốn tiền), vẫn hỏng thì dùng tạm ảnh cảnh gần nhất đã có.
+          console.warn(`  ⚠ Cảnh ${i} vẽ lỗi — thử lại: ${e instanceof Error ? e.message.slice(-200) : e}`);
+          try {
+            model = await draw(1000 + i * 7 + 1);
+          } catch (e2) {
+            if (e2 instanceof QuotaExhaustedError) throw e2;
+            const order = [...Array(prompts.length).keys()].filter((j) => j !== i).sort((a, b) => Math.abs(a - i) - Math.abs(b - i));
+            let near: string | undefined;
+            for (const j of order) if (await access(imgOf(j)).then(() => true, () => false)) { near = imgOf(j); break; }
+            if (!near) throw e2;
+            await copyFile(near, imgOf(i));
+            console.warn(`  ⚠ Cảnh ${i} vẫn lỗi — dùng tạm ${path.basename(near)}`);
+            on?.log?.(`Cảnh ${i} vẽ lỗi — dùng tạm ảnh ${path.basename(near)}`);
+          }
+        }
         await on?.image?.(i, imgOf(i), model);
       })());
     }
