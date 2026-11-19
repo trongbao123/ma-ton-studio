@@ -27,7 +27,7 @@ import { dropStaleTts, markTts } from "./tts-cache";
 import { imageCount, isEpisodeOpener, planChapterScenes, planShots, shortSceneCount } from "./episode-plan";
 import { isLifeStory, LIFE_IMAGE_SECONDS, LIFE_MAX_IMAGES, LIFE_NARRATOR_STYLE, LIFE_TEMPO, LIFE_TTS_VOICE_FEMALE, lifeVoice } from "@/lib/story/life";
 import { OPENER_CLIPS, OPENER_SEGMENT_BUDGET } from "./i2v-plan";
-import { ensureRelease, restoreImages, uploadAsset } from "./release";
+import { ensureRelease, restoreImages, restoreTts, saveTts, uploadAsset } from "./release";
 import { keepOrNextSlot } from "./schedule";
 import { loadSecrets } from "@/lib/secrets";
 import { chooseTitle, genreSeeds, keywordResearch, scoreTitles } from "./vidiq";
@@ -824,6 +824,8 @@ export async function renderVideo(videoId: number) {
   const dir = path.resolve(`.render/video-${videoId}`);
   const shortDir = path.join(dir, "short");
   await mkdir(shortDir, { recursive: true });
+  /** Release của lần chạy này — lỗi giữa chừng (hết lượt/credit…) vẫn lưu phần giọng đã đọc. */
+  let ttsRelease: number | null = null;
   try {
     console.log(`▶ Video #${videoId}: ${s.title} — chương ${c.number}`);
     // Hết quota ảnh đẹp thì chờ 7h sáng (lần chạy 00:17 UTC) thay vì ra video ảnh mờ Pollinations.
@@ -836,8 +838,12 @@ export async function renderVideo(videoId: number) {
       hasImages = n > 0;
     }
     if (!hasImages && !(await imagesReady())) throw new QuotaExhaustedError("Hết lượt vẽ ảnh (GPT gói Plus) — chờ lượt sau.");
+    // Giọng đã trả tiền nằm trên release (saveTts) mà cache mất → tải về trước khi ensureRelease xoá release.
+    const restoredTts = await restoreTts(videoId, dir);
+    if (restoredTts) console.log(`  Lấy lại ${restoredTts} file giọng đã đọc từ release — không đọc lại (không tốn tiền)`);
     // Video đã lên YouTube thì giữ release cũ (thay dần từng file); chưa thì làm sạch để xem tiến độ từ đầu.
     const releaseId = await ensureRelease(videoId, !v.youtubeVideoId);
+    ttsRelease = releaseId;
     if (s.episodeChapters > 0) {
       // QC đòi render lại từ đầu: bỏ video/đoạn/kế hoạch cảnh cũ (giọng TTS cache vẫn dùng lại) rồi dựng theo cách mới.
       if (v.meta?.forceRerender) {
@@ -1001,6 +1007,7 @@ export async function renderVideo(videoId: number) {
     } else {
       long = await narrate(longText, dir, voice, onLong);
     }
+    await saveTts(videoId, releaseId, dir).catch((e) => console.warn("⚠ Lưu giọng vào release lỗi:", e instanceof Error ? e.message : e));
     await uploadPreview(videoId, releaseId, await previewAudio(long.audio, path.join(dir, "narration.m4a")));
     let short: Narration | null = null;
     if (wantShort) {
@@ -1147,6 +1154,8 @@ export async function renderVideo(videoId: number) {
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     // Hết quota thì trả về hàng đợi — job 3 tiếng/lần sẽ làm tiếp từ phần đã cache.
+    // Lỗi giữa chừng (hết credit/lượt, mạng…) → giữ phần giọng đã trả tiền trên release.
+    await saveTts(videoId, ttsRelease, dir).catch(() => {});
     const status = e instanceof QuotaExhaustedError ? "queued" : "failed";
     await (status === "queued" ? track.pause(msg) : track.fail(msg));
     await db().update(videos).set({ status, error: msg.slice(0, 2000), updatedAt: new Date() }).where(eq(videos.id, videoId));
