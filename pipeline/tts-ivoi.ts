@@ -48,6 +48,57 @@ async function call(pathname: string, init?: RequestInit) {
   return body;
 }
 
+/** Số đoạn lấy lại từ job cũ trong lần chạy này (log để đối chiếu tiền). */
+let reused = 0;
+export const ivoiReusedCount = () => reused;
+
+/** Tiêu đề ivoi tự đặt cho job: ≤ 50 ký tự thì nguyên văn, dài hơn thì 50 ký tự đầu + "..." (đo 433 job ngày 19/11/2026). */
+export const ivoiTitle = (text: string) => (text.length > 50 ? `${text.slice(0, 50)}...` : text);
+
+type OldJob = { url: string; seconds: number };
+let jobIndex: Promise<Map<string, OldJob[]>> | null = null;
+
+/** Mọi job đã xong trên tài khoản (ivoi giữ audio 30 ngày), gom theo tiêu đề. Tải 1 lần mỗi tiến trình. */
+function loadJobIndex() {
+  jobIndex ??= (async () => {
+    const map = new Map<string, OldJob[]>();
+    for (let offset = 0, total = Infinity; offset < total; offset += 100) {
+      const page = (await retry(() => call(`/tts/jobs?limit=100&offset=${offset}`))) as {
+        total: number;
+        jobs: { status: string; title: string; audio_url: string | null; duration_seconds: number | null }[];
+      };
+      total = page.total;
+      if (!page.jobs.length) break;
+      for (const j of page.jobs) {
+        if (j.status !== "completed" || !j.audio_url) continue;
+        map.set(j.title, [...(map.get(j.title) ?? []), { url: j.audio_url, seconds: j.duration_seconds ?? 0 }]);
+      }
+    }
+    console.log(`  ivoi: ${map.size} đoạn đã đọc trên tài khoản (dùng lại nếu file mất)`);
+    return map;
+  })().catch((e) => {
+    console.warn("⚠ Không tải được danh sách job ivoi — đọc mới:", e instanceof Error ? e.message : e);
+    return new Map<string, OldJob[]>();
+  });
+  return jobIndex;
+}
+
+/**
+ * Job cũ cùng nội dung: khớp tiêu đề; đoạn > 50 ký tự còn phải khớp độ dài audio (ivoi đọc ~18,7 ký tự/giây — đo #66)
+ * để không lấy nhầm đoạn khác trùng 50 ký tự đầu. Không chắc thì trả null (đọc mới, đúng hơn là tiết kiệm sai).
+ */
+export function pickOldJob(text: string, candidates: OldJob[] | undefined): string | null {
+  if (!candidates?.length) return null;
+  if (text.length <= 50) return candidates[0].url;
+  const expect = text.length / 18.7;
+  const ok = candidates.filter((c) => c.seconds >= expect * 0.75 - 1 && c.seconds <= expect * 1.35 + 1);
+  return ok[0]?.url ?? null;
+}
+
+async function findOldJob(text: string) {
+  return pickOldJob(text, (await loadJobIndex()).get(ivoiTitle(text)));
+}
+
 /** Thử lại lỗi mạng/tạm thời (không thử lại hết credit / key sai). */
 async function retry<T>(fn: () => Promise<T>, times = 4): Promise<T> {
   for (let i = 0; ; i++) {
@@ -66,6 +117,13 @@ export async function speakIvoi(text: string, outFile: string, voiceId: string) 
   // Tên file do người gọi đặt theo nội dung (narrateScript: hash nhóm; narrate: dropStaleTts xoá khi chữ đổi).
   if (await access(outFile).then(() => true, () => false)) return;
   if (text.length > IVOI_MAX_CHARS) throw new Error(`ivoi: đoạn ${text.length} ký tự > ${IVOI_MAX_CHARS}`);
+  // Đoạn này đã từng đọc (trả tiền) ở job trước nhưng file mất (cache Actions bị đẩy ra / job bị huỷ) → tải lại audio cũ.
+  const old = await findOldJob(text);
+  if (old) {
+    await saveAudio(old, outFile);
+    reused++;
+    return;
+  }
   let job: { job_id?: string; status?: string; audio_url?: string | null; error_message?: string | null } = {};
   for (let attempt = 0; ; attempt++) {
     try {
@@ -84,9 +142,13 @@ export async function speakIvoi(text: string, outFile: string, voiceId: string) 
     await new Promise((r) => setTimeout(r, 3000));
     job = await retry(() => call(`/tts/jobs/${job.job_id}`));
   }
-  // Audio đã trả tiền → tải lại tới khi được (s3.ivoi.io từng timeout kết nối 10s), không bỏ job.
+  await saveAudio(job.audio_url!, outFile);
+}
+
+/** Tải mp3 của job → WAV 24kHz mono. Audio đã trả tiền → tải lại tới khi được (s3.ivoi.io từng timeout 10s). */
+async function saveAudio(url: string, outFile: string) {
   const data = await retry(async () => {
-    const audio = await fetch(job.audio_url!);
+    const audio = await fetch(url);
     if (!audio.ok) throw new Error(`ivoi tải audio ${audio.status}`);
     return Buffer.from(await audio.arrayBuffer());
   }, 6);
@@ -101,3 +163,6 @@ export async function speakIvoi(text: string, outFile: string, voiceId: string) 
     await rm(mp3, { force: true });
   }
 }
+
+/** Số tiêu đề đã đọc trên tài khoản (kiểm tra / log). */
+export const ivoiJobIndexSize = async () => (await loadJobIndex()).size;

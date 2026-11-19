@@ -37,7 +37,7 @@ import { autoPublishEligible, publishToYoutube } from "./youtube";
 type ScenePrompt = Awaited<ReturnType<typeof scenePrompts>>[number];
 import { cuesForChunk, cuesForSegment, packChunks, parseSilenceMids, sentences, snapToSentences, titleCardFilter, toAss, type Cue } from "./text";
 import { speak, speakTurns, SpeechFormatError, type SpeechTurn } from "./tts";
-import { IVOI_MAX_CHARS, IVOI_PREFIX, IVOI_VOICE_FEMALE, IVOI_VOICE_MALE, IVOI_VOICES, IvoiUnavailableError, ivoiReady, speakIvoi } from "./tts-ivoi";
+import { IVOI_MAX_CHARS, IVOI_PREFIX, IVOI_VOICE_FEMALE, IVOI_VOICE_MALE, IVOI_VOICES, IvoiUnavailableError, ivoiReady, ivoiReusedCount, speakIvoi } from "./tts-ivoi";
 import { castVoices, directScript, groupTurns, ivoiSegments, NARRATOR, stripTags } from "./voice-cast";
 
 // Đường dẫn tương đối (ffmpeg chạy ở gốc repo): đường dẫn tuyệt đối trên Windows có "C:" làm vỡ cú pháp filter của drawtext.
@@ -1037,6 +1037,7 @@ export async function renderVideo(videoId: number) {
     } else {
       long = await narrate(longText, dir, voice, onLong);
     }
+    if (ivoiReusedCount()) console.log(`  ivoi: ${ivoiReusedCount()} đoạn lấy lại từ job đã trả tiền — không đọc lại`);
     await saveTts(videoId, releaseId, dir).catch((e) => console.warn("⚠ Lưu giọng vào release lỗi:", e instanceof Error ? e.message : e));
     await uploadPreview(videoId, releaseId, await previewAudio(long.audio, path.join(dir, "narration.m4a")));
     let short: Narration | null = null;
