@@ -128,7 +128,8 @@ export function ivoiSegments(turns: Turn[], cast: Record<string, string>, maxCha
       const m = /<([^>]{1,30})>/.exec(rest);
       const before = stripTags(m ? rest.slice(0, m.index) : rest);
       const pause = m ? (TAG_PAUSE[m[1].trim().toLowerCase()] ?? 0) : 0;
-      if (before) pieces.push({ text: before, pause });
+      // Mẩu chỉ có dấu câu ("…", "–") sau khi tách thẻ: ivoi coi là rỗng và báo lỗi job (#88) → gộp thành khoảng lặng.
+      if (before && /[\p{L}\p{N}]/u.test(before)) pieces.push({ text: before, pause });
       else if (pause && pieces.length) pieces[pieces.length - 1].pause = Math.max(pieces[pieces.length - 1].pause, pause);
       else if (pause && out.length) out[out.length - 1].pauseAfter = Math.max(out[out.length - 1].pauseAfter, pause);
       if (!m) break;
