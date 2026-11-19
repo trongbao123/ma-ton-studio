@@ -115,7 +115,8 @@ const isPaidTts = (f: string) => /^tts-.*\.wav$/.test(f) && !/-x[\d.]+\.wav$|\.t
 export async function saveTts(videoId: number, releaseId: number | null, dir: string) {
   if (!gh() || !releaseId) return;
   const { readdir } = await import("node:fs/promises");
-  const files = (await readdir(dir).catch(() => [] as string[])).filter(isPaidTts);
+  // Kèm kịch bản phân vai: mất nó thì AI chia lời lại khác → đoạn không khớp file/job cũ → đọc lại (trả tiền).
+  const files = (await readdir(dir).catch(() => [] as string[])).filter((f) => isPaidTts(f) || /^voice-script.*\.json$/.test(f));
   if (!files.length) return;
   const tar = path.join(dir, "tts-cache.tar");
   await run("tar", ["-cf", tar, "-C", dir, ...files], { maxBuffer: 1 << 26 });
