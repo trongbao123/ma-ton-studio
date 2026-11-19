@@ -31,3 +31,12 @@ describe("mergeScripts", () => {
     expect(m.turns.map((t) => t.text)).toEqual(["a", "b"]);
   });
 });
+
+describe("ivoiSegments bỏ mẩu không có chữ", () => {
+  it("mẩu chỉ dấu câu giữa hai thẻ không thành lượt gọi ivoi", async () => {
+    const { ivoiSegments, NARRATOR } = await import("./voice-cast");
+    const seg = ivoiSegments([{ speaker: NARRATOR, style: "", text: "Tôi đứng yên. <sigh> … <long pause> Rồi tôi đi." }], { [NARRATOR]: "x" }, 4000);
+    expect(seg.every((s) => /[\p{L}\p{N}]/u.test(s.text))).toBe(true);
+    expect(seg.map((s) => s.text).join(" ")).toContain("Rồi tôi đi.");
+  });
+});
