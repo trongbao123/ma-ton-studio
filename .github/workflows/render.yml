@@ -13,7 +13,7 @@ jobs:
   render:
     # Biến repo RUNNER_LABEL = "oracle" → chạy trên máy Oracle free (scripts/oracle-runner.sh, 0 phút Actions); chưa đặt → máy GitHub.
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
-    timeout-minutes: 180 # video dài ~180 cảnh + phụ đề karaoke mất ~1,5–2 giờ
+    timeout-minutes: 355 # truyện chuyện đời ~90 phút = ~650 cảnh, dựng ~2 giờ 45 (#88 chết ở 180); máy GitHub tối đa 360
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

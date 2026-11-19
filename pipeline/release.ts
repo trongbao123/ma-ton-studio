@@ -104,3 +104,35 @@ export async function restoreImages(videoId: number, dir: string, shortDir: stri
   const count = async (d: string) => (await readdir(d).catch(() => [] as string[])).filter((f) => /-img-\d+\.jpg$/.test(f)).length;
   return (await count(dir)) + (await count(shortDir));
 }
+
+/** File giọng gốc đáng giữ (đã trả tiền ivoi / tốn lượt Gemini) — bỏ bản đổi nhịp (-x0.9…) và file tạm (dựng lại được, không tốn tiền). */
+const isPaidTts = (f: string) => /^tts-.*\.wav$/.test(f) && !/-x[\d.]+\.wav$|\.tmp\.wav$/.test(f);
+
+/**
+ * Giọng đọc đã trả tiền lưu vào release (`tts-cache.tar`) — cache Actions chỉ 10GB/repo, video 90 phút 5–7GB nên cache
+ * đẩy nhau ra và job chết giữa chừng (timeout) không kịp lưu → lần sau đọc lại = trả tiền lại (#88 ngày 19/11/2026).
+ */
+export async function saveTts(videoId: number, releaseId: number | null, dir: string) {
+  if (!gh() || !releaseId) return;
+  const { readdir } = await import("node:fs/promises");
+  const files = (await readdir(dir).catch(() => [] as string[])).filter(isPaidTts);
+  if (!files.length) return;
+  const tar = path.join(dir, "tts-cache.tar");
+  await run("tar", ["-cf", tar, "-C", dir, ...files], { maxBuffer: 1 << 26 });
+  await uploadAsset(videoId, releaseId, tar);
+  console.log(`  Đã lưu ${files.length} file giọng vào release (không phải đọc lại nếu job sau mất cache)`);
+}
+
+/** Chưa có file giọng (cache mất) mà release còn `tts-cache.tar` → tải về TRƯỚC khi ensureRelease xoá release. Trả số file. */
+export async function restoreTts(videoId: number, dir: string): Promise<number> {
+  const g = gh();
+  if (!g) return 0;
+  const { readdir } = await import("node:fs/promises");
+  const have = async () => (await readdir(dir).catch(() => [] as string[])).filter(isPaidTts).length;
+  const before = await have();
+  const got = await run("gh", ["release", "download", `video-${videoId}`, "--repo", g.repo, "-p", "tts-cache.tar", "-D", dir, "--clobber"]).catch(() => null);
+  if (!got) return 0;
+  // -k: không ghi đè file đã có (bản trong cache Actions mới hơn hoặc bằng).
+  await run("tar", ["-xkf", path.join(dir, "tts-cache.tar"), "-C", dir]).catch(() => null);
+  return (await have()) - before;
+}
