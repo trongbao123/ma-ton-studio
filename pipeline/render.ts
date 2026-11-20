@@ -1292,6 +1292,8 @@ if (process.argv[1]?.endsWith("render.ts")) {
       return import("./redo-episode").then((x) => x.redoEpisode(Number(id), iso ? new Date(iso) : undefined, full));
     }
     // hold:30,39,40 = tập chưa đạt chuẩn → riêng tư, bỏ lịch, chờ dựng lại (không xoá trên YouTube).
+    // replace:<id> = thay bản đã hẹn giờ (chưa công chiếu) trên YouTube bằng bản render mới trên release.
+    if (arg.startsWith("replace:")) return import("./replace-youtube").then((x) => x.replaceOnYoutube(Number(arg.slice(8))));
     if (arg.startsWith("hold:")) return import("./schedule").then((x) => x.holdEpisodes(arg.slice(5).split(",").map(Number)));
     if (arg.startsWith("promote:")) {
       const [, ep, ids] = arg.split(":");
