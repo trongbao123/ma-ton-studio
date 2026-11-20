@@ -36,10 +36,12 @@ export async function redoSeo(videoId: number) {
   const picked = await pickBestTitle(options, m.description, 90, 3);
   const all = picked?.all ?? options.map((title) => ({ title, score: null }));
   for (const x of all) console.log(`  ${x.score ?? "?"} — ${x.title}`);
-  const top = picked?.best ?? all[0];
+  // Chuyện đời: tiêu đề truyện do chủ kênh đặt theo khuôn kênh — KHÔNG thay (AI đổi thành tiêu đề mơ hồ, CTR thấp — 20/11/2026).
+  const life = isLifeStory(s);
+  const top = life ? { title: c.title, score: null } : picked?.best ?? all[0];
   // Tiêu đề vidIQ gợi ý hay thiếu số chương → gắn thêm nếu còn chỗ (≤ 100 ký tự).
   const tail = ` | Chương ${c.number}`;
-  const best = /chương\s*\d+/i.test(top.title) || top.title.length + tail.length > 100 ? top : { ...top, title: `${top.title}${tail}` };
+  const best = life || /chương\s*\d+/i.test(top.title) || top.title.length + tail.length > 100 ? top : { ...top, title: `${top.title}${tail}` };
 
   // Giữ phần ghi công nhạc (nếu có) ở cuối mô tả cũ.
   const credit = v.meta.description.match(/\n\nNhạc nền:[\s\S]*$/)?.[0] ?? "";
@@ -52,7 +54,7 @@ export async function redoSeo(videoId: number) {
     shortDescription: m.shortDescription,
     seo: { titleScore: best.score, titleOptions: all, keywords },
   };
-  const fixed = await optimizeMeta(draft, { seriesTitle: s.title, chapterNumber: c.number, chapterTitle: c.title, summary: c.summary }, { log: console.log });
+  const fixed = await optimizeMeta(draft, { seriesTitle: s.title, chapterNumber: c.number, chapterTitle: c.title, summary: c.summary, life }, { log: console.log });
   const pl = await seriesPlaylist(s.id);
   const meta = await enrichDescription(
     { ...fixed.meta, description: `${fixed.meta.description}${credit}` },
@@ -70,4 +72,20 @@ export async function redoSeo(videoId: number) {
   await db().update(videos).set({ meta, updatedAt: new Date() }).where(eq(videos.id, videoId));
   console.log(`✔ Tiêu đề mới: ${meta.title}\nTag: ${meta.tags.join(", ")}`);
   await closeVidiq();
+}
+
+/** retitle:<id> — chuyện đời: trả tiêu đề về đúng tiêu đề truyện (DB + YouTube nếu đã đăng), giữ mô tả/tag. */
+export async function retitleLife(videoId: number) {
+  await loadSecrets(true);
+  const [v] = await db().select().from(videos).where(eq(videos.id, videoId));
+  if (!v?.meta) throw new Error(`Video #${videoId} chưa có meta.`);
+  const [c] = await db().select().from(chapters).where(eq(chapters.id, v.chapterId));
+  const [s] = await db().select().from(series).where(eq(series.id, c.seriesId));
+  if (!isLifeStory(s)) throw new Error(`Video #${videoId} không phải chuyện đời.`);
+  const title = c.title.length > 100 ? `${c.title.slice(0, 97)}…` : c.title;
+  if (title === v.meta.title) return console.log(`#${videoId} đã đúng tiêu đề: ${title}`);
+  const meta = { ...v.meta, title };
+  if (v.youtubeVideoId) await updateYoutubeSnippet(v.youtubeVideoId, { title, description: meta.description, tags: meta.tags }, true);
+  await db().update(videos).set({ meta, updatedAt: new Date() }).where(eq(videos.id, videoId));
+  console.log(`✔ #${videoId}: "${v.meta.title}" → "${title}"${v.youtubeVideoId ? ` (đã cập nhật youtu.be/${v.youtubeVideoId})` : ""}`);
 }

@@ -71,7 +71,8 @@ export function blastFilter(hook: string, layout: BlastLayout = "right", font = 
   const lines = bottom ? bottomLines(hook) : splitHookLines(hook);
   const longest = Math.max(1, ...lines.map((l) => [...l].length));
   const size = bottom ? Math.round(Math.min(lines.length === 1 ? 170 : 130, 1150 / (longest * CHAR_W))) : blastFontSize(lines);
-  const lineH = Math.round(size * 1.1);
+  // 1,3: dấu tiếng Việt chồng (Ổ, Ẫ, Ữ…) cao hơn Latin — 1,1 làm dấu dòng dưới chạm dòng trên ("CON" đọc thành "CỌN", #87).
+  const lineH = Math.round(size * 1.3);
   const blockH = lineH * lines.length;
   const top = bottom ? Math.max(300, 700 - blockH) : Math.max(40, Math.round(350 - blockH / 2));
   const stroke = Math.max(8, Math.round(size / 10));
