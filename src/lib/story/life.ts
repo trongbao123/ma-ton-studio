@@ -152,6 +152,10 @@ Nghĩ ${count} câu chuyện độc lập MỚI (số ${startAt}–${startAt + c
 
 /** Khuôn tiêu đề kênh chuyện đời (theo 10 tiêu đề chủ kênh lên kế hoạch 11/2026). */
 export const LIFE_TITLE_RULE =
+  // Chủ kênh 20/11/2026: "tiêu đề phải tạo sự tò mò" — tiêu đề cũ nói ra gần hết ("…Đưa Ra Một Quyết Định", "…Âm Thầm Rời Đi").
+  "PHẢI GÂY TÒ MÒ: một chi tiết cụ thể gây sốc (đồ vật: hộp sắt, tin nhắn, chiếc ví; con số: 7 năm, 200 triệu, 4 chữ; câu nói) + GIẤU đúng sự thật/bước ngoặt ở cuối truyện " +
+  "bằng vế bỏ ngỏ ('…Không Ngờ Chủ Ví Là Ai', '…Mới Biết Lý Do Thật Sự', '…Biết Đứa Bé Là Ai Người Vợ Bật Khóc'); đúng với nội dung truyện, KHÔNG bịa chi tiết; " +
+  "vd 'Chồng Mất, Vợ Tìm Thấy Hộp Sắt Có Ảnh Người Đàn Bà Lạ Và 30 Năm Phiếu Gửi Tiền', 'Con Gái Nhắn Đúng 4 Chữ Ngày Cưới, Người Cha Nghèo Bỏ Đi Suốt 2 Năm'; " +
   "khuôn '[hoàn cảnh hy sinh/biến cố có con số cụ thể: tuổi, số năm, số tiền], [vai vế đời thường: Bà Mẹ / Người Cha / Người Vợ / Con Dâu…] [điều bất ngờ bỏ ngỏ]' " +
   "(vd 'Nuôi 3 Con Khôn Lớn, Đến Tuổi 55 Bà Mẹ Không Còn Nơi Để Về', 'Bà Lão Ngày Nào Cũng Đặt Hai Suất Cơm, Sự Thật Khiến Chủ Quán Lặng Người'); " +
   "VIẾT HOA chữ cái đầu mỗi từ như ví dụ; 50–85 ký tự; GIẤU kết quả/sự thật để người xem phải bấm; KHÔNG tên nhân vật, KHÔNG 'có thật', KHÔNG số tập";

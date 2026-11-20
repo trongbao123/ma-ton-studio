@@ -7,7 +7,8 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { videos } from "@/db/schema";
+import { chapters, series, videos } from "@/db/schema";
+import { isLifeStory } from "@/lib/story/life";
 import { loadSecrets } from "@/lib/secrets";
 import { accessToken, channelOfVideo, getYoutubeAuth } from "@/lib/youtube";
 import { publishToYoutube } from "./youtube";
@@ -21,6 +22,13 @@ export async function replaceOnYoutube(videoId: number) {
   if (!v.youtubeVideoId) throw new Error(`Video #${videoId} chưa có trên YouTube — dùng nút Đăng.`);
   if (!v.publishAt || v.publishAt.getTime() < Date.now() + 30 * 60_000) throw new Error("Video đã/sắp công chiếu — không xoá (mất view).");
   if (v.status !== "published") throw new Error(`Video #${videoId} đang ${v.status} — chờ render xong.`);
+  // Chuyện đời: tiêu đề = tiêu đề truyện MỚI NHẤT (render chạy song song có thể đã ghi lại tiêu đề cũ đọc lúc khởi động).
+  const [c] = await db().select().from(chapters).where(eq(chapters.id, v.chapterId));
+  const [s] = await db().select().from(series).where(eq(series.id, c.seriesId));
+  if (isLifeStory(s) && v.meta && v.meta.title !== c.title) {
+    await db().update(videos).set({ meta: { ...v.meta, title: c.title.slice(0, 100) } }).where(eq(videos.id, videoId));
+    console.log(`  Tiêu đề theo truyện: ${c.title}`);
+  }
   // Tải file mới TRƯỚC khi xoá bản cũ: thiếu file thì dừng, bản cũ vẫn còn.
   const dir = await mkdtemp(path.join(tmpdir(), `replace-${videoId}-`));
   await run("gh", ["release", "download", `video-${videoId}`, "--repo", process.env.GITHUB_REPOSITORY!, "--dir", dir, "--pattern", "long.mp4", "--pattern", "thumbnail.jpg"]);
