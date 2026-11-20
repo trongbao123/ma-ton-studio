@@ -235,6 +235,19 @@ function motionExpr(m: Motion, frames: number) {
   }
 }
 
+/** Khung máy ảo trên cùng 1 ảnh (phần trăm cạnh ảnh): toàn → trung → cận (mặt thường ở nửa trên, giữa) → trung lệch. */
+export type ShotFrame = { x: number; y: number; w: number };
+export const LIFE_FRAMES: ShotFrame[] = [
+  { x: 0, y: 0, w: 1 },
+  { x: 0.12, y: 0.04, w: 0.76 },
+  { x: 0.22, y: 0.05, w: 0.56 },
+  { x: 0.24, y: 0.06, w: 0.76 },
+];
+/** Chuyện đời: ~8 giây cắt 1 lần (kênh mẫu chủ kênh gửi 20/11/2026 cắt 8–9 giây; trước đây 1 ảnh đứng 75 giây → "như cứt"). */
+export const LIFE_SHOT_SECONDS = 8;
+/** Cắt giữa các khung của CÙNG 1 ảnh: chuyển rất nhanh (gần như cắt thẳng); đổi ảnh vẫn crossfade FADE. */
+const QUICK_CUT = 0.2;
+
 /** Zoom tối đa của chuyển động máy quay — thấp để không phóng ảnh nguồn (chỉ ~1MP) quá tay gây mờ. */
 const ZOOM = 0.06;
 
@@ -243,7 +256,7 @@ const ZOOM = 0.06;
  * zoompan làm tròn toạ độ theo pixel nguồn, nguồn 4K thì mỗi bước chỉ còn ½ pixel ở 1080p → hết rung.
  * Cắt 7% đáy để bỏ logo Pollinations.
  */
-export async function shot(img: string, out: string, seconds: number, w: number, h: number, motion: Motion, q: Quality = NORMAL, parallax?: { files: ParallaxFiles; index: number }) {
+export async function shot(img: string, out: string, seconds: number, w: number, h: number, motion: Motion, q: Quality = NORMAL, parallax?: { files: ParallaxFiles; index: number }, frame?: ShotFrame) {
   const frames = Math.max(1, Math.round(seconds * q.fps));
   const up = q.scale;
   // Parallax 2.5D (3 lớp theo độ sâu) thay cho zoompan; lỗi dựng đồ thị → rơi về zoompan bên dưới.
@@ -267,7 +280,7 @@ export async function shot(img: string, out: string, seconds: number, w: number,
   await ffmpeg([
     "-loop", "1", "-i", img, "-t", seconds.toFixed(3),
     "-vf",
-    `${LOGO_CROP}scale=${w * up}:${h * up}:force_original_aspect_ratio=increase:flags=${q.sharpen ? "lanczos" : "bicubic"},crop=${w * up}:${h * up}:(iw-ow)/2:(ih-oh)*0.3,${q.sharpen ? "unsharp=5:5:1.0," : ""}` +
+    `${LOGO_CROP}${frame && frame.w < 1 ? `crop=iw*${frame.w}:ih*${frame.w}:iw*${frame.x}:ih*${frame.y},` : ""}scale=${w * up}:${h * up}:force_original_aspect_ratio=increase:flags=${q.sharpen ? "lanczos" : "bicubic"},crop=${w * up}:${h * up}:(iw-ow)/2:(ih-oh)*0.3,${q.sharpen ? "unsharp=5:5:1.0," : ""}` +
       `zoompan=z='${z}':x='${x}':y='${y}':d=1:s=${w}x${h}:fps=${q.fps},format=yuv420p`,
     // File tạm (còn mã hoá lại ở bước cuối) → nén nhanh hơn, crf thấp hơn để không mất chất lượng; đỡ phút GitHub Actions.
     "-c:v", "libx264", "-preset", "superfast", "-crf", "18", "-r", String(q.fps), out,
@@ -346,6 +359,9 @@ export async function buildVideo(opts: {
   quality?: Quality;
   /** Không nhạc nền, chỉ giọng (+ hiệu ứng nếu có). */
   noMusic?: boolean;
+  /** Độ dài 1 shot (mặc định SHOT_SECONDS) và khung máy ảo xoay vòng trên cùng 1 ảnh (chuyện đời). */
+  shotSeconds?: number;
+  frames?: ShotFrame[];
   /** Âm lượng nhạc (mặc định 0,28). `duck`: nhạc tự hạ khi có giọng đọc, lên lại ở khoảng lặng (kể chuyện cảm xúc). */
   musicGain?: number;
   duck?: boolean;
@@ -357,16 +373,20 @@ export async function buildVideo(opts: {
   // Mỗi ảnh (1 scene) tách thành nhiều cảnh ~10s với kiểu máy quay khác nhau.
   const shots = scenes.flatMap((sc, i) => {
     const action = prompts[i].action;
-    const n = Math.max(1, Math.round((sc.end - sc.start) / (action ? ACTION_SHOT_SECONDS : SHOT_SECONDS)));
+    const n = Math.max(1, Math.round((sc.end - sc.start) / (action ? ACTION_SHOT_SECONDS : opts.shotSeconds ?? SHOT_SECONDS)));
     const len = (sc.end - sc.start) / n;
     return Array.from({ length: n }, (_, k) => ({
       image: i, k, seconds: len, action,
       motion: MOTIONS[(i * 2 + k) % MOTIONS.length],
-      fade: FADE,
+      // Shot đầu của ảnh = toàn cảnh; các shot sau đổi khung, chuyển nhanh như máy quay đổi góc.
+      frame: opts.frames ? opts.frames[k === 0 ? 0 : 1 + ((k - 1 + i) % (opts.frames.length - 1))] : undefined,
+      fade: opts.frames && k > 0 ? QUICK_CUT : FADE,
       fx: "fade",
     }));
   });
   on?.shots?.(shots.length);
+  // Tên file dựng khác khi cắt kiểu khung máy ảo → cache .render của bản cũ (1 ảnh 75 giây) không bị dùng lại.
+  const vtag = opts.frames ? `-f${opts.shotSeconds ?? SHOT_SECONDS}` : "";
   const GROUP = 12;
   // Mỗi ảnh chỉ vẽ một lần dù nhiều shot dùng chung (các shot chạy song song).
   const drawn = new Map<number, Promise<void>>();
@@ -399,9 +419,9 @@ export async function buildVideo(opts: {
     const fadesNext = j % GROUP !== GROUP - 1 && j !== shots.length - 1;
     const seconds = sh.seconds + (fadesNext ? shots[j + 1].fade : 0);
     // "shot2": đổi tên khi đổi cách mã hoá để không trộn file cũ; once() → job bị huỷ chạy lại thì bỏ qua cảnh đã dựng.
-    const file = path.join(dir, `${name}-shot${q.tag}-${String(j).padStart(3, "0")}.mp4`);
+    const file = path.join(dir, `${name}-shot${q.tag}${vtag}-${String(j).padStart(3, "0")}.mp4`);
     const clip = opts.clips?.get(sh.image);
-    await once(file, (tmp) => (clip ? clipShot(clip, tmp, seconds, w, h, q) : shot(img, tmp, seconds, w, h, sh.motion, q, px ? { files: px, index: sh.image + sh.k } : undefined)));
+    await once(file, (tmp) => (clip ? clipShot(clip, tmp, seconds, w, h, q) : shot(img, tmp, seconds, w, h, sh.motion, q, px ? { files: px, index: sh.image + sh.k } : undefined, sh.frame)));
     if (j % 10 === 0) console.log(`  ${name} cảnh ${j + 1}/${shots.length}`);
     on?.shot?.();
     return { file, seconds, fade: sh.fade, fx: sh.fx };
@@ -411,13 +431,13 @@ export async function buildVideo(opts: {
 
   const groups: string[] = [];
   for (let g = 0; g * GROUP < files.length; g++) {
-    const out = path.join(dir, `${name}-group${q.tag}-${g}.mp4`);
+    const out = path.join(dir, `${name}-group${q.tag}${vtag}-${g}.mp4`);
     await once(out, (tmp) => crossfadeGroup(files.slice(g * GROUP, (g + 1) * GROUP), tmp));
     groups.push(out);
   }
   const list = path.join(dir, `${name}-groups.txt`);
   await writeFile(list, groups.map((c) => `file '${c}'`).join("\n"));
-  const silent = path.join(dir, `${name}-silent${q.tag}.mp4`);
+  const silent = path.join(dir, `${name}-silent${q.tag}${vtag}.mp4`);
   await once(silent, (tmp) => ffmpeg(["-f", "concat", "-safe", "0", "-i", list, "-c", "copy", tmp]));
 
   const out = path.join(dir, `${name}.mp4`);
@@ -1176,7 +1196,7 @@ export async function renderVideo(videoId: number) {
       // Chuyện đời vào thẳng biến cố — không thẻ tên kênh/số chương ở đầu video.
       titleCard: life ? undefined : `${s.title}\n\nChương ${c.number}: ${c.title}`,
       // Chuyện đời: nhạc nhỏ dưới giọng, tự hạ khi kể (không có bài nào thì chỉ giọng).
-      music, noMusic: life && !music, ...(life ? { musicGain: 0.22, duck: true } : {}),
+      music, noMusic: life && !music, ...(life ? { musicGain: 0.22, duck: true, shotSeconds: LIFE_SHOT_SECONDS, frames: LIFE_FRAMES } : {}),
       on: hooks("long"),
     });
 
