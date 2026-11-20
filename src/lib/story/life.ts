@@ -67,6 +67,9 @@ export const LIFE_PACING = [
   "TRUYỆN DÀI ~1 TIẾNG 30 GIỮ NGƯỜI NGHE: cứ khoảng 1.500 từ phải có một sự việc mới làm tình thế đổi hẳn (không kể lan man, không lặp lại nỗi đau cũ bằng lời khác); cuối mỗi hồi một câu móc úp mở của người kể ('Tôi đâu biết, cái tin nhắn đêm ấy mới là thứ làm tôi mất tất cả'). Có 1–2 tuyến phụ (người dưng tử tế, một người con khác, chuyện cũ của vợ chồng) đan vào tuyến chính.",
   "Khoảng 2/3 truyện có BƯỚC NGOẶT bất ngờ nhưng hợp lý (sự thật bị giấu, người tưởng xấu hoá ra tốt, người dưng đã âm thầm giúp) — gieo chi tiết báo trước từ nửa đầu (cây khế, lời nói tưởng đùa).",
   "KẾT (KHÔNG được vội): (1) màn đối mặt — người có lỗi nhận ra lỗi qua một chi tiết cụ thể khiến họ chết lặng; (2) nhân vật chính nói 2–3 câu bình thản mà thấm, người nghe phải nghẹn; (3) khép theo đúng KIỂU KẾT được giao cho truyện này; KHÔNG giảng đạo lý kiểu 'câu chuyện cho ta thấy'.",
+  // Chủ kênh 20/11/2026: "cảm động vô như các tình huống xảy ra ngoài đời, cảm động tới nỗi vừa nghe đã khóc".
+  "CHÂN THẬT NHƯ NGOÀI ĐỜI: xung đột phải là chuyện người nghe từng gặp hoặc nghe hàng xóm kể — tiền viện phí, con đi làm xa Tết không về, cha mẹ già ở quê một mình, cuộc gọi video không ai bắt, mâm giỗ không ai về, chia đất, nợ nần, bệnh nặng giấu con, đứa con đi xuất khẩu lao động… Người có lỗi hành xử như người thật, có lý do của họ (áp lực tiền, vợ/chồng ép, sĩ diện), KHÔNG ác kiểu phim. Chi tiết tiền bạc, giờ giấc, địa điểm cụ thể và hợp lý.",
+  "KHOẢNH KHẮC VỠ ÒA (ít nhất 3 lần trong truyện, lần lớn nhất ở HỒI 5): dồn nén thật lâu rồi mới vỡ — điều không kịp nói khi người kia còn sống, lá thư/tin nhắn thoại/di vật nhỏ tìm thấy muộn, câu gọi 'Mẹ ơi' sau nhiều năm, người tưởng vô tâm hoá ra đã âm thầm hy sinh. Dựng bằng CHI TIẾT NHỎ cụ thể (đôi dép mòn, hộp cơm còn ấm, tờ giấy gấp tư trong túi áo) và hành động, KHÔNG tả 'tôi khóc nức nở'. Ngay sau khoảnh khắc ấy là một câu rất ngắn rồi ngừng — để người nghe tự khóc.",
   "KHÔNG ĐƯỢC RẬP KHUÔN giữa các truyện: không dùng lại các câu chuyển quen ('Chuyện bắt đầu từ…', 'Các bạn biết không', 'Tôi đâu biết…') quá 1 lần mỗi truyện; mỗi truyện tự tìm hình ảnh, đồ vật, câu nói riêng của nó; nhân vật chính không phải lúc nào cũng là người mẹ hy sinh — đúng vai trong tiêu đề/cốt truyện.",
 ];
 
@@ -141,6 +144,7 @@ Các truyện đã có (KHÔNG lặp lại cốt truyện hay tình huống chí
 ${previous.map((c) => `- ${c.title}`).join("\n") || "(chưa có)"}
 
 Nghĩ ${count} câu chuyện độc lập MỚI (số ${startAt}–${startAt + count - 1}), mỗi truyện một xung đột gia đình/đời thường rõ ràng, dễ minh hoạ bằng ảnh, hợp người xem 35–60 tuổi; xen kẽ cảm xúc (xót xa, ấm lòng, hối hận, hy vọng).
+- Tình huống phải GIỐNG CHUYỆN NGOÀI ĐỜI người Việt hay gặp (viện phí, Tết không về, cha mẹ già một mình, chia đất, nợ nần, đi xuất khẩu lao động, bệnh giấu con…) và có một khoảnh khắc khiến người nghe bật khóc (điều không kịp nói, di vật/lá thư tìm thấy muộn, hy sinh âm thầm được hé lộ).
 - title: tiêu đề YouTube theo khuôn của kênh: ${LIFE_TITLE_RULE}
 - outline: 7–9 gạch đầu dòng cho truyện dài ~1 tiếng 30: biến cố mở đầu, nhân vật chính và điều có nguy cơ mất, 4–5 diễn biến leo thang (mỗi cái một sự việc mới), bí mật/bước ngoặt, kết; dòng cuối "Cảm xúc chính: …".`,
   };

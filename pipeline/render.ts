@@ -344,8 +344,11 @@ export async function buildVideo(opts: {
   heroRef?: string | null;
   /** Mặc định NORMAL. */
   quality?: Quality;
-  /** Không nhạc nền, chỉ giọng (+ hiệu ứng nếu có) — kênh chuyện đời: chủ kênh chọn chỉ giọng kể. */
+  /** Không nhạc nền, chỉ giọng (+ hiệu ứng nếu có). */
   noMusic?: boolean;
+  /** Âm lượng nhạc (mặc định 0,28). `duck`: nhạc tự hạ khi có giọng đọc, lên lại ở khoảng lặng (kể chuyện cảm xúc). */
+  musicGain?: number;
+  duck?: boolean;
   /** Báo tiến độ cho màn flow: ảnh vẽ xong (lần đầu), tổng số shot, từng shot xong, việc ghép. */
   on?: { image?: (i: number, file: string, model?: string) => Promise<void>; shots?: (n: number) => void; shot?: () => void; log?: (text: string) => void };
 }) {
@@ -443,14 +446,21 @@ export async function buildVideo(opts: {
   ] : await musicArgs();
   async function musicArgs() {
     const music = opts.music ?? (await ambientBed(dir));
+    const gain = opts.musicGain ?? (music.endsWith("ambient.wav") ? 0.4 : 0.28);
+    // Ducking: giọng làm tín hiệu điều khiển nén nhạc (sidechain) — nhạc lùi xuống khi kể, dâng lên ở chỗ ngừng.
+    const voice = opts.duck ? "[1:a]asplit=2[v][vs];" : "";
+    const bed = opts.duck
+      ? `[2:a]volume=${gain}[m0];[m0][vs]sidechaincompress=threshold=0.02:ratio=4:attack=80:release=900[m];`
+      : `[2:a]volume=${gain}[m];`;
+    const v = opts.duck ? "[v]" : "[1:a]";
     return [
     "-stream_loop", "-1", "-i", music,
     ...(opts.sfx ? ["-i", opts.sfx] : []),
     "-filter_complex",
-    `[2:a]volume=${music.endsWith("ambient.wav") ? 0.4 : 0.28}[m];` +
+    voice + bed +
       (opts.sfx
-        ? `[3:a]volume=${SFX_GAIN}[sx];[1:a][m][sx]amix=inputs=3:duration=first:normalize=0[a]`
-        : `[1:a][m]amix=inputs=2:duration=first:normalize=0[a]`),
+        ? `[3:a]volume=${SFX_GAIN}[sx];${v}[m][sx]amix=inputs=3:duration=first:normalize=0[a]`
+        : `${v}[m]amix=inputs=2:duration=first:normalize=0[a]`),
     "-map", "0:v", "-map", "[a]",
     ];
   }
@@ -659,6 +669,56 @@ export async function pickMusic(seed: number) {
   const dir = path.resolve("pipeline/music");
   const files = (await readdir(dir).catch(() => [] as string[])).filter((f) => f.endsWith(".mp3")).sort();
   return files.length ? path.join(dir, files[seed % files.length]) : null;
+}
+
+/** Nhạc cảm xúc kênh chuyện đời (piano/strings buồn, Kevin MacLeod CC BY 4.0) — chủ kênh muốn có nhạc từ 20/11/2026. */
+export async function lifeMusicTracks() {
+  const dir = path.resolve("pipeline/music/life");
+  return (await readdir(dir).catch(() => [] as string[])).filter((f) => f.endsWith(".mp3")).sort().map((f) => path.join(dir, f));
+}
+
+/** Ghi công gộp cho mọi bài trong nền nhạc chuyện đời (CC BY bắt buộc ghi công từng bài). */
+export function lifeMusicCredit(tracks: string[]) {
+  if (!tracks.length) return "";
+  const titles = tracks.map((t) => `"${path.basename(t, ".mp3")}"`).join(", ");
+  return `Nhạc nền: ${titles} – Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/`;
+}
+
+/** Xáo thứ tự theo seed (cùng video → cùng thứ tự; video khác → mở bằng bài khác). */
+export function seededOrder<T>(items: T[], seed: number): T[] {
+  const a = [...items];
+  let x = (seed * 2654435761) >>> 0 || 1;
+  for (let i = a.length - 1; i > 0; i--) {
+    x ^= x << 13; x >>>= 0; x ^= x >>> 17; x ^= x << 5; x >>>= 0;
+    const j = x % (i + 1);
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+/**
+ * Nền nhạc dài đủ `seconds`: nối các bài theo thứ tự xáo, mỗi bài fade vào/ra 4 giây (hết danh sách thì lặp lại).
+ * Một bài lặp suốt 90 phút nghe đơn điệu — 11 bài (~46 phút) mỗi bài nghe tối đa 2 lần.
+ */
+export async function lifeMusicBed(dir: string, seconds: number, seed: number) {
+  const tracks = seededOrder(await lifeMusicTracks(), seed);
+  if (!tracks.length) return null;
+  const out = path.join(dir, "life-music.m4a");
+  if (await duration(out).then((d) => d >= seconds - 1, () => false)) return out;
+  const list: { file: string; len: number }[] = [];
+  let total = 0;
+  for (let k = 0; total < seconds + 5; k++) {
+    const file = tracks[k % tracks.length];
+    const len = await duration(file);
+    list.push({ file, len });
+    total += len;
+  }
+  const FADE_S = 4;
+  const inputs = list.flatMap((t) => ["-i", t.file]);
+  const chains = list.map((t, i) => `[${i}:a]afade=t=in:d=${FADE_S},afade=t=out:st=${Math.max(0, t.len - FADE_S).toFixed(2)}:d=${FADE_S},aformat=sample_rates=44100:channel_layouts=mono[t${i}]`);
+  const concat = `${list.map((_, i) => `[t${i}]`).join("")}concat=n=${list.length}:v=0:a=1,atrim=0:${seconds.toFixed(2)}[out]`;
+  await once(out, (tmp) => ffmpeg([...inputs, "-filter_complex", `${chains.join(";")};${concat}`, "-map", "[out]", "-c:a", "aac", "-b:a", "96k", tmp]));
+  return out;
 }
 
 /**
@@ -951,10 +1011,11 @@ export async function renderVideo(videoId: number) {
     const fixed = await cached(path.join(dir, `meta-seo-v2${tag}.json`), () =>
       optimizeMeta(draft, { seriesTitle: life ? c.title : s.title, chapterNumber: c.number, chapterTitle: c.title, summary: c.summary, life }, { log: (t) => track.log("agent", t) }),
     );
-    // Chuyện đời: không nhạc nền (chủ kênh chốt 18/11/2026 — chỉ giọng kể).
-    const music = life ? null : await pickMusic(videoId);
+    // Chuyện đời: nền nhạc cảm xúc ghép nhiều bài (chủ kênh 20/11/2026 muốn có nhạc; trước đó 18/11 chốt không nhạc).
+    let music = life ? null : await pickMusic(videoId);
+    const lifeTracks = life ? await lifeMusicTracks() : [];
     // Ghi công nhạc nền (bắt buộc với CC BY) — gắn sau bước tối ưu SEO để AI không xoá mất.
-    const credit = music ? musicCredit(music) : "";
+    const credit = life ? lifeMusicCredit(lifeTracks) : music ? musicCredit(music) : "";
     let meta: VideoMeta = credit
       ? { ...fixed.meta, description: `${fixed.meta.description}\n\n${credit}`, shortDescription: `${fixed.meta.shortDescription}\n\n${credit}` }
       : fixed.meta;
@@ -1108,12 +1169,14 @@ export async function renderVideo(videoId: number) {
         log: (text: string) => track.log("video", `${label}: ${text}`),
       };
     };
+    if (life) music = await lifeMusicBed(dir, long.seconds, videoId);
     const longVideo = await buildVideo({
       dir, name: "long", narration: long, prompts: longPrompts, scenes: longScenes,
       w: 1920, h: 1080, imgW: 1280, imgH: 768, fontSize: 62, marginV: 70,
       // Chuyện đời vào thẳng biến cố — không thẻ tên kênh/số chương ở đầu video.
       titleCard: life ? undefined : `${s.title}\n\nChương ${c.number}: ${c.title}`,
-      music, noMusic: life,
+      // Chuyện đời: nhạc nhỏ dưới giọng, tự hạ khi kể (không có bài nào thì chỉ giọng).
+      music, noMusic: life && !music, ...(life ? { musicGain: 0.22, duck: true } : {}),
       on: hooks("long"),
     });
 
