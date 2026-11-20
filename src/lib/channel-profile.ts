@@ -31,9 +31,9 @@ const PROFILES: Record<string, ChannelProfile> = {
     playlistLabel: "Chuyện Đời Audio",
     hashtags: ["#ChuyenDoi", "#CauChuyenCuocSong", "#TruyenAudio"],
     shortHashtags: ["#shorts", "#chuyendoi", "#cauchuyencuocsong"],
-    // Chủ kênh 20/11/2026: 2 ngày một video (truyện ~1 tiếng 30).
-    publishEveryDays: 2,
-    cadence: "chuyện mới 2 ngày một lần",
+    // Chủ kênh 20/11/2026: 3 ngày một video là được (truyện ~1 tiếng 30, ~75 nghìn token ivoi mỗi video).
+    publishEveryDays: 3,
+    cadence: "chuyện mới 3 ngày một lần",
     youtubeTitle: "Chuyện Đời Lắng Đọng",
   },
 };
