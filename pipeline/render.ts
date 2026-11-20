@@ -1057,6 +1057,8 @@ export async function renderVideo(videoId: number) {
     const lifeTracks = life ? await lifeMusicTracks() : [];
     // Ghi công nhạc nền (bắt buộc với CC BY) — gắn sau bước tối ưu SEO để AI không xoá mất.
     const credit = life ? lifeMusicCredit(lifeTracks) : music ? musicCredit(music) : "";
+    // Chuyện đời: tiêu đề luôn là tiêu đề truyện (khuôn kênh), kể cả khi bước SEO đề xuất khác.
+    if (life) fixed.meta.title = draft.title;
     let meta: VideoMeta = credit
       ? { ...fixed.meta, description: `${fixed.meta.description}\n\n${credit}`, shortDescription: `${fixed.meta.shortDescription}\n\n${credit}` }
       : fixed.meta;
@@ -1379,6 +1381,8 @@ if (process.argv[1]?.endsWith("render.ts")) {
     }
     // hold:30,39,40 = tập chưa đạt chuẩn → riêng tư, bỏ lịch, chờ dựng lại (không xoá trên YouTube).
     // stats:<kênh> = in view/like/bình luận video dài + Short của kênh (chỉ đọc).
+    // retitle:66,86,… = chuyện đời: trả tiêu đề về đúng tiêu đề truyện (DB + YouTube).
+    if (arg.startsWith("retitle:")) return import("./seo-redo").then(async (x) => { for (const id of arg.slice(8).split(",").map(Number)) await x.retitleLife(id); });
     if (arg.startsWith("stats:")) return import("./yt-stats").then((x) => x.printStats(arg.slice(6)));
     // replace:<id> = thay bản đã hẹn giờ (chưa công chiếu) trên YouTube bằng bản render mới trên release.
     if (arg.startsWith("replace:")) return import("./replace-youtube").then((x) => x.replaceOnYoutube(Number(arg.slice(8))));
