@@ -742,6 +742,27 @@ export async function lifeMusicBed(dir: string, seconds: number, seed: number) {
 }
 
 /**
+ * Đoạn mở đầu kiểu Short cho video dài chuyện đời: kịch bản Short (câu đầu là biến cố đau nhất, dừng ngay trước sự thật)
+ * bỏ câu cuối mời "nghe trọn câu chuyện trên kênh" (đang ở trong video rồi). Short #66 được 3.512 view, video dài 125 (20/11/2026).
+ */
+export function coldOpenText(shortScript: string) {
+  const parts = sentences(stripTags(shortScript));
+  while (parts.length > 2 && /kênh|video|nghe trọn|nghe hết|đăng ký|theo dõi|bấm|link|full/i.test(parts[parts.length - 1])) parts.pop();
+  return parts.join(" ");
+}
+
+/** Nối mở đầu + thân video. Cùng thông số mã hoá (cùng buildVideo) thì nối thẳng không mã hoá lại; khác thì mã hoá lại. */
+export async function joinVideos(files: string[], out: string) {
+  const probe = async (f: string) => (await ffmpegLog(["-i", f, "-f", "null", "-t", "0", "-"]).catch(() => "")).match(/Stream #0:\d.*?(Video|Audio): [^\n]*/g)?.map((l) => l.replace(/\(default\)|\[.*?\]|\d+ kb\/s|0x[0-9a-f]+/g, "").trim()).join("|") ?? "";
+  const [a, b] = await Promise.all(files.map(probe));
+  const list = `${out}.txt`;
+  await writeFile(list, files.map((f) => `file '${f}'`).join("\n"));
+  if (a && a === b) return once(out, (tmp) => ffmpeg(["-f", "concat", "-safe", "0", "-i", list, "-c", "copy", "-movflags", "+faststart", tmp]));
+  console.warn("  ⚠ Mở đầu và thân khác thông số — nối có mã hoá lại");
+  return once(out, (tmp) => ffmpeg([...files.flatMap((f) => ["-i", f]), "-filter_complex", `${files.map((_, i) => `[${i}:v][${i}:a]`).join("")}concat=n=${files.length}:v=1:a=1[v][a]`, "-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", tmp]));
+}
+
+/**
  * Dòng ghi công trong mô tả. File `<tên bài>.txt` cạnh bài nhạc thì dùng nội dung đó (rỗng = nhạc không cần ghi công,
  * vd YouTube Audio Library loại không yêu cầu); không có thì là bài Kevin MacLeod — ghi công bắt buộc của CC BY 4.0.
  */
@@ -1121,6 +1142,22 @@ export async function renderVideo(videoId: number) {
     if (ivoiReusedCount()) console.log(`  ivoi: ${ivoiReusedCount()} đoạn lấy lại từ job đã trả tiền — không đọc lại`);
     await saveTts(videoId, releaseId, dir).catch((e) => console.warn("⚠ Lưu giọng vào release lỗi:", e instanceof Error ? e.message : e));
     await uploadPreview(videoId, releaseId, await previewAudio(long.audio, path.join(dir, "narration.m4a")));
+    // Chuyện đời: mở đầu kiểu Short (~40 giây hook) trước thân truyện — giọng người kể, thư mục riêng `cold/`.
+    const coldDir = path.join(dir, "cold");
+    let cold: Narration | null = null;
+    if (life && m.shortScript) {
+      try {
+        await mkdir(coldDir, { recursive: true });
+        const hook = coldOpenText(m.shortScript);
+        cold = useIvoi ? await narrate(hook, coldDir, ivoiVoice!, undefined, 70, 1) : await narrateScript(lifeGroups(hook), coldDir, voice, undefined, 70, LIFE_TEMPO);
+        await saveTts(videoId, releaseId, dir).catch(() => {});
+        track.log("tts", `Mở đầu kiểu Short ${Math.round(cold.seconds)} giây`);
+      } catch (e) {
+        if (e instanceof QuotaExhaustedError) throw e;
+        track.warn("tts", `Bỏ mở đầu kiểu Short: ${e instanceof Error ? e.message : e}`);
+        cold = null;
+      }
+    }
     let short: Narration | null = null;
     if (wantShort) {
       try {
@@ -1144,6 +1181,8 @@ export async function renderVideo(videoId: number) {
     track.set({ prompts: { meta: clip(metaRequest(s, c, undefined, trendHints)), scenes: clip(scenesRequest(m.characterLook, longScenes.map((x) => x.text), life)) } });
     const longPrompts = await cached(path.join(dir, `long-scenes-${n}${tag}.json`), () => scenePrompts(m.characterLook, longScenes.map((x) => x.text), life));
     track.tick("agent", "long", `${n} prompt cảnh video dài`);
+    const coldScenes = cold ? splitScenes(cold.cues, shortSceneCount(cold.seconds), cold.seconds) : [];
+    const coldPrompts = cold ? await cached(path.join(coldDir, `scenes${tag}.json`), () => scenePrompts(m.characterLook, coldScenes.map((x) => x.text), life)) : [];
     let shortScenes = short ? splitScenes(short.cues, shortSceneCount(short.seconds), short.seconds) : [];
     let shortPrompts: ScenePrompt[] = [];
     if (short) {
@@ -1200,6 +1239,31 @@ export async function renderVideo(videoId: number) {
       on: hooks("long"),
     });
 
+    // Mở đầu kiểu Short: ảnh riêng, cắt 3,5 giây như Short, rồi nối trước thân video. Lỗi thì xuất thân video như cũ.
+    let finalLong = longVideo.out;
+    if (cold) {
+      try {
+        console.log("● Mở đầu kiểu Short");
+        const coldVideo = await buildVideo({
+          dir: coldDir, name: "cold", narration: cold, prompts: coldPrompts, scenes: coldScenes,
+          w: 1920, h: 1080, imgW: 1280, imgH: 768, fontSize: 62, marginV: 70,
+          music: await lifeMusicBed(coldDir, cold.seconds, videoId + 7), noMusic: false, musicGain: 0.22, duck: true,
+          shotSeconds: 3.5, frames: LIFE_FRAMES,
+          on: hooks("long"),
+        });
+        finalLong = path.join(dir, "long-full.mp4");
+        await joinVideos([coldVideo.out, longVideo.out], finalLong);
+      } catch (e) {
+        if (e instanceof QuotaExhaustedError) throw e;
+        console.warn("⚠ Bỏ mở đầu kiểu Short:", e instanceof Error ? e.message : e);
+        track.warn("video", `Bỏ mở đầu kiểu Short: ${e instanceof Error ? e.message : e}`);
+        finalLong = longVideo.out;
+      }
+    }
+    // Mốc mục lục trong mô tả tính cả phần mở đầu (thân video lùi lại cold.seconds).
+    const fullCues = cold && finalLong !== longVideo.out ? [...cold.cues, ...long.cues.map((q) => ({ ...q, start: q.start + cold!.seconds, end: q.end + cold!.seconds }))] : long.cues;
+    const fullSeconds = cold && finalLong !== longVideo.out ? cold.seconds + long.seconds : long.seconds;
+
     // Short và thumbnail là phụ: lỗi thì vẫn xuất video dài thay vì bỏ cả lần render.
     const extras: string[] = [];
     if (short) {
@@ -1230,14 +1294,16 @@ export async function renderVideo(videoId: number) {
     // Mô tả đủ checklist vidIQ: mục lục theo mốc giọng đọc thật, link danh sách phát / chương trước, hashtag.
     const pl = await seriesPlaylist(s.id);
     meta = await enrichDescription(meta, {
-      segments: segmentsFromCues(long.cues, long.seconds), seriesId: s.id, chapterNumber: c.number,
+      segments: segmentsFromCues(fullCues, fullSeconds), seriesId: s.id, chapterNumber: c.number,
       keywords: meta.seo?.keywords, links: pl ? [`📜 Nghe trọn bộ theo thứ tự: ${playlistUrl(pl)}`] : [],
     });
     const metaFile = path.join(dir, "youtube.txt");
     await writeFile(metaFile, `${meta.title}\n\n${meta.description}\n\nTags: ${meta.tags.join(", ")}\n\n--- SHORT ---\n${meta.shortTitle}\n\n${meta.shortDescription}\n`);
 
     track.log("video", "Upload file lên kho");
-    for (const f of [longVideo.out, ...extras, thumb, metaFile]) await uploadAsset(videoId, releaseId, f);
+    // Bản có mở đầu vẫn lên kho tên long.mp4 (publish/replace đọc tên này).
+    await uploadAsset(videoId, releaseId, finalLong, "long.mp4");
+    for (const f of [...extras, thumb, metaFile]) await uploadAsset(videoId, releaseId, f);
     track.finish("video");
     await track.flush();
 
@@ -1251,7 +1317,7 @@ export async function renderVideo(videoId: number) {
     await db()
       .update(videos)
       .set({
-        status: onYoutube ? "published" : "ready", meta, durationSec: Math.round(long.seconds), publishAt, updatedAt: new Date(),
+        status: onYoutube ? "published" : "ready", meta, durationSec: Math.round(fullSeconds), publishAt, updatedAt: new Date(),
         ...(publish ? { uploadStatus: "uploading" as const, uploadError: null } : {}),
       })
       .where(eq(videos.id, videoId));
@@ -1262,7 +1328,7 @@ export async function renderVideo(videoId: number) {
         `👉 ${WEB_URL}/videos/${videoId}`,
     );
     // Lỗi đăng không làm hỏng video đã render (publishToYoutube tự bắt lỗi → failed).
-    if (publish) await publishToYoutube(videoId, { long: longVideo.out, short: extras[0], thumb });
+    if (publish) await publishToYoutube(videoId, { long: finalLong, short: extras[0], thumb });
     if (process.env.GITHUB_ACTIONS) await rm(dir, { recursive: true, force: true });
     console.log(`✔ Xong video #${videoId} (${Math.round(long.seconds / 60)} phút)`);
   } catch (e) {

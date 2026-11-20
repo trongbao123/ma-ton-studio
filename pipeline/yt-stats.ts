@@ -1,6 +1,6 @@
 // In số liệu YouTube (view, like, bình luận) mọi video dài + Short của một kênh — để biết hỏng ở CTR hay giữ chân.
 // CLI: render.ts "stats:<kênh>" (vd stats:chuyen-doi). Chỉ đọc, không sửa gì.
-import { eq, isNotNull, or } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { chapters, series, videos } from "@/db/schema";
 import { loadSecrets } from "@/lib/secrets";

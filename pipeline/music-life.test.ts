@@ -29,3 +29,13 @@ describe("cắt cảnh chuyện đời", () => {
     expect(LIFE_SHOT_SECONDS).toBeLessThanOrEqual(10);
   });
 });
+
+describe("mở đầu kiểu Short", () => {
+  it("bỏ câu cuối mời nghe trên kênh, giữ hook", async () => {
+    const { coldOpenText } = await import("./render");
+    const t = coldOpenText("Đêm ấy con trai đuổi tôi ra khỏi nhà. Tôi ngồi ở bến xe với ba trăm nghìn. Nhưng sáng hôm sau, có một người đứng chờ tôi ở cổng. Nghe trọn câu chuyện trên kênh nhé.");
+    expect(t).toContain("Đêm ấy con trai đuổi tôi");
+    expect(t).toContain("đứng chờ tôi ở cổng");
+    expect(t).not.toMatch(/kênh/);
+  });
+});

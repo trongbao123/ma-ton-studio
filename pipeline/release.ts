@@ -117,6 +117,8 @@ export async function saveTts(videoId: number, releaseId: number | null, dir: st
   const { readdir } = await import("node:fs/promises");
   // Kèm kịch bản phân vai: mất nó thì AI chia lời lại khác → đoạn không khớp file/job cũ → đọc lại (trả tiền).
   const files = (await readdir(dir).catch(() => [] as string[])).filter((f) => isPaidTts(f) || /^voice-script.*\.json$/.test(f));
+  // Giọng mở đầu kiểu Short (thư mục cold/) cũng đã trả tiền.
+  files.push(...(await readdir(path.join(dir, "cold")).catch(() => [] as string[])).filter(isPaidTts).map((f) => `cold/${f}`));
   if (!files.length) return;
   const tar = path.join(dir, "tts-cache.tar");
   await run("tar", ["-cf", tar, "-C", dir, ...files], { maxBuffer: 1 << 26 });
@@ -129,7 +131,8 @@ export async function restoreTts(videoId: number, dir: string): Promise<number> 
   const g = gh();
   if (!g) return 0;
   const { readdir } = await import("node:fs/promises");
-  const have = async () => (await readdir(dir).catch(() => [] as string[])).filter(isPaidTts).length;
+  const have = async () =>
+    (await readdir(dir).catch(() => [] as string[])).filter(isPaidTts).length + (await readdir(path.join(dir, "cold")).catch(() => [] as string[])).filter(isPaidTts).length;
   const before = await have();
   const got = await run("gh", ["release", "download", `video-${videoId}`, "--repo", g.repo, "-p", "tts-cache.tar", "-D", dir, "--clobber"]).catch(() => null);
   if (!got) return 0;
