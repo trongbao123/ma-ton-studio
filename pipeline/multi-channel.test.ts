@@ -55,7 +55,7 @@ describe("pickSpacedSlot", () => {
     expect(pickSpacedSlot(taken, 8, 1, now)).toEqual(pickPublishSlot(taken, 8, now));
   });
   it("hồ sơ kênh: chuyện đời 3 ngày, kênh gốc mỗi ngày", () => {
-    expect(channelProfile("chuyen-doi").publishEveryDays).toBe(2);
+    expect(channelProfile("chuyen-doi").publishEveryDays).toBe(3);
     expect(channelProfile("main").publishEveryDays).toBe(1);
     expect(channelProfile("la").publishEveryDays).toBe(1);
   });
