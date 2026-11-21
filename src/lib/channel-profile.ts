@@ -36,6 +36,15 @@ const PROFILES: Record<string, ChannelProfile> = {
     cadence: "chuyện mới 3 ngày một lần",
     youtubeTitle: "Chuyện Đời Lắng Đọng",
   },
+  // Kênh 3 (21/11/2026): lịch sử VN + thế giới, tài liệu không hư cấu, ~45 phút, 3 ngày một video.
+  "lich-su": {
+    playlistLabel: "Lịch Sử Kể Chuyện",
+    hashtags: ["#LichSu", "#SuKyKeChuyen", "#LichSuTheGioi"],
+    shortHashtags: ["#shorts", "#lichsu", "#sukykechuyen"],
+    publishEveryDays: 3,
+    cadence: "video mới mỗi 3 ngày",
+    youtubeTitle: "Sử Ký Kể Chuyện",
+  },
 };
 
 const norm = (s: string) => s.normalize("NFC").toLowerCase().replace(/\s+/g, " ").trim();
