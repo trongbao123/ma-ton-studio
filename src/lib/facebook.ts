@@ -240,6 +240,12 @@ export async function publishReel(ch: string, file: string, opts: ReelOptions) {
   return publishReelAs(await pageAccessToken(ch), file, opts);
 }
 
+/** Xoá một bài/video/Reel trên Page (dọn bài thử, gỡ bài lỗi). */
+export async function deletePageObjectAs(page: PageRef, objectId: string): Promise<void> {
+  const url = `${GRAPH}/${encodeURIComponent(objectId)}?${new URLSearchParams({ access_token: page.token })}`;
+  await graphJson(await fetch(url, { method: "DELETE" }));
+}
+
 /** Page đã kết nối (cho trang Cài đặt) — chỉ tên + id, không bao giờ trả token. */
 export function pagesFromRows(rows: { key: string; value: unknown }[]): { channel: string; pageName: string; pageId: string }[] {
   const prefix = fbKey("");

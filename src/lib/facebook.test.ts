@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { assertReelDuration, CHUNK_RETRY_DELAYS_MS, exchangePageToken, FacebookAuthError, publishPageVideoAs, publishReelAs, fbKey, graphError, pagesFromRows, parseFacebookAuth, pickPage } from "./facebook";
+import { assertReelDuration, CHUNK_RETRY_DELAYS_MS, deletePageObjectAs, exchangePageToken, FacebookAuthError, publishPageVideoAs, publishReelAs, fbKey, graphError, pagesFromRows, parseFacebookAuth, pickPage } from "./facebook";
 
 const PAGE = "61596491473917";
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -311,5 +311,22 @@ describe("đăng dạng nháp (chủ kênh tự bấm đăng)", () => {
     const finish = String((fetchSpy.mock.calls[2][1] as RequestInit).body);
     expect(finish).toContain("published=false");
     expect(finish).not.toContain("scheduled_publish_time");
+  });
+});
+
+describe("xoá bài trên Page", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it("gọi DELETE đúng id bằng token Page", async () => {
+    const fetchSpy = vi.fn().mockResolvedValueOnce(json({ success: true }));
+    vi.stubGlobal("fetch", fetchSpy);
+    await deletePageObjectAs({ pageId: PAGE, token: "pt" }, "123");
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(init.method).toBe("DELETE");
+    expect(url).toContain("/123?");
+    expect(url).toContain("access_token=pt");
+  });
+  it("Facebook từ chối → ném lỗi", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(json({ error: { message: "no" } }, 400)));
+    await expect(deletePageObjectAs({ pageId: PAGE, token: "pt" }, "123")).rejects.toThrow(/400/);
   });
 });
