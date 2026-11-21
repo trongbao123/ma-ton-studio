@@ -178,3 +178,29 @@ CẤM: mọi đề tài từ năm 1945 trở đi; chiến tranh/chính trị Vi�
 export function pickChapterToWrite<T extends { status: string; factIssues: unknown }>(list: T[]): T | undefined {
   return list.find((c) => c.status === "outline" && c.factIssues == null);
 }
+
+/** Trạng thái đề tài trên trang quản lý kênh lịch sử. */
+export type HistoryTopicStatus = "chua-viet" | "dang-viet" | "cho-sua" | "co-kich-ban" | "co-video";
+export const HISTORY_STATUS_LABEL: Record<HistoryTopicStatus, string> = {
+  "chua-viet": "Chưa viết",
+  "dang-viet": "Đang viết",
+  "cho-sua": "Chờ sửa",
+  "co-kich-ban": "Có kịch bản",
+  "co-video": "Có video",
+};
+
+/** Trạng thái hiển thị của một đề tài (ưu tiên: có video > chờ sửa > có kịch bản > đang viết > chưa viết). */
+export function historyTopicStatus(c: { status: string; content: string; factIssues: unknown }, hasVideo: boolean): HistoryTopicStatus {
+  if (hasVideo) return "co-video";
+  if (c.factIssues != null) return "cho-sua";
+  if (c.status === "draft" || c.status === "approved") return "co-kich-ban";
+  return c.content.trim() ? "dang-viet" : "chua-viet";
+}
+
+/** Kiểm đề tài chủ kênh thêm tay: trả thông báo lỗi, hợp lệ thì null. */
+export function validateHistoryTopic(title: string, wiki: string): string | null {
+  if (!title.trim()) return "Cần tiêu đề đề tài.";
+  if (!wiki.trim()) return "Cần tên bài Wikipedia tiếng Anh (để gom tư liệu).";
+  if (isSensitiveTopic(`${title}\n${wiki}`)) return "Đề tài chạm vùng nhạy cảm chính trị — kênh đã chọn né.";
+  return null;
+}

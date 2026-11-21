@@ -9,6 +9,20 @@ import { pickChapterToWrite } from "@/lib/story/history";
 import { maxContinues } from "@/lib/story/prompts";
 import { getSeries, writeChapterStep } from "@/lib/story/service";
 
+/** Soát lại + chốt một kịch bản lịch sử đã viết (vd sau khi sửa tay); còn lỗi → null (đã báo Telegram). */
+export async function recheckHistoryScript(chapterId: number): Promise<{ chapterId: number; words: number } | null> {
+  await loadSecrets(true);
+  try {
+    const done = await writeChapterStep(chapterId, "finish");
+    console.log(`✔ Soát lại đạt — ${done.words} từ, đã chốt kịch bản`);
+    return { chapterId, words: done.words };
+  } catch (e) {
+    if (!(e instanceof FactCheckFailedError)) throw e;
+    console.log(`⚠ ${e.message}`);
+    return null;
+  }
+}
+
 /** Viết trọn kịch bản cho đề tài kế tiếp; lỗi sự thật còn sau soát → null (đã báo Telegram, đề tài "chờ sửa"). */
 export async function writeHistoryScript(seriesId: number): Promise<{ chapterId: number; words: number } | null> {
   await loadSecrets(true);

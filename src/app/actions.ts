@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { revalidatePath, revalidateTag, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
@@ -334,6 +334,39 @@ export async function saveSecretAction(env: string, _: ActionState, form: FormDa
     await saveSecret(env, value);
     revalidatePath("/settings/ai");
     return "Đã lưu — dùng được ngay ở web và job render.";
+  });
+}
+
+/** Kênh lịch sử: gửi lệnh viết kịch bản đề tài kế tiếp sang GitHub Actions (viết + soát mất 15–30 phút, không chạy trên Vercel). */
+export async function writeHistoryScriptAction(seriesId: number): Promise<ActionState> {
+  return attempt(async () => {
+    const { dispatchCommand } = await import("@/lib/story/videos");
+    if (!(await dispatchCommand(`historyscript:${seriesId}`))) throw new Error("Chưa cấu hình GitHub (GH_TOKEN/GH_REPO) — không gọi được Actions.");
+    return "Đã gửi lệnh viết kịch bản — chạy trên GitHub Actions (~15–30 phút), xong sẽ báo Telegram.";
+  });
+}
+
+/** Kênh lịch sử: soát lại kịch bản "chờ sửa" (sau khi sửa tay) trên GitHub Actions; đạt thì gỡ cờ và chốt. */
+export async function recheckFactsAction(chapterId: number): Promise<ActionState> {
+  return attempt(async () => {
+    const { dispatchCommand } = await import("@/lib/story/videos");
+    if (!(await dispatchCommand(`factcheck:${chapterId}`))) throw new Error("Chưa cấu hình GitHub (GH_TOKEN/GH_REPO) — không gọi được Actions.");
+    return "Đã gửi lệnh soát lại — chạy trên GitHub Actions (vài phút), xong sẽ báo Telegram nếu còn lỗi.";
+  });
+}
+
+/** Kênh lịch sử: chủ kênh thêm đề tài (tiêu đề + bài Wikipedia tiếng Anh); đề tài nhạy cảm bị từ chối. */
+export async function addHistoryTopicAction(seriesId: number, _: ActionState, form: FormData): Promise<ActionState> {
+  return attempt(async () => {
+    const { topicOutline, validateHistoryTopic } = await import("@/lib/story/history");
+    const title = String(form.get("title") ?? "").trim();
+    const wiki = String(form.get("wiki") ?? "").trim();
+    const invalid = validateHistoryTopic(title, wiki);
+    if (invalid) throw new Error(invalid);
+    const [last] = await db().select({ number: chapters.number }).from(chapters).where(eq(chapters.seriesId, seriesId)).orderBy(desc(chapters.number)).limit(1);
+    await db().insert(chapters).values({ seriesId, number: (last?.number ?? 0) + 1, title, outline: topicOutline({ title, wiki, angle: "" }) });
+    revalidatePath("/lich-su");
+    return `Đã thêm đề tài "${title}".`;
   });
 }
 
