@@ -7,6 +7,7 @@ import {
   historyIsFinalPart,
   isSensitiveTopic,
   pickChapterToWrite,
+  historyScriptComplete,
   topicOutline,
   wikiTitleOf,
 } from "./history";
@@ -59,5 +60,24 @@ describe("chọn đề tài để viết", () => {
     ];
     expect(pickChapterToWrite(list)?.id).toBe(3);
     expect(pickChapterToWrite([{ id: 2, status: "outline", factIssues: [{}] }])).toBeUndefined();
+  });
+});
+
+describe("sửa sau review đợt 2", () => {
+  it("dòng Wikipedia có gạch đầu dòng/khoảng trắng vẫn nhận", () => {
+    expect(wikiTitleOf("Mở đầu\n- Wikipedia: Battle of Hastings")).toBe("Battle of Hastings");
+    expect(wikiTitleOf("  • Wikipedia: Genghis Khan  ")).toBe("Genghis Khan");
+  });
+  it("không bắt nhầm từ thường: đại loạn, biến động, số quân 2000", () => {
+    expect(isSensitiveTopic("Thiên hạ đại loạn cuối thời Đông Hán")).toBe(false);
+    expect(isSensitiveTopic("Thời kỳ biến động của nhà Trần")).toBe(false);
+    expect(isSensitiveTopic("2000 kỵ binh vượt sông năm 1288")).toBe(false);
+    expect(isSensitiveTopic("Chiến dịch năm 1968 quân đội")).toBe(true);
+    expect(isSensitiveTopic("Tranh chấp Biển Đông")).toBe(true);
+    expect(isSensitiveTopic("Eo biển Đài Loan")).toBe(true);
+  });
+  it("kịch bản đã đủ dài (đã viết lượt kết) → coi là xong, không viết tiếp đè sau đoạn kết", () => {
+    expect(historyScriptComplete(7000)).toBe(true);
+    expect(historyScriptComplete(5000)).toBe(false);
   });
 });

@@ -27,7 +27,8 @@ async function writeNext(seriesId: number, targetWords: number): Promise<{ id: n
   // Đề tài lịch sử "chờ sửa" (còn lỗi sự thật) không tính là còn dàn ý và không được viết lại tự động.
   if (list.filter((c) => c.status === "outline" && c.factIssues == null).length < 2) {
     console.log("  lên dàn ý 10 chương");
-    await planChapters(seriesId, 10);
+    // Không thêm được chương nào (lịch sử: AI đề xuất toàn đề tài bị loại) → dừng, không gọi AI lặp mãi tới hết quota.
+    if (!(await planChapters(seriesId, 10))) throw new Error("Lên dàn ý không ra chương nào hợp lệ (đề tài nhạy cảm/thiếu Wikipedia) — xem lại prompt dàn ý.");
     return writeNext(seriesId, targetWords);
   }
   const next = pickChapterToWrite(list)!;

@@ -4,6 +4,8 @@ import type { Dossier, DossierSource } from "./history-types";
 
 /** Mỗi bài cắt tối đa ngần này ký tự (~12k token) — hai bài vừa một prompt viết. */
 export const DOSSIER_MAX_CHARS_PER_SOURCE = 40_000;
+/** Dưới ngần này ký tự (trang trống, trang định hướng) thì không đủ để viết mà không bịa. */
+export const DOSSIER_MIN_CHARS = 3_000;
 /** Wikimedia yêu cầu User-Agent mô tả client — tên chung, không thông tin cá nhân. */
 const USER_AGENT = "ma-ton-studio/1.0 (history research bot)";
 /**
@@ -21,7 +23,7 @@ const HTTP_TOO_MANY = 429;
 export type Sleep = (ms: number) => Promise<void>;
 const realSleep: Sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-type WikiPage = { title: string; extract?: string; fullurl?: string; missing?: string; langlinks?: { lang: string; "*": string }[] };
+type WikiPage = { title: string; extract?: string; fullurl?: string; missing?: string; invalid?: string; langlinks?: { lang: string; "*": string }[] };
 
 async function fetchWikiPage(lang: "vi" | "en", title: string, sleep: Sleep): Promise<WikiPage> {
   const params = new URLSearchParams({
@@ -56,13 +58,17 @@ const toSource = (lang: "vi" | "en", p: WikiPage): DossierSource => ({ lang, tit
 /** Gom hồ sơ cho đề tài: bài en (theo redirect) + bài vi nếu có langlink; tiếng Việt đứng trước. */
 export async function buildDossier(wikiTitle: string, sleep: Sleep = realSleep): Promise<Dossier> {
   const en = await fetchWikiPage("en", wikiTitle, sleep);
-  if (en.missing !== undefined) throw new Error(`Không tìm thấy bài Wikipedia "${wikiTitle}" — sửa dòng Wikipedia: trong dàn ý đề tài.`);
+  if (en.missing !== undefined || en.invalid !== undefined)
+    throw new Error(`Không tìm thấy bài Wikipedia "${wikiTitle}" — sửa dòng Wikipedia: trong dàn ý đề tài.`);
   const viTitle = en.langlinks?.find((l) => l.lang === "vi")?.["*"];
   const sources = [toSource("en", en)];
   if (viTitle) {
     const viPage = await fetchWikiPage("vi", viTitle, sleep);
     if (viPage.missing === undefined) sources.unshift(toSource("vi", viPage));
   }
+  const totalChars = sources.reduce((n, s) => n + s.text.length, 0);
+  if (totalChars < DOSSIER_MIN_CHARS)
+    throw new Error(`Đề tài "${wikiTitle}" quá ít tư liệu (${totalChars} ký tự) — không viết từ hồ sơ gần như rỗng; đổi đề tài hoặc sửa dòng Wikipedia:.`);
   return { topic: wikiTitle, sources, fetchedAt: new Date().toISOString() };
 }
 

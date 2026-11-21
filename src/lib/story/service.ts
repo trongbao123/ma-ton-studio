@@ -4,7 +4,7 @@ import { chapters, series, type Chapter, type Series } from "@/db/schema";
 import { textProvider } from "@/lib/ai";
 import { polishOpening, shouldPolishOpening } from "./editor";
 import { isLifeStory, lifeIsFinalPart } from "./life";
-import { historyIsFinalPart, isHistoryStory, isSensitiveTopic, wikiTitleOf } from "./history";
+import { historyIsFinalPart, historyScriptComplete, isHistoryStory, isSensitiveTopic, wikiTitleOf } from "./history";
 import { buildDossier, dossierText } from "./dossier";
 import { factCheckScript, FactCheckFailedError } from "./fact-check";
 import type { Dossier } from "./history-types";
@@ -29,8 +29,8 @@ export async function draftBible(idea: string, genre: string) {
   return textProvider().generateJson({ ...biblePrompt(idea, genre), schema: bibleSchema, temperature: 1, task: "story" });
 }
 
-/** Thêm `count` chương ở trạng thái `outline` nối tiếp chương cuối hiện có. */
-export async function planChapters(seriesId: number, count: number) {
+/** Thêm `count` chương ở trạng thái `outline` nối tiếp chương cuối hiện có; trả số chương thực sự đã thêm (lịch sử có thể loại bớt). */
+export async function planChapters(seriesId: number, count: number): Promise<number> {
   const s = await getSeries(seriesId);
   const previous = await listChapters(seriesId);
   const { chapters: drafts } = await textProvider().generateJson({
@@ -44,7 +44,7 @@ export async function planChapters(seriesId: number, count: number) {
   // Lịch sử: loại đề tài nhạy cảm chính trị hoặc thiếu dòng "Wikipedia:" trước khi lưu (chủ kênh: "cái gì nhạy cảm quá thì né").
   const kept = isHistoryStory(s) ? drafts.filter((d) => !isSensitiveTopic(`${d.title}\n${d.outline}`) && wikiTitleOf(d.outline) != null) : drafts;
   if (kept.length < drafts.length) console.log(`  loại ${drafts.length - kept.length} đề tài nhạy cảm/thiếu Wikipedia`);
-  if (!kept.length) return;
+  if (!kept.length) return 0;
   await db()
     .insert(chapters)
     .values(
@@ -56,6 +56,7 @@ export async function planChapters(seriesId: number, count: number) {
         outline: d.outline,
       })),
     );
+  return kept.length;
 }
 
 export type WriteMode = "start" | "continue" | "finish";
@@ -70,6 +71,9 @@ export async function writeChapterStep(chapterId: number, mode: WriteMode) {
   const s = await getSeries(chapter.seriesId);
   const history = isHistoryStory(s);
   if (history && !chapter.dossier) chapter = { ...chapter, dossier: await ensureDossier(chapter) };
+  // Lượt chốt trước lỗi (soát hỏng giữa chừng) mà kịch bản đã viết tới kết: chỉ chốt lại, không viết tiếp đè sau đoạn kết.
+  if (history && mode === "continue" && historyScriptComplete(wordCount(chapter.content), s.targetWords))
+    return { words: wordCount(chapter.content), enough: true, warning: null };
   const ai = textProvider();
   let content = chapter.content;
   let warning: string | null = null;

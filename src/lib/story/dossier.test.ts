@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildDossier, DOSSIER_MAX_CHARS_PER_SOURCE, dossierText } from "./dossier";
 
 const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+/** Bài đủ dài để qua ngưỡng hồ sơ tối thiểu. */
+const LONG = "x".repeat(4000);
 const page = (o: Record<string, unknown>) => json({ query: { pages: { "1": { pageid: 1, ...o } } } });
 
 /** fetch giả theo host: en.wikipedia.org / vi.wikipedia.org. */
@@ -14,13 +16,13 @@ describe("hồ sơ tư liệu Wikipedia", () => {
 
   it("lấy bài tiếng Anh + bài tiếng Việt qua langlink, tiếng Việt đứng trước, kèm URL", async () => {
     const fetchSpy = wiki(
-      page({ title: "Battle of Bạch Đằng (938)", extract: "EN text", fullurl: "https://en.wikipedia.org/wiki/Battle_of_B", langlinks: [{ lang: "vi", "*": "Trận Bạch Đằng (938)" }] }),
-      page({ title: "Trận Bạch Đằng (938)", extract: "VI text", fullurl: "https://vi.wikipedia.org/wiki/Tran" }),
+      page({ title: "Battle of Bạch Đằng (938)", extract: `EN text ${LONG}`, fullurl: "https://en.wikipedia.org/wiki/Battle_of_B", langlinks: [{ lang: "vi", "*": "Trận Bạch Đằng (938)" }] }),
+      page({ title: "Trận Bạch Đằng (938)", extract: `VI text ${LONG}`, fullurl: "https://vi.wikipedia.org/wiki/Tran" }),
     );
     vi.stubGlobal("fetch", fetchSpy);
     const d = await buildDossier("Battle of Bạch Đằng (938)");
     expect(d.sources.map((s) => s.lang)).toEqual(["vi", "en"]);
-    expect(d.sources[0]).toMatchObject({ title: "Trận Bạch Đằng (938)", url: "https://vi.wikipedia.org/wiki/Tran", text: "VI text" });
+    expect(d.sources[0]).toMatchObject({ title: "Trận Bạch Đằng (938)", url: "https://vi.wikipedia.org/wiki/Tran", text: `VI text ${LONG}` });
     const [enUrl, enInit] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit];
     expect(enUrl).toContain("redirects=1");
     expect((enInit.headers as Record<string, string>)["User-Agent"]).toContain("ma-ton-studio");
@@ -35,7 +37,7 @@ describe("hồ sơ tư liệu Wikipedia", () => {
   });
 
   it("không có bài tiếng Việt → hồ sơ chỉ tiếng Anh", async () => {
-    vi.stubGlobal("fetch", wiki(page({ title: "X", extract: "EN", fullurl: "u" })));
+    vi.stubGlobal("fetch", wiki(page({ title: "X", extract: LONG, fullurl: "u" })));
     expect((await buildDossier("X")).sources.map((s) => s.lang)).toEqual(["en"]);
   });
 
@@ -54,7 +56,7 @@ describe("hồ sơ tư liệu Wikipedia", () => {
     const fetchSpy = vi
       .fn()
       .mockResolvedValueOnce(tooMany())
-      .mockResolvedValueOnce(page({ title: "X", extract: "EN", fullurl: "u" }));
+      .mockResolvedValueOnce(page({ title: "X", extract: LONG, fullurl: "u" }));
     vi.stubGlobal("fetch", fetchSpy);
     const sleep = vi.fn(async () => {});
     expect((await buildDossier("X", sleep)).sources).toHaveLength(1);
@@ -63,7 +65,7 @@ describe("hồ sơ tư liệu Wikipedia", () => {
 
   it("mục 'Sources' / mục con '=== Notes ===' giữa bài (bàn về sử liệu) không bị cắt", async () => {
     const extract = [
-      "Mở đầu.",
+      `Mở đầu. ${LONG}`,
       "== Sources ==\nHerodotus là nguồn chính.",
       "=== Notes ===\nGhi chú giữa bài.",
       "== Battle ==\nDIEN_BIEN",
@@ -74,5 +76,15 @@ describe("hồ sơ tư liệu Wikipedia", () => {
     expect(text).toContain("Herodotus");
     expect(text).toContain("DIEN_BIEN");
     expect(text).not.toContain("NGUON_RAC");
+  });
+
+  it("tiêu đề không hợp lệ (invalid) → báo như không tìm thấy", async () => {
+    vi.stubGlobal("fetch", wiki(page({ title: "A|B", invalid: "" })));
+    await expect(buildDossier("A|B")).rejects.toThrow(/Không tìm thấy bài Wikipedia/);
+  });
+
+  it("hồ sơ quá mỏng (trang trống / định hướng) → báo lỗi, không viết từ hồ sơ rỗng", async () => {
+    vi.stubGlobal("fetch", wiki(page({ title: "X", extract: "Ngắn.", fullurl: "u" })));
+    await expect(buildDossier("X")).rejects.toThrow(/quá ít tư liệu/);
   });
 });

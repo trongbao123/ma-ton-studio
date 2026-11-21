@@ -46,4 +46,11 @@ describe("soát sự thật nhiều vòng", () => {
     expect(p.prompt).toContain("KỊCH BẢN XYZ");
     expect(p.prompt).toContain("HỒ SƠ ABC");
   });
+
+  it("prompt soát giới hạn số lỗi và đủ chỗ trả lời", async () => {
+    expect(factCheckPrompt("k", "h").prompt).toMatch(/tối đa 40 lỗi/);
+    const { ai, generateJson } = fakeAi([]);
+    await factCheckScript(ai, "k", "h");
+    expect(generateJson.mock.calls[0][0].maxOutputTokens).toBeGreaterThanOrEqual(32000);
+  });
 });

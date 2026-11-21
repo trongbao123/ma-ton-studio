@@ -6,6 +6,8 @@ import type { FactIssue } from "./history-types";
 
 /** Số vòng vá tối đa (tổng số lượt soát = 1 + số vòng vá). */
 export const FACT_FIX_ROUNDS = 2;
+/** Chỗ cho câu trả lời của lượt soát (gồm phần suy nghĩ của model). */
+const FACT_CHECK_MAX_OUTPUT_TOKENS = 32_000;
 
 export const factIssuesSchema = z.object({
   issues: z.array(
@@ -50,7 +52,7 @@ Với mỗi lỗi:
 - quote: copy NGUYÊN VĂN một đoạn ngắn LIÊN TỤC trong kịch bản chứa lỗi (đủ để tìm thấy duy nhất, không sửa dấu câu);
 - note: hồ sơ nói gì (ngắn);
 - fix: đoạn thay thế cho đúng quote, đúng theo hồ sơ, giữ giọng kể; nếu không có cách nói đúng thì "" (xoá đoạn đó).
-BỎ QUA câu tả không khí chung không gắn số liệu/tên (gió, sông nước, "trận chiến khốc liệt"). Không có lỗi thì issues = [].`,
+BỎ QUA câu tả không khí chung không gắn số liệu/tên (gió, sông nước, "trận chiến khốc liệt"). Trả tối đa 40 lỗi quan trọng nhất (sai năm/tên/số/kết cục trước); vòng soát sau sẽ bắt tiếp phần còn lại. Không có lỗi thì issues = [].`,
   };
 }
 
@@ -73,7 +75,8 @@ export async function factCheckScript(ai: TextProvider, script: string, dossierT
       schema: factIssuesSchema,
       temperature: 0,
       task: "story",
-      maxOutputTokens: 8000,
+      // Model có suy nghĩ tính cả phần suy nghĩ vào giới hạn này — 8k từng làm JSON bị cắt giữa chừng.
+      maxOutputTokens: FACT_CHECK_MAX_OUTPUT_TOKENS,
     });
     if (!issues.length || round >= FACT_FIX_ROUNDS) return { script: current, issues };
     current = applyFactFixes(current, issues);

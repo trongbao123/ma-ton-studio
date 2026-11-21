@@ -47,25 +47,44 @@ const WIKI_LINE = "Wikipedia: ";
 export const topicOutline = (t: HistoryTopic) => `${t.angle}\n${WIKI_LINE}${t.wiki}`;
 /** Tiêu đề bài Wikipedia tiếng Anh ghi trong dàn ý; không có thì null. */
 export function wikiTitleOf(outline: string): string | null {
-  const line = outline.split("\n").find((l) => l.startsWith(WIKI_LINE));
+  // AI hay ghi dàn ý dạng gạch đầu dòng ("- Wikipedia: X") — bỏ gạch/khoảng trắng đầu dòng trước khi so.
+  const line = outline
+    .split("\n")
+    .map((l) => l.replace(/^[\s\-•*]+/, "").trim())
+    .find((l) => l.startsWith(WIKI_LINE));
   return line ? line.slice(WIKI_LINE.length).trim() || null : null;
 }
 
-/** Chủ kênh 21/11/2026: "cái gì nhạy cảm quá thì né". Từ khoá so sau khi bỏ dấu. */
-const SENSITIVE_KEYWORDS = [
-  "hoang sa", "truong sa", "bien dong", "bien gioi 1979", "chien tranh viet nam", "khang chien chong my",
-  "viet nam cong hoa", "israel", "palestine", "gaza", "ukraine", "dai loan", "tay tang", "tan cuong",
+/**
+ * Chủ kênh 21/11/2026: "cái gì nhạy cảm quá thì né". Từ khoá tiếng Việt so trên chuỗi CÒN DẤU — bỏ dấu thì "đại loạn" thành
+ * "dai loan" (Đài Loan), "biến động" thành "bien dong" (Biển Đông). Từ khoá ASCII so theo ranh giới từ.
+ */
+const SENSITIVE_VI_KEYWORDS = [
+  "hoàng sa", "trường sa", "biển đông", "biên giới 1979", "chiến tranh việt nam", "kháng chiến chống mỹ",
+  "việt nam cộng hòa", "việt nam cộng hoà", "đài loan", "tây tạng", "tân cương",
 ];
+const SENSITIVE_ASCII = /\b(israel|palestine|gaza|ukraine|taiwan|tibet|xinjiang|spratly|paracel)\b/i;
 /** Mốc bắt đầu vùng nhạy cảm: chiến tranh/chính trị hiện đại. */
 const SENSITIVE_FROM_YEAR = 1945;
-const stripDiacritics = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/gi, "d").toLowerCase();
+/**
+ * Số 4 chữ số được coi là NĂM khi đứng sau "năm/year" hoặc không có chữ theo sau ("Điện Biên Phủ 1954", "(1968)");
+ * "2000 kỵ binh" là số lượng, không phải năm.
+ */
+const YEAR_PATTERN = /(?:\b(?:năm|year)\s+(\d{4})\b)|(?:\b(\d{4})\b(?!\s*\p{L}))/giu;
 
 /** Đề tài chạm vùng nhạy cảm chính trị (năm ≥ 1945 hoặc từ khoá cấm) — bị loại trước khi lưu. */
 export function isSensitiveTopic(text: string): boolean {
-  const plain = stripDiacritics(text);
-  const modernYear = [...plain.matchAll(/\b(\d{4})\b/g)].some((m) => Number(m[1]) >= SENSITIVE_FROM_YEAR && Number(m[1]) <= new Date().getFullYear());
-  return modernYear || SENSITIVE_KEYWORDS.some((k) => plain.includes(k));
+  const lower = text.normalize("NFC").toLowerCase();
+  const thisYear = new Date().getFullYear();
+  const modernYear = [...lower.matchAll(YEAR_PATTERN)].some((m) => {
+    const year = Number(m[1] ?? m[2]);
+    return year >= SENSITIVE_FROM_YEAR && year <= thisYear;
+  });
+  return modernYear || SENSITIVE_VI_KEYWORDS.some((k) => lower.includes(k)) || SENSITIVE_ASCII.test(lower);
 }
+
+/** Kịch bản đã viết tới lượt kết (đủ ~85% độ dài): lượt sau chỉ cần soát + chốt, không viết tiếp đè sau đoạn kết. */
+export const historyScriptComplete = (words: number, target = HISTORY_TARGET_WORDS) => words >= target * 0.85;
 
 /** Luật không hư cấu — dùng chung cho người viết và người soát. */
 const NO_FICTION_RULES = [
