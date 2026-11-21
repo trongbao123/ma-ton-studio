@@ -92,7 +92,8 @@ export function assertReelDuration(seconds: number) {
 }
 
 type PageRef = { pageId: string; token: string };
-type ReelOptions = { description: string; seconds: number; scheduledAt?: Date };
+/** `draft`: tải lên dạng nháp, chủ kênh tự bấm đăng trên Meta Business Suite (app chưa phát hành thì bài app đăng chỉ admin thấy). */
+type ReelOptions = { description: string; seconds: number; scheduledAt?: Date; draft?: boolean };
 const MS_PER_SECOND = 1000;
 const unix = (d: Date) => String(Math.floor(d.getTime() / MS_PER_SECOND));
 
@@ -104,6 +105,12 @@ async function graphJson<T>(res: Response): Promise<T> {
 
 async function graphPost<T>(url: string, params: Record<string, string>): Promise<T> {
   return graphJson<T>(await fetch(url, { method: "POST", body: new URLSearchParams(params) }));
+}
+
+function reelState(opts: ReelOptions): Record<string, string> {
+  if (opts.draft) return { video_state: "DRAFT" };
+  if (opts.scheduledAt) return { video_state: "SCHEDULED", scheduled_publish_time: unix(opts.scheduledAt) };
+  return { video_state: "PUBLISHED" };
 }
 
 /** Đăng Reel 3 pha: start (lấy video_id + upload_url) → upload nhị phân → finish (đăng ngay hoặc hẹn giờ). */
@@ -125,7 +132,7 @@ export async function publishReelAs(page: PageRef, file: string, opts: ReelOptio
     access_token: page.token,
     video_id: start.video_id,
     description: opts.description,
-    ...(opts.scheduledAt ? { video_state: "SCHEDULED", scheduled_publish_time: unix(opts.scheduledAt) } : { video_state: "PUBLISHED" }),
+    ...reelState(opts),
   });
   return { videoId: start.video_id };
 }
@@ -136,7 +143,7 @@ export const CHUNK_RETRY_DELAYS_MS = [2_000, 5_000, 15_000];
 /** Một mảnh treo quá lâu thì huỷ để thử lại, không giữ job mãi. */
 const CHUNK_TIMEOUT_MS = 120_000;
 const HTTP_SERVER_ERROR = 500;
-type VideoOptions = { title: string; description: string; scheduledAt?: Date };
+type VideoOptions = { title: string; description: string; scheduledAt?: Date; draft?: boolean };
 /** Chờ giữa các lần thử lại — test truyền bản giả để không phải chờ thật. */
 type Sleep = (ms: number) => Promise<void>;
 const realSleep: Sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -174,7 +181,7 @@ export async function publishPageVideoAs(page: PageRef, file: string, opts: Vide
     upload_session_id: session.upload_session_id,
     title: opts.title,
     description: opts.description,
-    ...(opts.scheduledAt ? { published: "false", scheduled_publish_time: unix(opts.scheduledAt) } : {}),
+    ...videoPublishState(opts),
   });
   return { videoId: session.video_id };
 }
@@ -186,6 +193,12 @@ function parseOffsets(o: Partial<Offsets>, previousStart: number): { start: numb
   const valid = o.start_offset != null && o.end_offset != null && Number.isInteger(start) && Number.isInteger(end) && end >= start;
   if (!valid || start <= previousStart) throw new Error(`Facebook trả offset không hợp lệ (${JSON.stringify(o)}) — dừng upload.`);
   return { start, end };
+}
+
+function videoPublishState(opts: VideoOptions): Record<string, string> {
+  if (opts.draft) return { published: "false" };
+  if (opts.scheduledAt) return { published: "false", scheduled_publish_time: unix(opts.scheduledAt) };
+  return {};
 }
 
 type ChunkUpload = { endpoint: string; token: string; sessionId: string; begin: number; chunk: Buffer; chunkNo: number; sleep: Sleep };

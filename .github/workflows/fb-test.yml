@@ -14,6 +14,10 @@ on:
         default: reel
         type: choice
         options: [reel, video]
+      draft:
+        description: "Tải dạng nháp (chủ kênh tự bấm đăng trên Meta Business Suite)"
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -39,5 +43,6 @@ jobs:
         env:
           CHANNEL: ${{ inputs.channel }}
           MODE: ${{ inputs.mode }}
+          FB_DRAFT: ${{ inputs.draft && '1' || '0' }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SECRETS_KEY: ${{ secrets.SECRETS_KEY }}

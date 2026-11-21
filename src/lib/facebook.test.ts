@@ -274,3 +274,42 @@ describe("sửa sau review", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("đăng dạng nháp (chủ kênh tự bấm đăng)", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const page = { pageId: PAGE, token: "pt" };
+  async function tmpFile(bytes: number) {
+    const { mkdtemp, writeFile } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const path = await import("node:path");
+    const f = path.join(await mkdtemp(path.join(tmpdir(), "fbd-")), "v.mp4");
+    await writeFile(f, Buffer.alloc(bytes));
+    return f;
+  }
+
+  it("Reel nháp → video_state=DRAFT", async () => {
+    const f = await tmpFile(10);
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(json({ video_id: "v1", upload_url: "https://rupload.facebook.com/x" }))
+      .mockResolvedValueOnce(json({ success: true }))
+      .mockResolvedValueOnce(json({ success: true }));
+    vi.stubGlobal("fetch", fetchSpy);
+    await publishReelAs(page, f, { description: "x", seconds: 30, draft: true });
+    expect(String((fetchSpy.mock.calls[2][1] as RequestInit).body)).toContain("video_state=DRAFT");
+  });
+
+  it("video dài nháp → published=false, không hẹn giờ", async () => {
+    const f = await tmpFile(10);
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(json({ upload_session_id: "s1", video_id: "vid", start_offset: "0", end_offset: "10" }))
+      .mockResolvedValueOnce(json({ start_offset: "10", end_offset: "10" }))
+      .mockResolvedValueOnce(json({ success: true }));
+    vi.stubGlobal("fetch", fetchSpy);
+    await publishPageVideoAs(page, f, { title: "T", description: "D", draft: true });
+    const finish = String((fetchSpy.mock.calls[2][1] as RequestInit).body);
+    expect(finish).toContain("published=false");
+    expect(finish).not.toContain("scheduled_publish_time");
+  });
+});
