@@ -12,7 +12,7 @@ export function FacebookConnect({ connected }: { connected: FacebookPageStatus[]
       <div>
         <h2 className="font-semibold">Facebook Page</h2>
         <p className="text-xs text-muted">
-          Cần FB_APP_ID / FB_APP_SECRET ở trên. Graph API Explorer → chọn app → User Token với quyền pages_show_list,
+          Cần FB_APP_ID / FB_APP_SECRET (ô key bên dưới). Graph API Explorer → chọn app → User Token với quyền pages_show_list,
           pages_read_engagement, pages_manage_posts, publish_video → dán vào đây (token này chỉ dùng một lần, không lưu).
         </p>
       </div>

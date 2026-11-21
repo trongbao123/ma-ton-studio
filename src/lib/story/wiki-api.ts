@@ -32,11 +32,23 @@ const NAMED_ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quo
 export function htmlToText(html: string): string {
   return html
     .replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, "")
+    // Số chú thích "[1]" và nút "[sửa]" không phải nội dung.
+    .replace(/<sup[^>]*class="[^"]*reference[^"]*"[^>]*>[\s\S]*?<\/sup>/gi, "")
+    .replace(/<span[^>]*class="[^"]*mw-editsection[^"]*"[^>]*>[\s\S]*?<\/span>/gi, "")
     .replace(/<br\s*\/?>|<\/(p|div|li|h\d|tr)>/gi, "\n")
+    .replace(/<\/t[dh]>/gi, " ")
     .replace(/<[^>]+>/g, "")
-    .replace(/&#(\d+);/g, (_, code: string) => String.fromCodePoint(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex: string) => codePointText(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, code: string) => codePointText(Number(code)))
     .replace(/&(#39|[a-z]+);/gi, (entity, name: string) => NAMED_ENTITIES[name.toLowerCase()] ?? entity)
     .replace(/[ \t]+\n/g, "\n")
+    .replace(/[ \t]{2,}/g, " ")
     .replace(/\n\s*\n+/g, "\n")
     .trim();
+}
+
+/** Ký tự của mã Unicode; mã hỏng (ngoài phạm vi) → bỏ, không làm sập cả trang. */
+const MAX_CODE_POINT = 0x10ffff;
+function codePointText(code: number): string {
+  return Number.isInteger(code) && code >= 0 && code <= MAX_CODE_POINT ? String.fromCodePoint(code) : "";
 }

@@ -30,8 +30,9 @@ async function Editor() {
   const pages = await listFacebookPages().catch(() => []);
   return (
     <>
-      <AiRoutingEditor initial={routing} initialImages={images} available={withCliStatus(availableProviders(), cli)} secrets={secrets} cli={cli} />
+      {/* Đặt TRƯỚC trình chỉnh AI: trình chỉnh có thanh "Lưu cài đặt" cố định ở đáy màn hình và chỉ chừa chỗ ở cuối chính nó. */}
       <FacebookConnect connected={pages} />
+      <AiRoutingEditor initial={routing} initialImages={images} available={withCliStatus(availableProviders(), cli)} secrets={secrets} cli={cli} />
     </>
   );
 }

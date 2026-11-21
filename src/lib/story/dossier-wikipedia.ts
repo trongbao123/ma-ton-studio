@@ -17,6 +17,8 @@ const BROAD_TITLES = new Set(
   ["Vietnam", "China", "France", "Japan", "Russia", "England", "United Kingdom", "Greece", "Italy", "Spain", "Germany", "Mongolia",
    "Korea", "India", "Persia", "Europe", "Asia", "Roman Empire", "Byzantine Empire", "Ottoman Empire"].map((t) => t.toLowerCase()),
 );
+/** Tiêu đề trỏ tới trang quá rộng (quốc gia, đế chế, châu lục) — vô dụng làm bài liên quan hay từ khoá đề tài. */
+export const isBroadTitle = (title: string) => BROAD_TITLES.has(title.trim().toLowerCase());
 const JUNK_TITLE = /\((identifier|disambiguation)\)|coordinate|killed in action|^year \d+|^\d+( (bc|ad|bce|ce))?$/i;
 
 type WikiPage = { title: string; extract?: string; fullurl?: string; missing?: string; invalid?: string; langlinks?: { lang: string; "*": string }[] };
@@ -51,10 +53,11 @@ const timesMentioned = (title: string, text: string) => text.toLowerCase().split
 /** Bài liên quan đáng lấy: bỏ rác/trang rộng/trùng bài chính, xếp theo số lần được nhắc trong bài chính. */
 export function pickRelatedTitles(leadLinks: string[], articleText: string, mainTitle: string): string[] {
   const unique = [...new Set(leadLinks)].filter(
-    (t) => t !== mainTitle && !JUNK_TITLE.test(t) && !BROAD_TITLES.has(t.toLowerCase()),
+    (t) => t !== mainTitle && !JUNK_TITLE.test(t) && !isBroadTitle(t),
   );
   return unique
     .map((title) => ({ title, mentions: timesMentioned(title, articleText) }))
+    .filter((x) => x.mentions > 0)
     .sort((a, b) => b.mentions - a.mentions)
     .slice(0, RELATED_MAX)
     .map((x) => x.title);
@@ -69,8 +72,12 @@ async function relatedSources(main: WikiPage, sleep: Sleep): Promise<DossierSour
   const leadLinks = (parsed.parse?.links ?? []).filter((l) => l.ns === 0).map((l) => l["*"]);
   const related: DossierSource[] = [];
   for (const title of pickRelatedTitles(leadLinks, main.extract ?? "", main.title)) {
-    const page = await fetchWikiPage("en", title, sleep);
-    if (page.missing === undefined && page.extract) related.push(toSource("en", page, RELATED_MAX_CHARS));
+    // Một bài lỗi (429 hết lượt thử…) chỉ mất bài đó, không mất các bài đã lấy.
+    const page = await fetchWikiPage("en", title, sleep).catch((e: unknown) => {
+      console.warn(`⚠ Bỏ bài liên quan "${title}":`, e instanceof Error ? e.message : e);
+      return null;
+    });
+    if (page && page.missing === undefined && page.extract) related.push(toSource("en", page, RELATED_MAX_CHARS));
   }
   return related;
 }

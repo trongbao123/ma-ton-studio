@@ -52,6 +52,7 @@ Với mỗi lỗi:
 - quote: copy NGUYÊN VĂN một đoạn ngắn LIÊN TỤC trong kịch bản chứa lỗi (đủ để tìm thấy duy nhất, không sửa dấu câu);
 - note: hồ sơ nói gì (ngắn);
 - fix: đoạn thay thế cho đúng quote, đúng theo hồ sơ, giữ giọng kể; nếu không có cách nói đúng thì "" (xoá đoạn đó).
+THỨ BẬC NGUỒN (đầu mỗi mục hồ sơ ghi loại): sử liệu gốc (wikisource) và bách khoa (wikipedia, Britannica) tin hơn báo (web). Khi hai nguồn trong hồ sơ ghi khác nhau mà kịch bản NÓI RÕ cả hai ("sử chép…, nhưng có ý kiến…") thì câu đó ĐÚNG — không bắt lỗi, không "sửa" về một bên. Kịch bản chỉ theo một nguồn mà nguồn tin hơn nói khác → "mau-thuan", fix theo nguồn tin hơn hoặc nói rõ cả hai.
 BỎ QUA câu tả không khí chung không gắn số liệu/tên (gió, sông nước, "trận chiến khốc liệt"). Trả tối đa 40 lỗi quan trọng nhất (sai năm/tên/số/kết cục trước); vòng soát sau sẽ bắt tiếp phần còn lại. Không có lỗi thì issues = [].`,
   };
 }

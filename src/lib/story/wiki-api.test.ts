@@ -35,4 +35,9 @@ describe("HTML → chữ", () => {
   it("bỏ script/thẻ, giữ xuống dòng, giải mã entity", () => {
     expect(htmlToText("<p>A &amp; B</p><script>x</script><br>C&#272;&nbsp;")).toBe("A & B\nCĐ");
   });
+  it("entity hex, entity số hỏng không làm sập; bỏ [sửa] và số chú thích; ô bảng cách nhau", () => {
+    expect(htmlToText("A&#x110;B&#99999999;C")).toBe("AĐBC");
+    expect(htmlToText('Trận<sup class="reference">[1]</sup> diễn ra<span class="mw-editsection">[sửa]</span>')).toBe("Trận diễn ra");
+    expect(htmlToText("<td>Năm</td><td>938</td>")).toBe("Năm 938");
+  });
 });

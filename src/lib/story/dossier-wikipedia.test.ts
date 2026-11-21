@@ -16,6 +16,7 @@ describe("chọn bài Wikipedia liên quan", () => {
     for (const junk of ["Geographic coordinate system", "938", "Year 938", "ISBN (identifier)", "Vietnam", "Battle of Bạch Đằng (disambiguation)"])
       expect(picked).not.toContain(junk);
     expect(picked.length).toBeLessThanOrEqual(RELATED_MAX);
+    expect(picked).not.toContain("Kiều Công Hãn"); // không được nhắc lần nào trong bài chính
   });
 });
 

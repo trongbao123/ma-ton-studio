@@ -53,4 +53,9 @@ describe("soát sự thật nhiều vòng", () => {
     await factCheckScript(ai, "k", "h");
     expect(generateJson.mock.calls[0][0].maxOutputTokens).toBeGreaterThanOrEqual(32000);
   });
+  it("lượt soát biết thứ bậc nguồn và chấp nhận câu nói rõ hai nguồn khác nhau", () => {
+    const p = factCheckPrompt("k", "h").prompt;
+    expect(p).toMatch(/wikisource/);
+    expect(p).toMatch(/hai nguồn/);
+  });
 });

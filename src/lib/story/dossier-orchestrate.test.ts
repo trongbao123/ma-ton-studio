@@ -5,13 +5,18 @@ const src = (kind: DossierSource["kind"], lang: "vi" | "en", title: string): Dos
 
 vi.mock("./dossier-wikipedia", () => ({
   MAIN_MAX_CHARS: 40_000,
+  isBroadTitle: (t: string) => ["russia", "vietnam", "china"].includes(t.toLowerCase()),
   wikipediaSources: vi.fn(async () => ({
     main: [src("wikipedia", "vi", "Trận Bạch Đằng (938)"), src("wikipedia", "en", "Battle of Bạch Đằng (938)")],
     related: [src("wikipedia", "en", "Ngô Quyền"), src("wikipedia", "en", "Southern Han")],
   })),
 }));
 vi.mock("./dossier-wikisource", () => ({
-  wikisourceSources: vi.fn(async (q: { lang: string }) => [src("wikisource", q.lang as "vi" | "en", `ws-${q.lang}`)]),
+  WIKISOURCE_MAX_PAGES: 3,
+  // Mỗi lượt trả 3 trang → tổng Wikisource (vi + en) vẫn chỉ 3 trang.
+  wikisourceSources: vi.fn(async (q: { lang: string; maxPages: number }) =>
+    Array.from({ length: q.maxPages }, (_, i) => src("wikisource", q.lang as "vi" | "en", i ? `ws-${q.lang}-${i}` : `ws-${q.lang}`)),
+  ),
 }));
 vi.mock("./dossier-web", () => ({
   webSources: vi.fn(async () => {
@@ -19,7 +24,7 @@ vi.mock("./dossier-web", () => ({
   }),
 }));
 
-const { buildDossier, dossierText, topicKeywords } = await import("./dossier");
+const { buildDossier, dossierText, topicTerms } = await import("./dossier");
 const { wikisourceSources } = await import("./dossier-wikisource");
 
 describe("điều phối hồ sơ 3 lớp", () => {
@@ -29,7 +34,8 @@ describe("điều phối hồ sơ 3 lớp", () => {
       "wikipedia:Trận Bạch Đằng (938)",
       "wikipedia:Battle of Bạch Đằng (938)",
       "wikisource:ws-vi",
-      "wikisource:ws-en",
+      "wikisource:ws-vi-1",
+      "wikisource:ws-vi-2",
       "wikipedia:Ngô Quyền",
       "wikipedia:Southern Han",
     ]);
@@ -39,8 +45,8 @@ describe("điều phối hồ sơ 3 lớp", () => {
     await buildDossier("Battle of Bạch Đằng (938)", async () => {});
     const calls = vi.mocked(wikisourceSources).mock.calls.map((c) => c[0]);
     const viQuery = calls.find((q) => q.lang === "vi")!;
-    expect(viQuery.keywords).toContain("Bạch Đằng");
-    expect(viQuery.keywords).toContain("Ngô Quyền");
+    expect(viQuery.terms.topic).toContain("Bạch Đằng");
+    expect(viQuery.terms.extra).toContain("Ngô Quyền");
     expect(viQuery.search).toContain("Ngô Quyền");
   });
 
@@ -51,11 +57,12 @@ describe("điều phối hồ sơ 3 lớp", () => {
 });
 
 describe("từ khoá đề tài", () => {
-  it("bỏ chữ chung (Trận/Battle of…) và phần trong ngoặc", () => {
-    expect(topicKeywords("Trận Bạch Đằng (938)")).toEqual(["Bạch Đằng"]);
-    expect(topicKeywords("Battle of Thermopylae")).toEqual(["Thermopylae"]);
-    expect(topicKeywords("Hannibal's crossing of the Alps")).toEqual(["Alps", "Hannibal"]);
-    expect(topicKeywords("Genghis Khan")).toEqual(["Genghis Khan"]);
-    expect(topicKeywords("Khởi nghĩa Lam Sơn")).toEqual(["Lam Sơn"]);
+  it("giữ cụm đầy đủ làm từ khoá chính, bỏ chữ chung/trang rộng/từ quá ngắn, giữ năm trong ngoặc", () => {
+    expect(topicTerms("Trận Bạch Đằng (938)")).toEqual(["Trận Bạch Đằng", "Bạch Đằng", "938"]);
+    expect(topicTerms("Battle of Hastings")).toEqual(["Battle of Hastings", "Hastings"]);
+    expect(topicTerms("French invasion of Russia")).toEqual(["French invasion of Russia"]);
+    expect(topicTerms("Hannibal's crossing of the Alps")).toEqual(["Hannibal's crossing of the Alps", "Alps", "Hannibal"]);
+    expect(topicTerms("Qin's wars of unification")).toEqual(["Qin's wars of unification", "unification"]);
+    expect(topicTerms("Genghis Khan")).toEqual(["Genghis Khan"]);
   });
 });

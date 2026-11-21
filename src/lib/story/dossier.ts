@@ -1,7 +1,7 @@
 // Hồ sơ tư liệu cho kênh lịch sử — điều phối 3 lớp nguồn: Wikipedia (chính + liên quan), sử liệu gốc Wikisource,
 // web tin cậy (Tavily). Kịch bản chỉ được dùng chi tiết trong hồ sơ; lượt soát sự thật đối chiếu với chính hồ sơ này.
-import { MAIN_MAX_CHARS, wikipediaSources } from "./dossier-wikipedia";
-import { wikisourceSources } from "./dossier-wikisource";
+import { isBroadTitle, MAIN_MAX_CHARS, wikipediaSources } from "./dossier-wikipedia";
+import { WIKISOURCE_MAX_PAGES, wikisourceSources } from "./dossier-wikisource";
 import { webSources } from "./dossier-web";
 import type { Dossier, DossierSource } from "./history-types";
 import { realSleep, type Sleep } from "./wiki-api";
@@ -13,17 +13,31 @@ export const DOSSIER_MIN_CHARS = 3_000;
 /** Số nhân vật (bài liên quan có tên Việt) góp vào truy vấn Wikisource tiếng Việt. */
 const VI_PEOPLE_IN_QUERY = 2;
 
-/** Chữ chung đầu tên đề tài — bỏ để còn phần riêng dùng làm từ khoá ("Trận Bạch Đằng" → "Bạch Đằng"). */
+/** Chữ chung đầu tên đề tài — bỏ để còn phần riêng ("Trận Bạch Đằng" → "Bạch Đằng"). */
 const GENERIC_PREFIX = /^(trận|hải chiến|khởi nghĩa|chiến tranh|cuộc vây hãm|cuộc|vụ|(battle|siege|fall|sinking|assassination|invasion|wars?|crossing|conquest)( of)?( the)?)\s+/i;
+/** Từ khoá ngắn hơn ngần này ("Qin") khớp nhầm quá nhiều. */
+const MIN_TERM_CHARS = 4;
+const usableTerm = (t: string) => t.length >= MIN_TERM_CHARS && !isBroadTitle(t);
+/** Phần riêng của tên: sau "of (the)" nếu có, bỏ chữ chung đầu. */
+const coreOf = (name: string) => {
+  const ofPart = name.match(/\bof (the )?(.+)$/i);
+  return (ofPart ? ofPart[2] : name).replace(GENERIC_PREFIX, "").trim();
+};
 
-/** Từ khoá đề tài từ một tiêu đề: bỏ ngoặc và chữ chung; "X's … of the Y" → ["Y", "X"]. */
-export function topicKeywords(title: string): string[] {
+/**
+ * Từ khoá đề tài: [cụm đầy đủ (bỏ ngoặc), phần riêng, chủ sở hữu "X's", năm trong ngoặc]. Phần riêng/chủ sở hữu quá ngắn hoặc là
+ * trang rộng (Russia, China…) bị bỏ — giữ cụm đầy đủ để "Battle of Hastings" không khớp Warren Hastings.
+ */
+export function topicTerms(title: string): string[] {
   const bare = title.replace(/\s*\([^)]*\)/g, "").trim();
+  const year = title.match(/\((\d{3,4})( BC)?\)/)?.[1];
   const possessive = bare.match(/^(.+?)'s\s+(.+)$/);
-  if (possessive) return [...topicKeywords(possessive[2]), possessive[1].trim()];
-  const ofPart = bare.match(/\bof (the )?(.+)$/i);
-  const core = (ofPart ? ofPart[2] : bare).replace(GENERIC_PREFIX, "").trim();
-  return core ? [core] : [bare];
+  const core = coreOf(possessive ? possessive[2] : bare);
+  const terms = [bare];
+  if (core && core !== bare && usableTerm(core)) terms.push(core);
+  if (possessive && usableTerm(possessive[1].trim())) terms.push(possessive[1].trim());
+  if (year) terms.push(year);
+  return terms;
 }
 
 /** Tên có dấu tiếng Việt (bài liên quan là nhân vật/địa danh Việt) — dùng làm từ khoá tìm sử liệu Việt. */
@@ -39,6 +53,13 @@ async function optionalLayer(name: string, load: () => Promise<DossierSource[]>)
   }
 }
 
+/** Đoạn chính sử Việt: tìm theo phần riêng tên trận + tên nhân vật Việt; đoạn phải đúng đề tài (xem excerptAround). */
+function viChronicles(viTitle: string, viPeople: string[], sleep: Sleep): Promise<DossierSource[]> {
+  const topic = topicTerms(viTitle);
+  const search = [topic[1] ?? topic[0], ...viPeople].join(" ");
+  return wikisourceSources({ lang: "vi", search, terms: { topic, extra: viPeople }, maxPages: WIKISOURCE_MAX_PAGES }, sleep);
+}
+
 /**
  * Gom hồ sơ cho đề tài theo bài Wikipedia tiếng Anh `wikiTitle`. Thứ tự: Wikipedia chính → Wikisource → web → Wikipedia liên quan.
  * Bài chính không tồn tại hoặc hồ sơ quá mỏng → ném lỗi, không viết.
@@ -47,12 +68,13 @@ export async function buildDossier(wikiTitle: string, sleep: Sleep = realSleep):
   const { main, related } = await wikipediaSources(wikiTitle, sleep);
   const viMain = main.find((s) => s.lang === "vi");
   const viPeople = related.map((s) => s.title).filter(looksVietnamese).slice(0, VI_PEOPLE_IN_QUERY);
-  const viKeywords = viMain ? [...topicKeywords(viMain.title), ...viPeople] : [];
-  const chronicles = viMain
-    ? await optionalLayer("Wikisource vi", () => wikisourceSources({ lang: "vi", search: viKeywords.join(" "), keywords: viKeywords }, sleep))
+  // Sử Việt trước; sử gia cổ / bách khoa tiếng Anh lấy phần còn lại — tổng Wikisource tối đa WIKISOURCE_MAX_PAGES trang.
+  const chronicles = viMain ? await optionalLayer("Wikisource vi", () => viChronicles(viMain.title, viPeople, sleep)) : [];
+  const enRoom = WIKISOURCE_MAX_PAGES - chronicles.length;
+  const enTerms = topicTerms(wikiTitle);
+  const primary = enRoom > 0
+    ? await optionalLayer("Wikisource en", () => wikisourceSources({ lang: "en", search: enTerms[1] ?? enTerms[0], terms: { topic: enTerms, extra: [] }, maxPages: enRoom }, sleep))
     : [];
-  const enKeywords = topicKeywords(wikiTitle);
-  const primary = await optionalLayer("Wikisource en", () => wikisourceSources({ lang: "en", search: enKeywords.join(" "), keywords: enKeywords }, sleep));
   const web = await optionalLayer("web", () => webSources(wikiTitle.replace(/\s*\([^)]*\)/g, "")));
   const sources = [...main, ...chronicles, ...primary, ...web, ...related];
   const totalChars = sources.reduce((n, s) => n + s.text.length, 0);
