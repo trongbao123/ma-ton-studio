@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { assertReelDuration, exchangePageToken, FacebookAuthError, publishPageVideoAs, publishReelAs, fbKey, graphError, pagesFromRows, parseFacebookAuth, pickPage } from "./facebook";
+import { assertReelDuration, CHUNK_RETRY_DELAYS_MS, exchangePageToken, FacebookAuthError, publishPageVideoAs, publishReelAs, fbKey, graphError, pagesFromRows, parseFacebookAuth, pickPage } from "./facebook";
 
 const PAGE = "61596491473917";
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -185,7 +185,9 @@ describe("đăng video dài (chia mảnh)", () => {
       .mockResolvedValueOnce(json({ start_offset: "2000", end_offset: "2000" }))
       .mockResolvedValueOnce(json({ success: true }));
     vi.stubGlobal("fetch", fetchSpy);
-    expect(await publishPageVideoAs(page, f, { title: "T", description: "D" })).toEqual({ videoId: "vid" });
+    const sleep = vi.fn(async () => {});
+    expect(await publishPageVideoAs(page, f, { title: "T", description: "D" }, sleep)).toEqual({ videoId: "vid" });
+    expect(sleep.mock.calls).toEqual([[2000], [5000]]);
     expect(fetchSpy.mock.calls.filter((c) => phase(c) === "transfer")).toHaveLength(4);
   });
 
@@ -201,7 +203,74 @@ describe("đăng video dài (chia mảnh)", () => {
       .mockResolvedValueOnce(fail())
       .mockResolvedValueOnce(fail());
     vi.stubGlobal("fetch", fetchSpy);
-    await expect(publishPageVideoAs(page, f, { title: "T", description: "D" })).rejects.toThrow(/mảnh 2/);
+    await expect(publishPageVideoAs(page, f, { title: "T", description: "D" }, async () => {})).rejects.toThrow(/mảnh 2/);
     expect(fetchSpy.mock.calls.some((c) => phase(c) === "finish")).toBe(false);
+  });
+});
+
+describe("sửa sau review", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+  const page = { pageId: PAGE, token: "pt" };
+  async function tmpFile(bytes: number) {
+    const { mkdtemp, writeFile } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const path = await import("node:path");
+    const f = path.join(await mkdtemp(path.join(tmpdir(), "fbr-")), "v.mp4");
+    await writeFile(f, Buffer.alloc(bytes));
+    return f;
+  }
+
+  it("lỗi token chỉ người dùng về Cài đặt AI, không trỏ tới lệnh không tồn tại", async () => {
+    expect(graphError({ error: { code: 190, message: "x" } }, 400).message).toContain("Cài đặt AI");
+    expect(graphError({ error: { code: 190, message: "x" } }, 400).message).not.toContain("fb-connect");
+    process.env.FB_APP_ID = "app";
+    process.env.FB_APP_SECRET = "secret";
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(json({ error: { code: 190, message: "expired" } }, 400)));
+    await expect(exchangePageToken("short", PAGE)).rejects.toThrow(/Graph API Explorer/);
+  });
+
+  it("mảnh lỗi mạng → chờ rồi mới thử lại", async () => {
+    const f = await tmpFile(1000);
+    const events: string[] = [];
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(json({ upload_session_id: "s1", video_id: "vid", start_offset: "0", end_offset: "1000" }))
+      .mockImplementationOnce(async () => {
+        events.push("gửi");
+        throw new TypeError("fetch failed");
+      })
+      .mockImplementationOnce(async () => {
+        events.push("gửi lại");
+        return json({ start_offset: "1000", end_offset: "1000" });
+      })
+      .mockResolvedValueOnce(json({ success: true }));
+    vi.stubGlobal("fetch", fetchSpy);
+    const sleep = vi.fn(async (ms: number) => void events.push(`chờ ${ms}`));
+    await expect(publishPageVideoAs(page, f, { title: "T", description: "D" }, sleep)).resolves.toEqual({ videoId: "vid" });
+    expect(events).toEqual(["gửi", `chờ ${CHUNK_RETRY_DELAYS_MS[0]}`, "gửi lại"]);
+  });
+
+  it("mảnh bị từ chối vì thiếu quyền (4xx) → ném ngay, không thử lại", async () => {
+    const f = await tmpFile(1000);
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(json({ upload_session_id: "s1", video_id: "vid", start_offset: "0", end_offset: "1000" }))
+      .mockResolvedValueOnce(json({ error: { code: 200, message: "perm" } }, 403));
+    vi.stubGlobal("fetch", fetchSpy);
+    await expect(publishPageVideoAs(page, f, { title: "T", description: "D" }, async () => {})).rejects.toThrow(/quyền/);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("phản hồi transfer thiếu offset → ném, không finish với file thiếu", async () => {
+    const f = await tmpFile(2000);
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(json({ upload_session_id: "s1", video_id: "vid", start_offset: "0", end_offset: "1000" }))
+      .mockResolvedValueOnce(json({}));
+    vi.stubGlobal("fetch", fetchSpy);
+    await expect(publishPageVideoAs(page, f, { title: "T", description: "D" })).rejects.toThrow(/offset/);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 });

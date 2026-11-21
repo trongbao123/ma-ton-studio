@@ -5,7 +5,7 @@ import { decrypt, encrypt } from "./crypto";
 
 /**
  * Page Facebook theo kênh (mẫu giống token YouTube): token Page mã hoá ở app_settings "facebook:<kênh>".
- * Kết nối bằng CLI scripts/fb-connect.mts — user token ngắn hạn → dài hạn → token Page không hết hạn.
+ * Kết nối ở web Cài đặt AI → Facebook Page — user token ngắn hạn → dài hạn → token Page không hết hạn.
  */
 export const GRAPH_VERSION = "v27.0";
 const GRAPH = `https://graph.facebook.com/${GRAPH_VERSION}`;
@@ -14,14 +14,14 @@ export const fbKey = (ch: string) => `facebook:${ch}`;
 export type FacebookAuth = { pageId: string; pageName: string; pageToken: string; connectedAt: string };
 type PageAccount = { id: string; name: string; access_token: string };
 
-/** Token hết hạn/bị thu hồi — chạy lại lệnh kết nối. */
+/** Token hết hạn/bị thu hồi — kết nối lại ở Cài đặt AI. */
 export class FacebookAuthError extends Error {}
 
 /** Lỗi Graph API → thông điệp tiếng Việt; tách lỗi token (190) khỏi lỗi thiếu quyền. */
 export function graphError(body: unknown, status: number): Error {
   const e = (body as { error?: { code?: number; message?: string } } | null)?.error;
   const msg = e?.message ?? `HTTP ${status}`;
-  if (e?.code === 190) return new FacebookAuthError(`Token Facebook hết hạn hoặc bị thu hồi — chạy lại scripts/fb-connect.mts. (${msg})`);
+  if (e?.code === 190) return new FacebookAuthError(`Token Facebook hết hạn hoặc bị thu hồi — kết nối lại ở Cài đặt AI → Facebook Page. (${msg})`);
   if (e?.code === 10 || (e?.code != null && e.code >= 200 && e.code < 300))
     return new Error(`Facebook từ chối vì app thiếu quyền (cần quyền đăng video/Reels, có thể phải App Review): ${msg}`);
   return new Error(`Facebook lỗi (${status}): ${msg}`);
@@ -52,6 +52,10 @@ export async function exchangePageToken(userToken: string, pageId: string): Prom
     client_id: id,
     client_secret: secret,
     fb_exchange_token: userToken,
+  }).catch((e: unknown) => {
+    if (e instanceof FacebookAuthError)
+      throw new FacebookAuthError("User token vừa dán đã hết hạn hoặc sai — tạo token mới ở Graph API Explorer rồi dán ngay (token chỉ sống 1–2 giờ).");
+    throw e;
   });
   const accounts = await graphGet<{ data?: PageAccount[] }>("/me/accounts", { access_token: long.access_token, limit: "100" });
   const page = pickPage(accounts.data ?? [], pageId);
@@ -127,16 +131,22 @@ export async function publishReelAs(page: PageRef, file: string, opts: ReelOptio
 }
 
 const GRAPH_VIDEO = `https://graph-video.facebook.com/${GRAPH_VERSION}`;
-/** Mỗi mảnh: 1 lần gửi + tối đa 3 lần thử lại khi mạng chập. */
-const CHUNK_ATTEMPTS = 4;
+/** Chờ trước mỗi lần thử lại một mảnh (mạng chập vài giây thì thử ngay cũng hỏng): 1 lần gửi + 3 lần thử lại. */
+export const CHUNK_RETRY_DELAYS_MS = [2_000, 5_000, 15_000];
+/** Một mảnh treo quá lâu thì huỷ để thử lại, không giữ job mãi. */
+const CHUNK_TIMEOUT_MS = 120_000;
+const HTTP_SERVER_ERROR = 500;
 type VideoOptions = { title: string; description: string; scheduledAt?: Date };
+/** Chờ giữa các lần thử lại — test truyền bản giả để không phải chờ thật. */
+type Sleep = (ms: number) => Promise<void>;
+const realSleep: Sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 type Offsets = { start_offset: string; end_offset: string };
 
 /**
  * Đăng video dài lên Page bằng upload chia mảnh (start → transfer… → finish). Đọc từng mảnh theo offset
  * Facebook trả về, không nạp cả file 45 phút vào RAM. Mảnh hỏng quá số lần thử thì ném lỗi, không finish.
  */
-export async function publishPageVideoAs(page: PageRef, file: string, opts: VideoOptions): Promise<{ videoId: string }> {
+export async function publishPageVideoAs(page: PageRef, file: string, opts: VideoOptions, sleep: Sleep = realSleep): Promise<{ videoId: string }> {
   const { open, stat } = await import("node:fs/promises");
   const endpoint = `${GRAPH_VIDEO}/${page.pageId}/videos`;
   const fileSize = (await stat(file)).size;
@@ -147,13 +157,14 @@ export async function publishPageVideoAs(page: PageRef, file: string, opts: Vide
   });
   const videoFile = await open(file, "r");
   try {
-    let offsets: Offsets = session;
-    for (let chunkNo = 1; offsets.start_offset !== offsets.end_offset; chunkNo++) {
-      const begin = Number(offsets.start_offset);
-      const chunk = Buffer.alloc(Number(offsets.end_offset) - begin);
-      await videoFile.read(chunk, 0, chunk.length, begin);
-      offsets = await sendChunk({ endpoint, token: page.token, sessionId: session.upload_session_id, begin, chunk, chunkNo });
+    let range = parseOffsets(session, -1);
+    for (let chunkNo = 1; range.start !== range.end; chunkNo++) {
+      const chunk = Buffer.alloc(range.end - range.start);
+      await videoFile.read(chunk, 0, chunk.length, range.start);
+      const next = await sendChunk({ endpoint, token: page.token, sessionId: session.upload_session_id, begin: range.start, chunk, chunkNo, sleep });
+      range = parseOffsets(next, range.start);
     }
+    if (range.start !== fileSize) throw new Error(`Upload Facebook dừng ở byte ${range.start}/${fileSize} — không đăng video thiếu.`);
   } finally {
     await videoFile.close();
   }
@@ -168,24 +179,40 @@ export async function publishPageVideoAs(page: PageRef, file: string, opts: Vide
   return { videoId: session.video_id };
 }
 
-type ChunkUpload = { endpoint: string; token: string; sessionId: string; begin: number; chunk: Buffer; chunkNo: number };
+/** Offset Facebook trả phải là số và tiến lên; thiếu/lùi thì dừng thay vì finish với file thiếu. */
+function parseOffsets(o: Partial<Offsets>, previousStart: number): { start: number; end: number } {
+  const start = Number(o.start_offset);
+  const end = Number(o.end_offset);
+  const valid = o.start_offset != null && o.end_offset != null && Number.isInteger(start) && Number.isInteger(end) && end >= start;
+  if (!valid || start <= previousStart) throw new Error(`Facebook trả offset không hợp lệ (${JSON.stringify(o)}) — dừng upload.`);
+  return { start, end };
+}
 
-/** Gửi một mảnh, thử lại khi lỗi mạng/server; lỗi token ném ngay. Trả offset mảnh kế tiếp. */
-async function sendChunk({ endpoint, token, sessionId, begin, chunk, chunkNo }: ChunkUpload): Promise<Offsets> {
+type ChunkUpload = { endpoint: string; token: string; sessionId: string; begin: number; chunk: Buffer; chunkNo: number; sleep: Sleep };
+
+/**
+ * Gửi một mảnh. Chỉ thử lại (có chờ tăng dần) khi lỗi mạng/hết giờ hoặc HTTP 5xx; lỗi token/quyền/4xx ném ngay.
+ * Trả offset mảnh kế tiếp.
+ */
+async function sendChunk({ endpoint, token, sessionId, begin, chunk, chunkNo, sleep }: ChunkUpload): Promise<Partial<Offsets>> {
   let lastError: unknown;
-  for (let attempt = 1; attempt <= CHUNK_ATTEMPTS; attempt++) {
+  for (let attempt = 0; attempt <= CHUNK_RETRY_DELAYS_MS.length; attempt++) {
+    if (attempt > 0) await sleep(CHUNK_RETRY_DELAYS_MS[attempt - 1]);
     const form = new FormData();
     form.set("upload_phase", "transfer");
     form.set("access_token", token);
     form.set("upload_session_id", sessionId);
     form.set("start_offset", String(begin));
     form.set("video_file_chunk", new Blob([new Uint8Array(chunk)]), "chunk.mp4");
+    let res: Response;
     try {
-      return await graphJson<Offsets>(await fetch(endpoint, { method: "POST", body: form }));
+      res = await fetch(endpoint, { method: "POST", body: form, signal: AbortSignal.timeout(CHUNK_TIMEOUT_MS) });
     } catch (e) {
-      if (e instanceof FacebookAuthError) throw e;
-      lastError = e;
+      lastError = e; // mạng chập / hết giờ → thử lại
+      continue;
     }
+    if (res.status < HTTP_SERVER_ERROR) return graphJson<Partial<Offsets>>(res);
+    lastError = graphError(await res.json().catch(() => ({})), res.status);
   }
   throw new Error(`Upload Facebook hỏng ở mảnh ${chunkNo} (byte ${begin}): ${lastError instanceof Error ? lastError.message : lastError}`);
 }
@@ -216,6 +243,6 @@ export async function listFacebookPages() {
 
 export async function pageAccessToken(ch: string): Promise<{ pageId: string; token: string }> {
   const auth = await getFacebookAuth(ch);
-  if (!auth) throw new FacebookAuthError(`Chưa kết nối Facebook cho kênh "${ch}" — chạy scripts/fb-connect.mts.`);
+  if (!auth) throw new FacebookAuthError(`Chưa kết nối Facebook cho kênh "${ch}" — kết nối ở Cài đặt AI → Facebook Page.`);
   return { pageId: auth.pageId, token: auth.pageToken };
 }

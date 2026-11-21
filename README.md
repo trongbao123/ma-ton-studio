@@ -37,7 +37,7 @@ Upload lỗi (token hết hạn, hết quota API…) thì Telegram báo, video v
 3. [Graph API Explorer](https://developers.facebook.com/tools/explorer/) → chọn app → **User Token** → thêm quyền `pages_show_list`, `pages_read_engagement`, `pages_manage_posts`, `publish_video` → **Generate Access Token** → chọn đúng Page.
 4. Web **Cài đặt AI → Facebook Page** → kênh + Page ID + dán token vừa tạo → **Kết nối**. Server đổi ra token Page không hết hạn (lưu mã hoá); token dán vào chỉ dùng một lần. Token này hết hạn sau 1–2 giờ, tạo xong dán ngay.
 
-App ở chế độ *Development* vẫn đăng được lên Page mà bạn là admin. Nếu bài đăng không hiện với người khác thì chuyển app sang *Live* (có thể phải App Review). Đăng thử: `pnpm exec tsx scripts/fb-test-post.mts <kênh> reel <file.mp4> "<mô tả>"` (cần `DATABASE_URL` + `SECRETS_KEY`).
+App ở chế độ *Development* vẫn đăng được lên Page mà bạn là admin. Nếu bài đăng không hiện với người khác thì chuyển app sang *Live* (có thể phải App Review). Đăng thử: GitHub → **Actions → fb-test → Run workflow** (chọn kênh + `reel`/`video`) — tự tạo clip thử rồi đăng; mở link bằng trình duyệt ẩn danh để xem có công khai không, xong xoá bài thử.
 
 ## Nhiều AI (Claude, ChatGPT, Gemini)
 App dùng được cùng lúc **Claude** (`ANTHROPIC_API_KEY`), **ChatGPT** (`OPENAI_API_KEY`) và **Gemini** (`GEMINI_API_KEY`). Key nào có thì AI đó chạy, không có thì tự bỏ qua.

@@ -151,7 +151,7 @@ Thứ tự 4 kế hoạch: **1. Facebook (này)** → 2. Kênh + tư liệu + k�
 
 Không viết code. Chủ kênh làm theo README (Task 1 Step 6), rồi:
 
-- [ ] **Step 1:** `pnpm exec tsx scripts/fb-connect.mts lich-su <userToken>` → in "Đã kết nối Page "Sử Ký Kể Chuyện" (61596491473917)".
-- [ ] **Step 2:** Tạo Reel thử 10 giây dọc: `ffmpeg -f lavfi -i color=c=0x3b2a1a:s=1080x1920:d=10 -f lavfi -i anullsrc -shortest -c:v libx264 -pix_fmt yuv420p -c:a aac test-reel.mp4`, chạy `fb-test-post.mts lich-su reel test-reel.mp4 "Thử hệ thống"`.
+- [ ] **Step 1:** Web Cài đặt AI → dán FB_APP_ID / FB_APP_SECRET → khối Facebook Page dán user token → "Đã kết nối Page "Sử Ký Kể Chuyện" (61596491473917)".
+- [ ] **Step 2:** GitHub Actions → `fb-test` → mode `reel`, rồi chạy lần nữa với mode `video` (xác nhận đường upload chia mảnh còn chạy trên v27.0).
 - [ ] **Step 3:** Mở link bằng **trình duyệt ẩn danh / tài khoản khác**: Reel hiện công khai → PASS. Không hiện → ghi lại, chuyển app sang Live (có thể cần App Review) trước Kế hoạch 4.
 - [ ] **Step 4:** Xoá Reel thử trên Page. Ghi kết quả (PASS/BLOCKED + lý do) vào `HANDOFF.md`.
