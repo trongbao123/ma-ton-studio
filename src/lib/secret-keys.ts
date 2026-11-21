@@ -16,6 +16,8 @@ export const SECRET_KEYS: SecretKey[] = [
   { env: "CLOUDFLARE_ACCOUNT_ID", label: "Cloudflare account ID", group: "service", brand: "cloudflare", help: "dash.cloudflare.com → trang tổng quan, cột phải" },
   { env: "YOUTUBE_CLIENT_ID", label: "YouTube OAuth client ID", group: "service", brand: "youtube", help: "Google Cloud → Credentials (xem README)" },
   { env: "YOUTUBE_CLIENT_SECRET", label: "YouTube OAuth client secret", group: "service", brand: "youtube", help: "Google Cloud → Credentials (xem README)" },
+  { env: "FB_APP_ID", label: "Facebook App ID", group: "service", help: "developers.facebook.com → Ứng dụng của tôi → Cài đặt → Cơ bản" },
+  { env: "FB_APP_SECRET", label: "Facebook App Secret", group: "service", help: "developers.facebook.com → Cài đặt → Cơ bản → Khoá bí mật" },
 ];
 
 export const SECRETS_KEY = "api_keys";

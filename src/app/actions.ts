@@ -337,6 +337,24 @@ export async function saveSecretAction(env: string, _: ActionState, form: FormDa
   });
 }
 
+/** Kết nối Page Facebook cho một kênh: user token ngắn hạn (Graph API Explorer) → token Page không hết hạn, lưu mã hoá. */
+export async function connectFacebookAction(_: ActionState, form: FormData): Promise<ActionState> {
+  return attempt(async () => {
+    const { exchangePageToken, saveFacebookAuth } = await import("@/lib/facebook");
+    const channel = String(form.get("channel") ?? "").trim();
+    const pageId = String(form.get("pageId") ?? "").trim();
+    const userToken = String(form.get("userToken") ?? "").trim();
+    if (!isChannelKey(channel)) throw new Error("Khoá kênh không hợp lệ.");
+    if (!/^\d{5,}$/.test(pageId)) throw new Error("Page ID phải là dãy số.");
+    if (userToken.length < 20) throw new Error("Token quá ngắn — copy lại nguyên token ở Graph API Explorer.");
+    await loadSecrets(true);
+    const auth = await exchangePageToken(userToken, pageId);
+    await saveFacebookAuth(auth, channel);
+    revalidatePath("/settings/ai");
+    return `Đã kết nối Page “${auth.pageName}” (${auth.pageId}) cho kênh ${channel}.`;
+  });
+}
+
 /** Bộ chọn kênh ở thanh bên: chỉ đổi cookie lọc hiển thị (pipeline vẫn chạy mọi kênh). */
 export async function setViewChannelAction(channel: string): Promise<void> {
   const { cookies } = await import("next/headers");
