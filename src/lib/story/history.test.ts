@@ -20,7 +20,7 @@ describe("đề tài kênh lịch sử", () => {
       expect(isSensitiveTopic(`${t.title}\n${topicOutline(t)}`)).toBe(false);
       expect(wikiTitleOf(topicOutline(t))).toBe(t.wiki);
     }
-    expect(wikiTitleOf(topicOutline(HISTORY_PILOT[0]))).toBe("Battle of Bạch Đằng (938)");
+    expect(wikiTitleOf(topicOutline(HISTORY_PILOT[0]))).toBe("Battle of Ngọc Hồi-Đống Đa");
     expect(wikiTitleOf("không có")).toBeNull();
   });
 

@@ -16,22 +16,23 @@ export type HistoryTopic = { title: string; wiki: string; angle: string };
 
 /**
  * 20 đề tài khởi đầu (21/11/2026): trộn Việt Nam cổ – trung đại và thế giới, ưu tiên đề tài nhiều tranh/ảnh/bản đồ trên Commons.
+ * Thứ tự theo độ dày hồ sơ Wikipedia đã đo (vi+en): video đầu kênh dùng đề tài nhiều tư liệu; Bạch Đằng 938 chỉ ~12k ký tự nên để sau.
  * `angle` chỉ gợi khoảnh khắc mở đầu và câu hỏi trung tâm — chi tiết cụ thể phải lấy từ hồ sơ, không từ đây.
  */
 export const HISTORY_PILOT: HistoryTopic[] = [
-  { title: "Trận Bạch Đằng Năm 938: Những Cọc Gỗ Dưới Lòng Sông", wiki: "Battle of Bạch Đằng (938)", angle: "Mở ở khoảnh khắc nước triều rút trên sông Bạch Đằng. Câu hỏi: vì sao trận này khép lại hơn một nghìn năm Bắc thuộc?" },
-  { title: "Ngày Cuối Cùng Của Constantinople", wiki: "Fall of Constantinople", angle: "Mở ở những giờ cuối trước khi tường thành thất thủ. Câu hỏi: vì sao một đế chế nghìn năm sụp đổ trong một buổi sáng?" },
-  { title: "Bạch Đằng Lần Nữa: Trận Đánh Năm 1288", wiki: "Battle of Bạch Đằng (1288)", angle: "Mở ở lúc đoàn thuyền đối phương rút qua cửa sông. Câu hỏi: người Đại Việt đã lặp lại bài học cũ ra sao trước đội quân mạnh nhất thời ấy?" },
-  { title: "Waterloo: Ngày Napoleon Mất Tất Cả", wiki: "Battle of Waterloo", angle: "Mở ở buổi chiều quyết định trên chiến trường Waterloo. Câu hỏi: điều gì đã kết thúc sự nghiệp của Napoleon chỉ trong một ngày?" },
-  { title: "Hai Bà Trưng: Cuộc Khởi Nghĩa Làm Rung Chuyển Phương Nam", wiki: "Trưng sisters", angle: "Mở ở lúc cuộc khởi nghĩa bùng lên. Câu hỏi: hai người phụ nữ đã đứng lên thế nào, và sử sách ghi lại những gì về họ?" },
-  { title: "Thermopylae: Con Đèo Hẹp Chặn Một Đế Chế", wiki: "Battle of Thermopylae", angle: "Mở ở ngày cuối cùng tại đèo Thermopylae. Câu hỏi: vì sao một đội quân nhỏ được nhớ mãi dù thua trận?" },
   { title: "Quang Trung Đại Phá Quân Thanh: Mùa Xuân Năm 1789", wiki: "Battle of Ngọc Hồi-Đống Đa", angle: "Mở ở những ngày Tết khi đại quân tiến ra Bắc. Câu hỏi: làm sao một cuộc hành quân thần tốc đổi cục diện chỉ trong vài ngày?" },
-  { title: "Tsushima: Hạm Đội Đi Nửa Vòng Trái Đất Để Chìm", wiki: "Battle of Tsushima", angle: "Mở ở lúc hai hạm đội nhìn thấy nhau ở eo biển Tsushima. Câu hỏi: vì sao chuyến hải trình dài nhất lại kết thúc trong một trận?" },
-  { title: "Phòng Tuyến Sông Như Nguyệt Của Lý Thường Kiệt", wiki: "Battle of Như Nguyệt River", angle: "Mở ở phòng tuyến bên sông trước đợt tấn công lớn. Câu hỏi: nhà Lý đã giữ vững phòng tuyến ra sao, và sử sách chép gì về bài thơ gắn với trận này?" },
-  { title: "Cảng Lữ Thuận: Cuộc Vây Hãm Làm Thay Đổi Châu Á", wiki: "Siege of Port Arthur", angle: "Mở ở một đợt tấn công lên các pháo đài quanh cảng. Câu hỏi: vì sao cảng biển không đóng băng này đáng để hai đế quốc đổ máu?" },
+  { title: "Ngày Cuối Cùng Của Constantinople", wiki: "Fall of Constantinople", angle: "Mở ở những giờ cuối trước khi tường thành thất thủ. Câu hỏi: vì sao một đế chế nghìn năm sụp đổ trong một buổi sáng?" },
   { title: "Khởi Nghĩa Lam Sơn: Mười Năm Nếm Mật Nằm Gai", wiki: "Lam Sơn uprising", angle: "Mở ở thời khắc khó khăn nhất của nghĩa quân. Câu hỏi: làm sao từ vùng núi Lam Sơn, Lê Lợi đi tới ngày giành lại đất nước?" },
-  { title: "Xích Bích: Trận Hỏa Công Chia Ba Thiên Hạ", wiki: "Battle of Red Cliffs", angle: "Mở ở đêm lửa bốc trên sông Trường Giang. Câu hỏi: sử thật khác Tam Quốc diễn nghĩa ở những điểm nào?" },
+  { title: "Waterloo: Ngày Napoleon Mất Tất Cả", wiki: "Battle of Waterloo", angle: "Mở ở buổi chiều quyết định trên chiến trường Waterloo. Câu hỏi: điều gì đã kết thúc sự nghiệp của Napoleon chỉ trong một ngày?" },
+  { title: "Bạch Đằng Lần Nữa: Trận Đánh Năm 1288", wiki: "Battle of Bạch Đằng (1288)", angle: "Mở ở lúc đoàn thuyền đối phương rút qua cửa sông. Câu hỏi: người Đại Việt đã lặp lại bài học cũ ra sao trước đội quân mạnh nhất thời ấy?" },
   { title: "Titanic: Hai Tiếng Bốn Mươi Phút Cuối Cùng", wiki: "Sinking of the Titanic", angle: "Mở ở lúc con tàu va phải tảng băng. Câu hỏi: vì sao con tàu được gọi là không thể chìm lại chìm, và vì sao nhiều người không được cứu?" },
+  { title: "Hai Bà Trưng: Cuộc Khởi Nghĩa Làm Rung Chuyển Phương Nam", wiki: "Trưng sisters", angle: "Mở ở lúc cuộc khởi nghĩa bùng lên. Câu hỏi: hai người phụ nữ đã đứng lên thế nào, và sử sách ghi lại những gì về họ?" },
+  { title: "Tsushima: Hạm Đội Đi Nửa Vòng Trái Đất Để Chìm", wiki: "Battle of Tsushima", angle: "Mở ở lúc hai hạm đội nhìn thấy nhau ở eo biển Tsushima. Câu hỏi: vì sao chuyến hải trình dài nhất lại kết thúc trong một trận?" },
+  { title: "Phòng Tuyến Sông Như Nguyệt Của Lý Thường Kiệt", wiki: "Battle of Như Nguyệt River (1077)", angle: "Mở ở phòng tuyến bên sông trước đợt tấn công lớn. Câu hỏi: nhà Lý đã giữ vững phòng tuyến ra sao, và sử sách chép gì về bài thơ gắn với trận này?" },
+  { title: "Thermopylae: Con Đèo Hẹp Chặn Một Đế Chế", wiki: "Battle of Thermopylae", angle: "Mở ở ngày cuối cùng tại đèo Thermopylae. Câu hỏi: vì sao một đội quân nhỏ được nhớ mãi dù thua trận?" },
+  { title: "Trận Bạch Đằng Năm 938: Những Cọc Gỗ Dưới Lòng Sông", wiki: "Battle of Bạch Đằng (938)", angle: "Mở ở khoảnh khắc nước triều rút trên sông Bạch Đằng. Câu hỏi: vì sao trận này khép lại hơn một nghìn năm Bắc thuộc?" },
+  { title: "Xích Bích: Trận Hỏa Công Chia Ba Thiên Hạ", wiki: "Battle of Red Cliffs", angle: "Mở ở đêm lửa bốc trên sông Trường Giang. Câu hỏi: sử thật khác Tam Quốc diễn nghĩa ở những điểm nào?" },
+  { title: "Cảng Lữ Thuận: Cuộc Vây Hãm Làm Thay Đổi Châu Á", wiki: "Siege of Port Arthur", angle: "Mở ở một đợt tấn công lên các pháo đài quanh cảng. Câu hỏi: vì sao cảng biển không đóng băng này đáng để hai đế quốc đổ máu?" },
   { title: "Hannibal Vượt Dãy Alps", wiki: "Hannibal's crossing of the Alps", angle: "Mở ở đoàn quân và những con voi giữa đèo núi tuyết. Câu hỏi: vì sao Hannibal chọn con đường tưởng như không thể đi?" },
   { title: "Ngày 15 Tháng 3: Cái Chết Của Julius Caesar", wiki: "Assassination of Julius Caesar", angle: "Mở ở buổi sáng Caesar tới cuộc họp của Viện Nguyên lão. Câu hỏi: vì sao những người thân cận nhất lại ra tay?" },
   { title: "Napoleon Ở Nước Nga: Đại Quân Biến Mất Trong Tuyết", wiki: "French invasion of Russia", angle: "Mở ở cảnh Moskva bốc cháy. Câu hỏi: đội quân lớn nhất châu Âu khi ấy đã tan rã thế nào?" },
