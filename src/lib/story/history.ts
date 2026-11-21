@@ -91,6 +91,7 @@ const NO_FICTION_RULES = [
   "KHÔNG HƯ CẤU: chỉ dùng tên người, địa danh, năm tháng, con số, diễn biến CÓ TRONG HỒ SƠ. Hồ sơ không có thì không nói.",
   "Không bịa lời thoại. Chỉ trích câu nói khi câu đó có nguyên văn trong hồ sơ, và nói rõ theo nguồn nào ('theo Đại Việt sử ký toàn thư…', 'sử gia Hy Lạp Herodotus chép rằng…').",
   "Chỗ các nguồn ghi khác nhau (số quân, ngày tháng, chi tiết): nói rõ cả hai ('sử chép rằng…, nhưng có ý kiến cho rằng…'). Truyền thuyết thì nói là truyền thuyết.",
+  "Thứ bậc nguồn trong hồ sơ (đầu mục ghi loại): sử liệu gốc (wikisource) và bách khoa (wikipedia, Britannica) tin hơn báo (web); hai nguồn mâu thuẫn thì nói rõ, không tự chọn một bên làm sự thật.",
   "Không suy diễn cảm xúc, suy nghĩ của nhân vật thành sự thật; muốn gợi không khí thì tả bối cảnh chung (sông nước, mùa, địa hình) không gắn số liệu.",
   "Đề tài cổ – trung đại: KHÔNG liên hệ sang chính trị, biên giới, tranh chấp hiện đại.",
 ];

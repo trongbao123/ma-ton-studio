@@ -26,7 +26,7 @@ describe("hồ sơ tư liệu Wikipedia", () => {
     const [enUrl, enInit] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit];
     expect(enUrl).toContain("redirects=1");
     expect((enInit.headers as Record<string, string>)["User-Agent"]).toContain("ma-ton-studio");
-    expect(dossierText(d)).toContain("### vi — Trận Bạch Đằng (938) (https://vi.wikipedia.org/wiki/Tran)");
+    expect(dossierText(d)).toContain("### wikipedia · vi — Trận Bạch Đằng (938) (https://vi.wikipedia.org/wiki/Tran)");
   });
 
   it("bài tiếng Anh không tồn tại → báo rõ tên đề tài, không gọi tiếp", async () => {
