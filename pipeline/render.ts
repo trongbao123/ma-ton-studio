@@ -1,3 +1,4 @@
+// clean-scan-allow: file-length — file điều phối render có từ trước (~1.100 dòng logic); tách là việc riêng. Lệnh CLI mới đặt ở new-series.ts (seriesCommand).
 import { createHash } from "node:crypto";
 import { enrichDescription, segmentsFromCues } from "./description";
 import { playlistUrl, seriesPlaylist } from "./playlist";
@@ -1397,10 +1398,8 @@ if (process.argv[1]?.endsWith("render.ts")) {
     if (arg === "vidiq-stats") return import("@/lib/vidiq-stats").then((x) => x.syncVidiqStats(Date.now(), true)).then(console.log);
     if (arg.startsWith("thumbs:")) return import("./rethumb").then((x) => x.rethumb(Number(arg.slice(7))));
     if (arg === "trends") return import("./trends").then((x) => x.scanTrends());
-    if (arg.startsWith("newseries:")) return import("./new-series").then((x) => x.newSeries(arg.slice(10).split(",")));
-    if (arg === "newlife" || arg.startsWith("newlife:")) return import("./new-series").then((x) => x.newLifeSeries(arg.slice(8) || undefined));
-    if (arg.startsWith("pov:")) return import("./new-series").then((x) => x.firstPerson(arg.slice(4).split(",").map(Number)));
-    if (arg === "series") return import("./new-series").then((x) => x.listSeries());
+    // Lệnh về bộ truyện: newseries:, newlife[:kênh], newhistory[:kênh], historyscript:<id>, pov:, series — xem new-series.ts.
+    if (/^(newseries:|newlife(:|$)|newhistory(:|$)|historyscript:|pov:|series$)/.test(arg)) return import("./new-series").then((x) => x.seriesCommand(arg));
     if (arg.startsWith("compile:")) return import("./compile").then((x) => x.compileSeries(Number(arg.slice(8))));
     return renderVideo(Number(arg));
   };

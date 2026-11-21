@@ -11,6 +11,7 @@ import { escapeHtml, notify } from "@/lib/notify";
 import {
   LIFE_BIBLE, LIFE_GENRE, LIFE_PILOT, LIFE_PREMISE, LIFE_STYLE, LIFE_TARGET_WORDS, LIFE_TTS_VOICE, LIFE_VOICE_STYLE, pilotOutline,
 } from "@/lib/story/life";
+import { HISTORY_BIBLE, HISTORY_GENRE, HISTORY_PILOT, HISTORY_PREMISE, HISTORY_STYLE, HISTORY_TARGET_WORDS, topicOutline } from "@/lib/story/history";
 
 export async function newSeries(keys: string[]) {
   await loadSecrets(true);
@@ -65,6 +66,34 @@ export async function newLifeSeries(channel = "chuyen-doi") {
   await listSeries();
 }
 
+/**
+ * Kênh lịch sử (CLI: render.ts "newhistory" hoặc "newhistory:<khoá kênh>"): 1 bộ = cả kênh, mỗi chương một video tài liệu độc lập,
+ * nạp sẵn 20 đề tài. autopilot TẮT cho tới khi phần dựng hình (Kế hoạch 3) xong — viết kịch bản bằng "historyscript:<id>".
+ */
+export async function newHistorySeries(channel = "lich-su") {
+  if (!/^[a-z0-9-]{1,24}$/.test(channel)) throw new Error(`Khoá kênh không hợp lệ: ${channel}`);
+  await loadSecrets(true);
+  const [dup] = await db().select().from(series).where(sql`${series.genre} = ${HISTORY_GENRE} and ${series.channel} = ${channel}`);
+  if (dup) {
+    console.log(`• Kênh ${channel} đã có bộ lịch sử #${dup.id} ${dup.title} — bỏ qua`);
+    return listSeries();
+  }
+  const [row] = await db()
+    .insert(series)
+    .values({
+      title: "Sử Ký Kể Chuyện", genre: HISTORY_GENRE, premise: HISTORY_PREMISE, bible: HISTORY_BIBLE, style: HISTORY_STYLE, channel,
+      targetWords: HISTORY_TARGET_WORDS, autopilot: false, autoApprove: true, chaptersPerDay: 1, episodeChapters: 0,
+      makeShort: false, autoPublish: true,
+    })
+    .returning({ id: series.id });
+  await db()
+    .insert(chapters)
+    .values(HISTORY_PILOT.map((t, i) => ({ seriesId: row.id, number: i + 1, title: t.title, outline: topicOutline(t) })));
+  console.log(`✔ #${row.id} Sử Ký Kể Chuyện (kênh ${channel}) + ${HISTORY_PILOT.length} đề tài`);
+  await notify(`🆕 Kênh <b>Sử Ký Kể Chuyện</b> — bộ #${row.id}, đã nạp ${HISTORY_PILOT.length} đề tài (chưa tự chạy, chờ phần dựng hình).`);
+  await listSeries();
+}
+
 /** Đổi ngôi kể sang "Ta" (CLI: render.ts "pov:5,6,7"). Chương đã viết giữ nguyên — chỉ áp từ chương viết sau. */
 export async function firstPerson(ids: number[]) {
   await loadSecrets(true);
@@ -86,4 +115,15 @@ export async function listSeries() {
     .from(series)
     .orderBy(asc(series.id));
   console.table(rows);
+}
+
+/** Lệnh CLI về bộ truyện (render.ts chuyển sang): trả promise của lệnh khớp, không khớp thì null. */
+export function seriesCommand(arg: string): Promise<unknown> | null {
+  if (arg.startsWith("newseries:")) return newSeries(arg.slice(10).split(","));
+  if (arg === "newlife" || arg.startsWith("newlife:")) return newLifeSeries(arg.slice(8) || undefined);
+  if (arg === "newhistory" || arg.startsWith("newhistory:")) return newHistorySeries(arg.slice(11) || undefined);
+  if (arg.startsWith("historyscript:")) return import("./history-script").then((x) => x.writeHistoryScript(Number(arg.slice(14))));
+  if (arg.startsWith("pov:")) return firstPerson(arg.slice(4).split(",").map(Number));
+  if (arg === "series") return listSeries();
+  return null;
 }

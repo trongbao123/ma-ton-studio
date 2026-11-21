@@ -6,6 +6,7 @@ import {
   historyChapterPrompt,
   historyIsFinalPart,
   isSensitiveTopic,
+  pickChapterToWrite,
   topicOutline,
   wikiTitleOf,
 } from "./history";
@@ -46,5 +47,17 @@ describe("prompt viết kịch bản lịch sử", () => {
   it("lượt cuối khi phần còn thiếu vừa một lượt", () => {
     expect(historyIsFinalPart(5000)).toBe(true);
     expect(historyIsFinalPart(2500)).toBe(false);
+  });
+});
+
+describe("chọn đề tài để viết", () => {
+  it("bỏ qua đề tài 'chờ sửa' (có fact_issues) và chương đã viết", () => {
+    const list = [
+      { id: 1, status: "draft", factIssues: null },
+      { id: 2, status: "outline", factIssues: [{ quote: "x" }] },
+      { id: 3, status: "outline", factIssues: null },
+    ];
+    expect(pickChapterToWrite(list)?.id).toBe(3);
+    expect(pickChapterToWrite([{ id: 2, status: "outline", factIssues: [{}] }])).toBeUndefined();
   });
 });

@@ -153,3 +153,8 @@ CẤM: mọi đề tài từ năm 1945 trở đi; chiến tranh/chính trị Vi�
 - outline: dòng 1 gợi khoảnh khắc mở đầu + câu hỏi trung tâm (không nêu chi tiết số liệu); dòng 2 đúng dạng "${WIKI_LINE}<tiêu đề bài Wikipedia tiếng Anh chính xác>".`,
   };
 }
+
+/** Đề tài kế tiếp để viết: chương `outline` đầu tiên không "chờ sửa" (chưa có lỗi sự thật tồn đọng). */
+export function pickChapterToWrite<T extends { status: string; factIssues: unknown }>(list: T[]): T | undefined {
+  return list.find((c) => c.status === "outline" && c.factIssues == null);
+}
