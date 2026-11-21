@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { TextProvider } from "@/lib/ai/types";
-import { applyFactFixes, FACT_FIX_ROUNDS, factCheckPrompt, factCheckScript } from "./fact-check";
+import { applyFactFixes, FACT_FIX_ROUNDS, factCheckPrompt, factCheckScript, referenceMentionIssues } from "./fact-check";
 import type { FactIssue } from "./history-types";
 
 const issue = (quote: string, fix: string): FactIssue => ({ quote, verdict: "mau-thuan", note: "sai năm", fix });
@@ -59,3 +59,32 @@ describe("soát sự thật nhiều vòng", () => {
     expect(p).toMatch(/hai nguồn/);
   });
 });
+
+describe("lời kể không được nêu tên nguồn tra cứu", () => {
+  it("bắt câu nhắc Wikipedia / bách khoa / hồ sơ / tư liệu / tên trang web; câu nêu sử liệu gốc thì cho qua", () => {
+    const script = [
+      "Theo bách khoa Wikipedia tiếng Việt, quân Thanh mất 3 ngày.",
+      "Hồ sơ còn giữ một bài hịch.",
+      "Theo Britannica, trận đánh kéo dài một ngày.",
+      "Đại Việt sử ký toàn thư chép rằng vua tự cầm quân.",
+      "Quân Tây Sơn vượt sông lúc nửa đêm.",
+    ].join(" ");
+    const issues = referenceMentionIssues(script);
+    expect(issues.map((i) => i.quote)).toEqual([
+      "Theo bách khoa Wikipedia tiếng Việt, quân Thanh mất 3 ngày.",
+      "Hồ sơ còn giữ một bài hịch.",
+      "Theo Britannica, trận đánh kéo dài một ngày.",
+    ]);
+  });
+
+  it("còn câu nêu tên nguồn sau mọi vòng soát → giữ lại thành lỗi (chờ sửa)", async () => {
+    const { ai } = fakeAi([], []);
+    const r = await factCheckScript(ai, "Theo Wikipedia tiếng Anh, trận đánh diễn ra năm 1789.", "h");
+    expect(r.issues.map((i) => i.quote)).toEqual(["Theo Wikipedia tiếng Anh, trận đánh diễn ra năm 1789."]);
+  });
+
+  it("prompt soát yêu cầu bắt câu nêu tên Wikipedia/hồ sơ", () => {
+    expect(factCheckPrompt("k", "h").prompt).toMatch(/Wikipedia/);
+  });
+});
+
