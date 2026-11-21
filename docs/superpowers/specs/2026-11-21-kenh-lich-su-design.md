@@ -78,9 +78,13 @@ Chủ kênh chọn **A + nguồn 1**.
 
 ### 2. Hồ sơ tư liệu (bước mới, trước khi viết)
 
-Cho mỗi đề tài, gom một **hồ sơ** văn bản:
-- Bài Wikipedia tiếng Việt + tiếng Anh của sự kiện/nhân vật (và các bài liên kết chính: trận, nhân vật chủ chốt), lấy qua API Wikipedia; giữ nguyên văn + URL + phần chú thích nguồn.
-- Lưu hồ sơ cùng chương (chỗ lưu để builder chọn), để lượt viết, lượt soát và mô tả video cùng dùng.
+Chủ kênh 21/11/2026: "kiếm tư liệu đầy đủ từ nhiều trang web chứ thiếu gì" — đề tài mỏng KHÔNG rút ngắn video mà gom rộng hơn, nhưng **chỉ nguồn tin cậy** (lượt soát coi hồ sơ là chuẩn; lẫn trang sai thì kịch bản sai mà vẫn "đạt"). Ba lớp nguồn:
+1. **Wikipedia**: bài chính (vi + en) + tối đa 5 bài liên quan lấy từ liên kết trong phần mở đầu bài tiếng Anh (nhân vật, đối thủ, địa danh, sự kiện trước/sau).
+2. **Sử liệu gốc trên Wikisource**: đề tài Việt Nam tìm trong vi.wikisource các bộ sử (Đại Việt sử ký toàn thư, Khâm định Việt sử thông giám cương mục, Đại Nam thực lục, Việt sử lược, An Nam chí lược) và lấy đoạn quanh từ khoá; đề tài thế giới tìm en.wikisource (bản dịch Herodotus, Plutarch, Livy…).
+3. **Web tin cậy** qua API tìm kiếm Tavily (`TAVILY_API_KEY`, free 1.000 lượt/tháng; không có key thì bỏ qua lớp này), CHỈ trong danh sách tên miền cho phép (Britannica, World History Encyclopedia, History.com, National Geographic, Smithsonian, Livius, BBC, Bảo tàng Lịch sử quốc gia, báo lớn VN…); lưu nguyên đoạn + URL.
+- Mỗi nguồn ghi loại (`wikipedia` / `wikisource` / `web`), tiêu đề, URL; có trần ký tự từng loại để prompt không quá lớn. Hồ sơ dưới ngưỡng tối thiểu → báo lỗi, không viết.
+- Khi nguồn mâu thuẫn: lời kể nói rõ; ưu tiên sử liệu gốc và bách khoa (Britannica) hơn báo.
+- Lưu hồ sơ cùng chương (`chapters.dossier`), dùng cho lượt viết, lượt soát và mục "Nguồn tham khảo" của mô tả video.
 
 ### 3. Kịch bản
 
@@ -142,7 +146,7 @@ Một giọng nam trầm, nhịp tài liệu. Dùng ivoi khi có key, không th�
 
 Video lịch sử chỉ được đăng khi: lượt soát sự thật đạt; mọi ảnh tư liệu có giấy phép hợp lệ + ghi công; mọi ảnh GPT có nhãn "Minh họa"; không có cảnh nào dùng ảnh của cảnh khác; không khoảng đen (blackdetect). Thiếu một điều → giữ `ready` chờ, Telegram cho chủ kênh.
 
-### 11. Trang quản lý + webhook Facebook (đợt 5 — chủ kênh thêm 21/11/2026)
+### 11. Trang quản lý + webhook Facebook (chủ kênh thêm 21/11/2026; "làm full" → trang quản lý làm SỚM, ngay sau tư liệu; webhook/số liệu khi có video)
 
 Chủ kênh: "với UI mới đi nha chứ khó quản lý lắm" + "bắt webhook rồi kéo về làm nhiệm vụ" — chọn 1, 3, 4:
 - **Trang quản lý kênh lịch sử** trên web: danh sách đề tài + trạng thái (chưa viết / đang viết / chờ sửa / có video), nút viết kịch bản, xem & sửa lỗi sự thật, hàng chờ Reels/video Facebook (xem trước, caption, đăng / tải nháp).
