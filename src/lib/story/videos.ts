@@ -17,6 +17,11 @@ export function dispatchPublish(videoId: number) {
   return dispatch("publish.yml", videoId);
 }
 
+/** Lệnh CLI của pipeline (render.ts) chạy trên GitHub Actions, vd "historyscript:9", "factcheck:120". */
+export function dispatchCommand(command: string) {
+  return dispatch("render.yml", command);
+}
+
 /** Quét xu hướng YouTube (render.yml với video_id = "trends"). */
 export function dispatchTrends() {
   return dispatch("render.yml", "trends");

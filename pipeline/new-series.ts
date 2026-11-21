@@ -123,6 +123,8 @@ export function seriesCommand(arg: string): Promise<unknown> | null {
   if (arg === "newlife" || arg.startsWith("newlife:")) return newLifeSeries(arg.slice(8) || undefined);
   if (arg === "newhistory" || arg.startsWith("newhistory:")) return newHistorySeries(arg.slice(11) || undefined);
   if (arg.startsWith("historyscript:")) return import("./history-script").then((x) => x.writeHistoryScript(Number(arg.slice(14))));
+  // Soát lại kịch bản lịch sử (sau khi chủ kênh sửa tay đoạn sai) rồi chốt — đạt thì gỡ cờ "chờ sửa".
+  if (arg.startsWith("factcheck:")) return import("./history-script").then((x) => x.recheckHistoryScript(Number(arg.slice(10))));
   if (arg.startsWith("pov:")) return firstPerson(arg.slice(4).split(",").map(Number));
   if (arg === "series") return listSeries();
   return null;

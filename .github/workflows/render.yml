@@ -44,8 +44,10 @@ jobs:
           path: .render
           key: render-${{ github.run_id }}
           restore-keys: render-
-      - run: pnpm exec tsx pipeline/render.ts ${{ inputs.video_id }}
+      # Đầu vào truyền qua env (không chèn thẳng vào lệnh) để tránh chèn lệnh shell.
+      - run: pnpm exec tsx pipeline/render.ts "$JOB_ARG"
         env:
+          JOB_ARG: ${{ inputs.video_id }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SECRETS_KEY: ${{ secrets.SECRETS_KEY }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

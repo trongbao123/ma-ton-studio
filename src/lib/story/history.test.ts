@@ -7,6 +7,10 @@ import {
   historyIsFinalPart,
   isSensitiveTopic,
   pickChapterToWrite,
+  historyTopicStatus,
+  HISTORY_STATUS_LABEL,
+  validateHistoryTopic,
+  approvalBlockedReason,
   historyScriptComplete,
   topicOutline,
   wikiTitleOf,
@@ -79,5 +83,33 @@ describe("sửa sau review đợt 2", () => {
   it("kịch bản đã đủ dài (đã viết lượt kết) → coi là xong, không viết tiếp đè sau đoạn kết", () => {
     expect(historyScriptComplete(7000)).toBe(true);
     expect(historyScriptComplete(5000)).toBe(false);
+  });
+});
+
+describe("trạng thái đề tài trên trang quản lý", () => {
+  const ch = (o: Partial<{ status: string; content: string; factIssues: unknown }>) => ({ status: "outline", content: "", factIssues: null, ...o });
+  it("ưu tiên: có video > chờ sửa > có kịch bản > đang viết > chưa viết", () => {
+    expect(historyTopicStatus(ch({ status: "approved", content: "x" }), true)).toBe("co-video");
+    expect(historyTopicStatus(ch({ content: "x", factIssues: [{}] }), false)).toBe("cho-sua");
+    expect(historyTopicStatus(ch({ status: "draft", content: "x" }), false)).toBe("co-kich-ban");
+    expect(historyTopicStatus(ch({ content: "x" }), false)).toBe("dang-viet");
+    expect(historyTopicStatus(ch({}), false)).toBe("chua-viet");
+    expect(HISTORY_STATUS_LABEL["cho-sua"]).toBe("Chờ sửa");
+  });
+});
+
+describe("kiểm đề tài thêm tay", () => {
+  it("thiếu tiêu đề / Wikipedia, hoặc nhạy cảm → báo lỗi; hợp lệ → null", () => {
+    expect(validateHistoryTopic("Trận Gaugamela", "  ")).toMatch(/Wikipedia/);
+    expect(validateHistoryTopic("", "Battle of Gaugamela")).toMatch(/tiêu đề/);
+    expect(validateHistoryTopic("Hải chiến Hoàng Sa", "Battle of the Paracel Islands")).toMatch(/nhạy cảm/);
+    expect(validateHistoryTopic("Trận Gaugamela", "Battle of Gaugamela")).toBeNull();
+  });
+});
+
+describe("chặn duyệt kịch bản còn lỗi sự thật", () => {
+  it("còn fact_issues → không cho duyệt; hết lỗi → cho", () => {
+    expect(approvalBlockedReason({ factIssues: [{}] })).toMatch(/lỗi sự thật/);
+    expect(approvalBlockedReason({ factIssues: null })).toBeNull();
   });
 });

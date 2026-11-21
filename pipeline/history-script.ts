@@ -5,9 +5,38 @@ import { db } from "@/db";
 import { chapters } from "@/db/schema";
 import { loadSecrets } from "@/lib/secrets";
 import { FactCheckFailedError } from "@/lib/story/fact-check";
-import { pickChapterToWrite } from "@/lib/story/history";
+import { isHistoryStory, pickChapterToWrite } from "@/lib/story/history";
 import { maxContinues } from "@/lib/story/prompts";
-import { getSeries, writeChapterStep } from "@/lib/story/service";
+import { getChapter, getSeries, writeChapterStep } from "@/lib/story/service";
+
+/** Lý do không soát lại chương này (không phải lịch sử / chưa có kịch bản / đã duyệt); soát được thì null. */
+function recheckSkipReason(history: boolean, chapter: { content: string; status: string }): string | null {
+  if (!history) return "không phải kênh lịch sử";
+  if (!chapter.content.trim()) return "chưa có kịch bản";
+  if (chapter.status === "approved") return "đã duyệt — bỏ duyệt trước";
+  return null;
+}
+
+/** Soát lại + chốt một kịch bản lịch sử đã viết (vd sau khi sửa tay); còn lỗi → null (đã báo Telegram). */
+export async function recheckHistoryScript(chapterId: number): Promise<{ chapterId: number; words: number } | null> {
+  await loadSecrets(true);
+  const chapter = await getChapter(chapterId);
+  const s = await getSeries(chapter.seriesId);
+  const skip = recheckSkipReason(isHistoryStory(s), chapter);
+  if (skip) {
+    console.log(`• Bỏ qua soát lại chương #${chapterId}: ${skip}`);
+    return null;
+  }
+  try {
+    const done = await writeChapterStep(chapterId, "finish");
+    console.log(`✔ Soát lại đạt — ${done.words} từ, đã chốt kịch bản`);
+    return { chapterId, words: done.words };
+  } catch (e) {
+    if (!(e instanceof FactCheckFailedError)) throw e;
+    console.log(`⚠ ${e.message}`);
+    return null;
+  }
+}
 
 /** Viết trọn kịch bản cho đề tài kế tiếp; lỗi sự thật còn sau soát → null (đã báo Telegram, đề tài "chờ sửa"). */
 export async function writeHistoryScript(seriesId: number): Promise<{ chapterId: number; words: number } | null> {
