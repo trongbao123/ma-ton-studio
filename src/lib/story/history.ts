@@ -204,3 +204,8 @@ export function validateHistoryTopic(title: string, wiki: string): string | null
   if (isSensitiveTopic(`${title}\n${wiki}`)) return "Đề tài chạm vùng nhạy cảm chính trị — kênh đã chọn né.";
   return null;
 }
+
+/** Kịch bản lịch sử còn lỗi sự thật thì không được duyệt (duyệt = xếp hàng render). Trả lý do, được duyệt thì null. */
+export function approvalBlockedReason(c: { factIssues: unknown }): string | null {
+  return c.factIssues != null ? "Kịch bản còn lỗi sự thật — sửa rồi bấm “Soát lại” trước khi duyệt." : null;
+}

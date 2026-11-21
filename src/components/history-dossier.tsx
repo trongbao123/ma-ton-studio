@@ -9,16 +9,20 @@ const KIND_LABEL: Record<DossierSourceKind, [string, string]> = {
 };
 
 /** Trang chương kênh lịch sử: nguồn tư liệu của hồ sơ + lỗi sự thật đang chờ sửa (kèm nút soát lại). */
-export function HistoryDossier({ chapterId, dossier, issues }: { chapterId: number; dossier: Dossier | null; issues: FactIssue[] | null }) {
+export function HistoryDossier({ chapterId, dossier, issues, approved }: { chapterId: number; dossier: Dossier | null; issues: FactIssue[] | null; approved: boolean }) {
   return (
     <div className="space-y-4">
       {issues && issues.length > 0 && (
         <section className="card space-y-3 border-red-500/40">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="font-semibold text-red-400">Lỗi sự thật — chờ sửa ({issues.length})</h2>
-            <ActionForm action={recheckFactsAction.bind(null, chapterId)} submitLabel="Soát lại" pendingLabel="Đang gửi lệnh…" variant="secondary" />
+            {!approved && <ActionForm action={recheckFactsAction.bind(null, chapterId)} submitLabel="Soát lại" pendingLabel="Đang gửi lệnh…" variant="secondary" />}
           </div>
-          <p className="text-xs text-muted">Sửa tay đoạn sai trong ô Nội dung bên dưới (theo gợi ý), bấm “Lưu chỉnh sửa”, rồi bấm “Soát lại”. Đạt thì đề tài tự gỡ cờ.</p>
+          <p className="text-xs text-muted">
+            {approved
+              ? "Chương đang ở trạng thái đã duyệt — bấm “Bỏ duyệt” để sửa và soát lại."
+              : "Sửa tay đoạn sai trong ô Nội dung bên dưới (theo gợi ý), bấm “Lưu chỉnh sửa”, rồi bấm “Soát lại”. Đạt thì đề tài tự gỡ cờ."}
+          </p>
           <ol className="space-y-2 text-sm">
             {issues.map((issue, i) => (
               <li key={i} className="rounded-lg bg-white/[.03] p-3">

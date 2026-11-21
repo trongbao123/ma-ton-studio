@@ -78,7 +78,7 @@ async function ChapterDetail({ params }: { params: Promise<{ id: string }> }) {
         </div>
       </div>
 
-      {isHistoryStory(s) && <HistoryDossier chapterId={c.id} dossier={c.dossier} issues={c.factIssues} />}
+      {isHistoryStory(s) && <HistoryDossier chapterId={c.id} dossier={c.dossier} issues={c.factIssues} approved={approved} />}
 
       {approved ? (
         <article className="card whitespace-pre-wrap font-serif text-base leading-relaxed">{c.content}</article>

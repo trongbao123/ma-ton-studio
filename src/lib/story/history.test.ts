@@ -10,6 +10,7 @@ import {
   historyTopicStatus,
   HISTORY_STATUS_LABEL,
   validateHistoryTopic,
+  approvalBlockedReason,
   historyScriptComplete,
   topicOutline,
   wikiTitleOf,
@@ -103,5 +104,12 @@ describe("kiểm đề tài thêm tay", () => {
     expect(validateHistoryTopic("", "Battle of Gaugamela")).toMatch(/tiêu đề/);
     expect(validateHistoryTopic("Hải chiến Hoàng Sa", "Battle of the Paracel Islands")).toMatch(/nhạy cảm/);
     expect(validateHistoryTopic("Trận Gaugamela", "Battle of Gaugamela")).toBeNull();
+  });
+});
+
+describe("chặn duyệt kịch bản còn lỗi sự thật", () => {
+  it("còn fact_issues → không cho duyệt; hết lỗi → cho", () => {
+    expect(approvalBlockedReason({ factIssues: [{}] })).toMatch(/lỗi sự thật/);
+    expect(approvalBlockedReason({ factIssues: null })).toBeNull();
   });
 });
