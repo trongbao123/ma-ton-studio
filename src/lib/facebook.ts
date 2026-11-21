@@ -42,11 +42,7 @@ function app() {
 }
 
 async function graphGet<T>(path: string, params: Record<string, string>): Promise<T> {
-  const url = `${GRAPH}${path}?${new URLSearchParams(params)}`;
-  const res = await fetch(url);
-  const body = (await res.json().catch(() => ({}))) as T & { error?: unknown };
-  if (!res.ok || body.error) throw graphError(body, res.status);
-  return body;
+  return graphJson<T>(await fetch(`${GRAPH}${path}?${new URLSearchParams(params)}`));
 }
 
 export async function exchangePageToken(userToken: string, pageId: string): Promise<FacebookAuth> {
@@ -80,6 +76,59 @@ export async function saveFacebookAuth(auth: FacebookAuth | null, ch: string) {
     .insert(appSettings)
     .values({ key: fbKey(ch), value })
     .onConflictDoUpdate({ target: appSettings.key, set: { value, updatedAt: new Date() } });
+}
+
+export const REEL_MIN_SECONDS = 3;
+export const REEL_MAX_SECONDS = 90;
+
+/** Reels API chỉ nhận 3–90 giây — chặn trước khi tốn lượt upload. */
+export function assertReelDuration(seconds: number) {
+  if (!(seconds >= REEL_MIN_SECONDS && seconds <= REEL_MAX_SECONDS))
+    throw new Error(`Reel phải dài ${REEL_MIN_SECONDS}–${REEL_MAX_SECONDS} giây, file này ${seconds.toFixed(1)} giây.`);
+}
+
+type PageRef = { pageId: string; token: string };
+type ReelOptions = { description: string; seconds: number; scheduledAt?: Date };
+const MS_PER_SECOND = 1000;
+const unix = (d: Date) => String(Math.floor(d.getTime() / MS_PER_SECOND));
+
+async function graphJson<T>(res: Response): Promise<T> {
+  const body = (await res.json().catch(() => ({}))) as T & { error?: unknown };
+  if (!res.ok || body.error) throw graphError(body, res.status);
+  return body;
+}
+
+async function graphPost<T>(url: string, params: Record<string, string>): Promise<T> {
+  return graphJson<T>(await fetch(url, { method: "POST", body: new URLSearchParams(params) }));
+}
+
+/** Đăng Reel 3 pha: start (lấy video_id + upload_url) → upload nhị phân → finish (đăng ngay hoặc hẹn giờ). */
+export async function publishReelAs(page: PageRef, file: string, opts: ReelOptions): Promise<{ videoId: string }> {
+  assertReelDuration(opts.seconds);
+  const { readFile } = await import("node:fs/promises");
+  const videoBytes = await readFile(file);
+  const endpoint = `${GRAPH}/${page.pageId}/video_reels`;
+  const start = await graphPost<{ video_id: string; upload_url: string }>(endpoint, { upload_phase: "start", access_token: page.token });
+  await graphJson(
+    await fetch(start.upload_url, {
+      method: "POST",
+      headers: { Authorization: `OAuth ${page.token}`, offset: "0", file_size: String(videoBytes.length) },
+      body: videoBytes,
+    }),
+  );
+  await graphPost(endpoint, {
+    upload_phase: "finish",
+    access_token: page.token,
+    video_id: start.video_id,
+    description: opts.description,
+    ...(opts.scheduledAt ? { video_state: "SCHEDULED", scheduled_publish_time: unix(opts.scheduledAt) } : { video_state: "PUBLISHED" }),
+  });
+  return { videoId: start.video_id };
+}
+
+/** Đăng Reel lên Page đã kết nối của kênh; ném FacebookAuthError nếu kênh chưa kết nối hoặc token hỏng. */
+export async function publishReel(ch: string, file: string, opts: ReelOptions) {
+  return publishReelAs(await pageAccessToken(ch), file, opts);
 }
 
 /** Page đã kết nối (cho trang Cài đặt) — chỉ tên + id, không bao giờ trả token. */
