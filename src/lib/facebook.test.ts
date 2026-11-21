@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { assertReelDuration, exchangePageToken, FacebookAuthError, publishReelAs, fbKey, graphError, pagesFromRows, parseFacebookAuth, pickPage } from "./facebook";
+import { assertReelDuration, exchangePageToken, FacebookAuthError, publishPageVideoAs, publishReelAs, fbKey, graphError, pagesFromRows, parseFacebookAuth, pickPage } from "./facebook";
 
 const PAGE = "61596491473917";
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -135,5 +135,73 @@ describe("đăng Reel", () => {
     vi.stubGlobal("fetch", fetchSpy);
     await expect(publishReelAs(page, "khong-co.mp4", { description: "x", seconds: 120 })).rejects.toThrow(/3–90/);
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("đăng video dài (chia mảnh)", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const page = { pageId: PAGE, token: "pt" };
+  async function tmpFile(bytes: number) {
+    const { mkdtemp, writeFile } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const path = await import("node:path");
+    const f = path.join(await mkdtemp(path.join(tmpdir(), "fbv-")), "v.mp4");
+    await writeFile(f, Buffer.alloc(bytes));
+    return f;
+  }
+  const phase = (call: unknown[]) => {
+    const body = (call[1] as RequestInit).body;
+    return body instanceof FormData ? String(body.get("upload_phase")) : new URLSearchParams(String(body)).get("upload_phase");
+  };
+  const chunkSize = (call: unknown[]) => ((call[1] as RequestInit).body as FormData).get("video_file_chunk") as Blob;
+  const start = () => json({ upload_session_id: "s1", video_id: "vid", start_offset: "0", end_offset: "1000" });
+
+  it("gửi đủ các mảnh theo offset Facebook trả về rồi finish", async () => {
+    const f = await tmpFile(2500);
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(start())
+      .mockResolvedValueOnce(json({ start_offset: "1000", end_offset: "2000" }))
+      .mockResolvedValueOnce(json({ start_offset: "2000", end_offset: "2500" }))
+      .mockResolvedValueOnce(json({ start_offset: "2500", end_offset: "2500" }))
+      .mockResolvedValueOnce(json({ success: true }));
+    vi.stubGlobal("fetch", fetchSpy);
+    expect(await publishPageVideoAs(page, f, { title: "T", description: "D" })).toEqual({ videoId: "vid" });
+    const transfers = fetchSpy.mock.calls.filter((c) => phase(c) === "transfer");
+    expect(transfers).toHaveLength(3);
+    expect(chunkSize(transfers[1]).size).toBe(1000);
+    expect(chunkSize(transfers[2]).size).toBe(500);
+    expect(phase(fetchSpy.mock.calls[4])).toBe("finish");
+  });
+
+  it("mảnh lỗi 2 lần rồi được → vẫn xong", async () => {
+    const f = await tmpFile(2000);
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(start())
+      .mockResolvedValueOnce(json({ start_offset: "1000", end_offset: "2000" }))
+      .mockResolvedValueOnce(json({ error: { message: "chập" } }, 500))
+      .mockResolvedValueOnce(json({ error: { message: "chập" } }, 500))
+      .mockResolvedValueOnce(json({ start_offset: "2000", end_offset: "2000" }))
+      .mockResolvedValueOnce(json({ success: true }));
+    vi.stubGlobal("fetch", fetchSpy);
+    expect(await publishPageVideoAs(page, f, { title: "T", description: "D" })).toEqual({ videoId: "vid" });
+    expect(fetchSpy.mock.calls.filter((c) => phase(c) === "transfer")).toHaveLength(4);
+  });
+
+  it("mảnh lỗi quá 3 lần → ném lỗi có số mảnh, không finish", async () => {
+    const f = await tmpFile(2000);
+    const fail = () => json({ error: { message: "chập" } }, 500);
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(start())
+      .mockResolvedValueOnce(json({ start_offset: "1000", end_offset: "2000" }))
+      .mockResolvedValueOnce(fail())
+      .mockResolvedValueOnce(fail())
+      .mockResolvedValueOnce(fail())
+      .mockResolvedValueOnce(fail());
+    vi.stubGlobal("fetch", fetchSpy);
+    await expect(publishPageVideoAs(page, f, { title: "T", description: "D" })).rejects.toThrow(/mảnh 2/);
+    expect(fetchSpy.mock.calls.some((c) => phase(c) === "finish")).toBe(false);
   });
 });

@@ -126,6 +126,75 @@ export async function publishReelAs(page: PageRef, file: string, opts: ReelOptio
   return { videoId: start.video_id };
 }
 
+const GRAPH_VIDEO = `https://graph-video.facebook.com/${GRAPH_VERSION}`;
+/** Mỗi mảnh: 1 lần gửi + tối đa 3 lần thử lại khi mạng chập. */
+const CHUNK_ATTEMPTS = 4;
+type VideoOptions = { title: string; description: string; scheduledAt?: Date };
+type Offsets = { start_offset: string; end_offset: string };
+
+/**
+ * Đăng video dài lên Page bằng upload chia mảnh (start → transfer… → finish). Đọc từng mảnh theo offset
+ * Facebook trả về, không nạp cả file 45 phút vào RAM. Mảnh hỏng quá số lần thử thì ném lỗi, không finish.
+ */
+export async function publishPageVideoAs(page: PageRef, file: string, opts: VideoOptions): Promise<{ videoId: string }> {
+  const { open, stat } = await import("node:fs/promises");
+  const endpoint = `${GRAPH_VIDEO}/${page.pageId}/videos`;
+  const fileSize = (await stat(file)).size;
+  const session = await graphPost<Offsets & { upload_session_id: string; video_id: string }>(endpoint, {
+    upload_phase: "start",
+    access_token: page.token,
+    file_size: String(fileSize),
+  });
+  const videoFile = await open(file, "r");
+  try {
+    let offsets: Offsets = session;
+    for (let chunkNo = 1; offsets.start_offset !== offsets.end_offset; chunkNo++) {
+      const begin = Number(offsets.start_offset);
+      const chunk = Buffer.alloc(Number(offsets.end_offset) - begin);
+      await videoFile.read(chunk, 0, chunk.length, begin);
+      offsets = await sendChunk({ endpoint, token: page.token, sessionId: session.upload_session_id, begin, chunk, chunkNo });
+    }
+  } finally {
+    await videoFile.close();
+  }
+  await graphPost(endpoint, {
+    upload_phase: "finish",
+    access_token: page.token,
+    upload_session_id: session.upload_session_id,
+    title: opts.title,
+    description: opts.description,
+    ...(opts.scheduledAt ? { published: "false", scheduled_publish_time: unix(opts.scheduledAt) } : {}),
+  });
+  return { videoId: session.video_id };
+}
+
+type ChunkUpload = { endpoint: string; token: string; sessionId: string; begin: number; chunk: Buffer; chunkNo: number };
+
+/** Gửi một mảnh, thử lại khi lỗi mạng/server; lỗi token ném ngay. Trả offset mảnh kế tiếp. */
+async function sendChunk({ endpoint, token, sessionId, begin, chunk, chunkNo }: ChunkUpload): Promise<Offsets> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= CHUNK_ATTEMPTS; attempt++) {
+    const form = new FormData();
+    form.set("upload_phase", "transfer");
+    form.set("access_token", token);
+    form.set("upload_session_id", sessionId);
+    form.set("start_offset", String(begin));
+    form.set("video_file_chunk", new Blob([new Uint8Array(chunk)]), "chunk.mp4");
+    try {
+      return await graphJson<Offsets>(await fetch(endpoint, { method: "POST", body: form }));
+    } catch (e) {
+      if (e instanceof FacebookAuthError) throw e;
+      lastError = e;
+    }
+  }
+  throw new Error(`Upload Facebook hỏng ở mảnh ${chunkNo} (byte ${begin}): ${lastError instanceof Error ? lastError.message : lastError}`);
+}
+
+/** Đăng video dài lên Page đã kết nối của kênh; ném FacebookAuthError nếu kênh chưa kết nối hoặc token hỏng. */
+export async function publishPageVideo(ch: string, file: string, opts: VideoOptions) {
+  return publishPageVideoAs(await pageAccessToken(ch), file, opts);
+}
+
 /** Đăng Reel lên Page đã kết nối của kênh; ném FacebookAuthError nếu kênh chưa kết nối hoặc token hỏng. */
 export async function publishReel(ch: string, file: string, opts: ReelOptions) {
   return publishReelAs(await pageAccessToken(ch), file, opts);
