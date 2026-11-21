@@ -121,3 +121,13 @@ describe("luật lời kể không nêu tên nguồn tra cứu", () => {
   });
 });
 
+
+describe("giọng kể nhập vai (chủ kênh 21/11/2026)", () => {
+  it("prompt có kỹ thuật kể như phim, đặt người nghe vào vai, cấm bình luận sử học, kèm giọng mẫu", () => {
+    const { system } = historyChapterPrompt(series, chapter, "HỒ SƠ");
+    expect(system).toMatch(/Hãy hình dung/);
+    expect(system).toMatch(/máy quay/i);
+    expect(system).toMatch(/KHÔNG bình luận sử học/);
+    expect(system).toMatch(/GIỌNG MẪU/);
+  });
+});
