@@ -122,6 +122,12 @@ Nhánh dựng riêng cho thể loại lịch sử, tái dùng `zoompan`/xfade/AS
 - Nhạc nền: nhạc tài liệu nhẹ, bản quyền rõ (cùng cơ chế nhạc hiện có).
 - 45 phút phải dựng xong trong 1 job ≤ 355 phút (video 90 phút hiện mất ~2 giờ 45).
 
+### 6b. Âm thanh + mở đầu (chủ kênh 21/11/2026: "nhạc, giọng, tiếng hô tướng sĩ và sĩ khí, mở truyện bánh cuốn")
+
+- **Nhạc nền sử thi** đổi theo đoạn: bối cảnh trầm → hành quân dồn dập → giao chiến cao trào → kết lắng. Nhạc giấy phép rõ (CC BY / CC0, vd Kevin MacLeod như kênh Chuyện Đời), ghi công trong mô tả; ducking khi có giọng.
+- **Âm thanh chiến trận theo cảnh** (kịch bản/cảnh gắn nhãn): tiếng hô xung trận của đám đông, trống thúc quân, tù và/kèn, ngựa hí, binh khí, nổ/pháo, sóng nước, mưa gió, lửa. Nguồn CC0/giấy phép rõ, lưu trong repo kèm ghi công. Tiếng hô là **tiếng gào không thành lời**; câu hô có chữ (vd "Sát Thát!") chỉ dùng khi câu đó có nguyên văn trong hồ sơ của video (luật không hư cấu).
+- **Mở đầu như trailer 30–45 giây**: cold open dựng riêng — khoảnh khắc căng nhất của kịch bản (HỒI 1 đã mở in medias res), trống dồn + tiếng hô, thẻ năm quét đỏ, câu hỏi treo, rồi vào kể. Học cơ chế cold open đang chạy ở kênh tiên hiệp (`coldOpenClips`, HOOK_ZONE).
+
 ### 7. Giọng đọc
 
 Một giọng nam trầm, nhịp tài liệu. Dùng ivoi khi có key, không thì Gemini — cơ chế `narrate` hiện có, không nhân `NARRATION_TEMPO`. Kho giọng ivoi hiện tại (`IVOI_VOICES`) chưa có giọng hợp tài liệu (giọng nam đang có là "Ngạn Anh" người già và giọng tiên hiệp) → **trước khi chốt**, đọc thử một đoạn kịch bản bằng 3–4 giọng ivoi/Gemini, gửi chủ kênh nghe chọn (quyết định của mình). Vì TTS dùng chung, video lịch sử xếp hàng cùng kênh Chuyện Đời theo nhịp `publishEveryDays`.

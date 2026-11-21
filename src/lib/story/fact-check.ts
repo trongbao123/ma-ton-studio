@@ -52,9 +52,22 @@ Với mỗi lỗi:
 - quote: copy NGUYÊN VĂN một đoạn ngắn LIÊN TỤC trong kịch bản chứa lỗi (đủ để tìm thấy duy nhất, không sửa dấu câu);
 - note: hồ sơ nói gì (ngắn);
 - fix: đoạn thay thế cho đúng quote, đúng theo hồ sơ, giữ giọng kể; nếu không có cách nói đúng thì "" (xoá đoạn đó).
+LỜI KỂ KHÔNG ĐƯỢC NÊU TÊN NGUỒN TRA CỨU: câu nào nhắc Wikipedia, bách khoa, "hồ sơ", "tư liệu", tên trang web/tạp chí/báo → lỗi "khong-co", fix = chính câu đó kể thẳng sự kiện, bỏ phần nêu nguồn ("Theo Wikipedia tiếng Anh, quân Thanh mất 3 ngày" → "Quân Thanh mất 3 ngày"). Nêu tên sử liệu gốc / sử gia (Đại Việt sử ký toàn thư, Herodotus…) thì được. Câu kể chuyện các nguồn vênh nhau ở chi tiết vặt (ngày lệch 1–2 hôm, cách phân công) → lỗi, fix = kể theo một bản hoặc bỏ.
 THỨ BẬC NGUỒN (đầu mỗi mục hồ sơ ghi loại): sử liệu gốc (wikisource) và bách khoa (wikipedia, Britannica) tin hơn báo (web). Khi hai nguồn trong hồ sơ ghi khác nhau mà kịch bản NÓI RÕ cả hai ("sử chép…, nhưng có ý kiến…") thì câu đó ĐÚNG — không bắt lỗi, không "sửa" về một bên. Kịch bản chỉ theo một nguồn mà nguồn tin hơn nói khác → "mau-thuan", fix theo nguồn tin hơn hoặc nói rõ cả hai.
 BỎ QUA câu tả không khí chung không gắn số liệu/tên (gió, sông nước, "trận chiến khốc liệt"). Trả tối đa 40 lỗi quan trọng nhất (sai năm/tên/số/kết cục trước); vòng soát sau sẽ bắt tiếp phần còn lại. Không có lỗi thì issues = [].`,
   };
+}
+
+/** Tên nguồn tra cứu không được xuất hiện trong lời kể (sử liệu gốc / sử gia thì được). */
+const REFERENCE_MENTION = /wikipedia|bách khoa|hồ sơ|tư liệu|tài liệu tham khảo|britannica|world history|history\.com|national geographic|smithsonian|vnexpress|báo tuổi trẻ|báo thanh niên|nghiên cứu lịch sử|tạp chí/i;
+
+/** Câu trong kịch bản nêu tên nguồn tra cứu — lớp kiểm bằng code sau lượt soát AI (AI có thể bỏ sót). */
+export function referenceMentionIssues(script: string): FactIssue[] {
+  const sentences = script.match(/[^.!?…\n]+[.!?…]*/g) ?? [];
+  return sentences
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => REFERENCE_MENTION.test(sentence))
+    .map((quote) => ({ quote, verdict: "khong-co" as const, note: "Lời kể nêu tên nguồn tra cứu (Wikipedia/hồ sơ/trang web) — kể thẳng sự kiện.", fix: "" }));
 }
 
 /** Thay lần xuất hiện đầu của mỗi `quote` bằng `fix` (rỗng = xoá); quote không có trong kịch bản thì bỏ qua. */
@@ -79,7 +92,11 @@ export async function factCheckScript(ai: TextProvider, script: string, dossierT
       // Model có suy nghĩ tính cả phần suy nghĩ vào giới hạn này — 8k từng làm JSON bị cắt giữa chừng.
       maxOutputTokens: FACT_CHECK_MAX_OUTPUT_TOKENS,
     });
-    if (!issues.length || round >= FACT_FIX_ROUNDS) return { script: current, issues };
+    if (!issues.length || round >= FACT_FIX_ROUNDS) {
+      // AI có thể bỏ sót câu nêu tên Wikipedia/hồ sơ — còn sót thì giữ thành lỗi (đề tài "chờ sửa", không render).
+      const leftover = referenceMentionIssues(current).filter((m) => !issues.some((i) => i.quote.includes(m.quote) || m.quote.includes(i.quote)));
+      return { script: current, issues: [...issues, ...leftover] };
+    }
     current = applyFactFixes(current, issues);
   }
 }

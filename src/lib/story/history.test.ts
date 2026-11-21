@@ -113,3 +113,11 @@ describe("chặn duyệt kịch bản còn lỗi sự thật", () => {
     expect(approvalBlockedReason({ factIssues: null })).toBeNull();
   });
 });
+
+describe("luật lời kể không nêu tên nguồn tra cứu", () => {
+  it("prompt viết cấm nêu Wikipedia/bách khoa/hồ sơ, chỉ cho nêu sử liệu gốc", () => {
+    const p = historyChapterPrompt(series, chapter, "HỒ SƠ");
+    expect(p.system).toMatch(/KHÔNG nêu tên.*Wikipedia/);
+  });
+});
+

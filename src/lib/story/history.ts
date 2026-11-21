@@ -89,9 +89,12 @@ export const historyScriptComplete = (words: number, target = HISTORY_TARGET_WOR
 /** Luật không hư cấu — dùng chung cho người viết và người soát. */
 const NO_FICTION_RULES = [
   "KHÔNG HƯ CẤU: chỉ dùng tên người, địa danh, năm tháng, con số, diễn biến CÓ TRONG HỒ SƠ. Hồ sơ không có thì không nói.",
-  "Không bịa lời thoại. Chỉ trích câu nói khi câu đó có nguyên văn trong hồ sơ, và nói rõ theo nguồn nào ('theo Đại Việt sử ký toàn thư…', 'sử gia Hy Lạp Herodotus chép rằng…').",
-  "Chỗ các nguồn ghi khác nhau (số quân, ngày tháng, chi tiết): nói rõ cả hai ('sử chép rằng…, nhưng có ý kiến cho rằng…'). Truyền thuyết thì nói là truyền thuyết.",
-  "Thứ bậc nguồn trong hồ sơ (đầu mục ghi loại): sử liệu gốc (wikisource) và bách khoa (wikipedia, Britannica) tin hơn báo (web); hai nguồn mâu thuẫn thì nói rõ, không tự chọn một bên làm sự thật.",
+  // Chủ kênh 21/11/2026: lời kể "Theo bách khoa Wikipedia tiếng Anh…" ở gần mọi câu — cấm hẳn.
+  "KHÔNG nêu tên nguồn tra cứu trong lời kể: không nói Wikipedia, bách khoa, hồ sơ, tư liệu, tài liệu tham khảo, tên trang web hay tạp chí. Người dẫn chuyện kể thẳng sự kiện như phim tài liệu ('Đêm 30 Tết, quân Tây Sơn vượt sông…').",
+  "Chỉ được nêu tên SỬ LIỆU GỐC hoặc SỬ GIA (Đại Việt sử ký toàn thư, Hoàng Lê nhất thống chí, Khâm định Việt sử thông giám cương mục, Herodotus, Plutarch…) và chỉ khi: trích nguyên văn câu nói, hoặc các nguồn vênh nhau ở điểm QUAN TRỌNG.",
+  "Không bịa lời thoại. Chỉ trích câu nói khi câu đó có nguyên văn trong hồ sơ ('Đại Việt sử ký toàn thư chép lời vua rằng…').",
+  "Nguồn vênh nhau: chỉ nói ra khi lệch ở điểm QUAN TRỌNG (quân số, thương vong, kết cục, ai làm gì) — 'sử cũ chép…, nhưng cũng có ghi chép cho rằng…'. Lệch vặt (ngày lệch 1–2 hôm, cách phân công, tên phụ) thì kể theo bản các nguồn trùng nhau nhiều hơn hoặc bỏ chi tiết đó, KHÔNG kể chuyện tranh cãi tài liệu. Truyền thuyết thì nói là truyền thuyết.",
+  "Thứ bậc tin cậy khi phải chọn (đầu mục hồ sơ ghi loại): sử liệu gốc (wikisource) và bách khoa (wikipedia, Britannica) hơn báo (web).",
   "Không suy diễn cảm xúc, suy nghĩ của nhân vật thành sự thật; muốn gợi không khí thì tả bối cảnh chung (sông nước, mùa, địa hình) không gắn số liệu.",
   "Đề tài cổ – trung đại: KHÔNG liên hệ sang chính trị, biên giới, tranh chấp hiện đại.",
 ];
@@ -104,7 +107,7 @@ Uy tín là tất cả: mọi chi tiết có nguồn; sai sử là mất kênh. 
 
 /** Ba hồi của kịch bản ~45 phút (mỗi hồi ≈ một lượt viết). */
 export const HISTORY_ACTS = [
-  "HỒI 1 — mở in medias res: thả người nghe vào khoảnh khắc căng nhất của sự kiện (lấy từ hồ sơ), 4–6 câu, dừng ở một câu hỏi lớn; rồi lùi lại: bối cảnh thời đại, các phe, con người chính, vì sao mọi thứ dẫn tới đây.",
+  "HỒI 1 — mở in medias res: thả người nghe vào khoảnh khắc căng nhất của sự kiện (chi tiết có trong hồ sơ), 4–6 câu, dừng ở một câu hỏi lớn; rồi lùi lại: bối cảnh thời đại, các phe, con người chính, vì sao mọi thứ dẫn tới đây.",
   "HỒI 2 — diễn biến theo trình tự thời gian: khoảng 1.200 từ lại có một mốc mới làm tình thế đổi; khi nhảy thời gian nói rõ năm/tháng ('Tháng Ba năm 1288…'); giải thích chiến thuật, địa hình, lựa chọn của từng bên bằng lời dễ hiểu.",
   "HỒI 3 — cao trào và kết cục: quay lại khoảnh khắc đã mở đầu, kể trọn; số phận các nhân vật chính theo hồ sơ; hệ quả lịch sử dài hạn; câu kết gợi suy ngẫm nhưng KHÔNG giảng đạo lý.",
 ];
