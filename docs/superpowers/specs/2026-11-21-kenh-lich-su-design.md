@@ -142,6 +142,15 @@ Một giọng nam trầm, nhịp tài liệu. Dùng ivoi khi có key, không th�
 
 Video lịch sử chỉ được đăng khi: lượt soát sự thật đạt; mọi ảnh tư liệu có giấy phép hợp lệ + ghi công; mọi ảnh GPT có nhãn "Minh họa"; không có cảnh nào dùng ảnh của cảnh khác; không khoảng đen (blackdetect). Thiếu một điều → giữ `ready` chờ, Telegram cho chủ kênh.
 
+### 11. Trang quản lý + webhook Facebook (đợt 5 — chủ kênh thêm 21/11/2026)
+
+Chủ kênh: "với UI mới đi nha chứ khó quản lý lắm" + "bắt webhook rồi kéo về làm nhiệm vụ" — chọn 1, 3, 4:
+- **Trang quản lý kênh lịch sử** trên web: danh sách đề tài + trạng thái (chưa viết / đang viết / chờ sửa / có video), nút viết kịch bản, xem & sửa lỗi sự thật, hàng chờ Reels/video Facebook (xem trước, caption, đăng / tải nháp).
+- **(1) Bình luận Facebook**: webhook Page (`feed` — comment) → AI trả lời dưới tên Page, CHỈ dựa vào hồ sơ tư liệu của video đó (không bịa; câu hỏi ngoài hồ sơ thì trả lời lịch sự là chưa có nguồn); bình luận tiêu cực/nhạy cảm/spam → không trả lời, báo Telegram.
+- **(3) Trạng thái bài đăng**: webhook video/Reel xử lý xong hoặc lỗi → cập nhật trạng thái trên web; lỗi xử lý thì tự đăng lại 1 lần, vẫn lỗi → Telegram.
+- **(4) Số liệu**: định kỳ (trong cron daily) kéo lượt xem/tương tác Reel + video từ Graph API về web để so Reel nào ăn view.
+- Webhook cần route công khai trên Vercel có kiểm chữ ký `X-Hub-Signature-256` bằng App Secret + verify token; app "Su Ky Publisher" đăng ký nhận sự kiện Page.
+
 ## Việc chủ kênh tự làm
 
 - Lập kênh YouTube "Sử Ký Kể Chuyện" trên cùng account Google, kết nối qua web (`/api/youtube/connect?channel=lich-su`).
