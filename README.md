@@ -29,6 +29,16 @@ Render xong là app tự upload video dài + Short, đặt thumbnail, bật nhã
 
 Upload lỗi (token hết hạn, hết quota API…) thì Telegram báo, video vẫn ở trạng thái *sẵn sàng*: bấm **Kết nối lại** rồi **Đăng lại** trên node Đăng YouTube (chạy workflow `publish.yml`, không render lại).
 
+## Kết nối Facebook Page
+Đăng video dài + Reels lên Page theo kênh (vd kênh `lich-su` → Page "Sử Ký Kể Chuyện"). Làm một lần:
+
+1. [developers.facebook.com](https://developers.facebook.com/) → **Ứng dụng của tôi → Tạo ứng dụng** → tên không chứa "Facebook/FB/Meta" → trường hợp sử dụng **Quản lý mọi thứ trên Trang của bạn**.
+2. App → **Cài đặt → Cơ bản** → copy **App ID** và **Khoá bí mật** → dán vào web **Cài đặt AI** ở ô *Facebook App ID* / *Facebook App Secret*.
+3. [Graph API Explorer](https://developers.facebook.com/tools/explorer/) → chọn app → **User Token** → thêm quyền `pages_show_list`, `pages_read_engagement`, `pages_manage_posts`, `publish_video` → **Generate Access Token** → chọn đúng Page.
+4. Web **Cài đặt AI → Facebook Page** → kênh + Page ID + dán token vừa tạo → **Kết nối**. Server đổi ra token Page không hết hạn (lưu mã hoá); token dán vào chỉ dùng một lần. Token này hết hạn sau 1–2 giờ, tạo xong dán ngay.
+
+App ở chế độ *Development* vẫn đăng được lên Page mà bạn là admin. Nếu bài đăng không hiện với người khác thì chuyển app sang *Live* (có thể phải App Review). Đăng thử: GitHub → **Actions → fb-test → Run workflow** (chọn kênh + `reel`/`video`) — tự tạo clip thử rồi đăng; mở link bằng trình duyệt ẩn danh để xem có công khai không, xong xoá bài thử.
+
 ## Nhiều AI (Claude, ChatGPT, Gemini)
 App dùng được cùng lúc **Claude** (`ANTHROPIC_API_KEY`), **ChatGPT** (`OPENAI_API_KEY`) và **Gemini** (`GEMINI_API_KEY`). Key nào có thì AI đó chạy, không có thì tự bỏ qua.
 

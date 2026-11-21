@@ -4,6 +4,8 @@ import { AiRoutingEditor } from "@/components/ai-routing-editor";
 import { availableProviders, loadImageRouting, loadRouting } from "@/lib/ai";
 import { secretStatus } from "@/lib/secrets";
 import { loadCliStatus, withCliStatus } from "@/lib/ai/cli-status";
+import { FacebookConnect } from "@/components/facebook-connect";
+import { listFacebookPages } from "@/lib/facebook";
 
 export default function AiSettingsPage() {
   return (
@@ -25,5 +27,11 @@ async function Editor() {
   await connection();
   // Bốn truy vấn độc lập → một vòng song song (trước: secretStatus rồi mới tới ba cái còn lại).
   const [secrets, routing, images, cli] = await Promise.all([secretStatus(), loadRouting(true), loadImageRouting(), loadCliStatus()]);
-  return <AiRoutingEditor initial={routing} initialImages={images} available={withCliStatus(availableProviders(), cli)} secrets={secrets} cli={cli} />;
+  const pages = await listFacebookPages().catch(() => []);
+  return (
+    <>
+      <AiRoutingEditor initial={routing} initialImages={images} available={withCliStatus(availableProviders(), cli)} secrets={secrets} cli={cli} />
+      <FacebookConnect connected={pages} />
+    </>
+  );
 }
