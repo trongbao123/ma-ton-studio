@@ -69,7 +69,7 @@ Chủ kênh chọn **A + nguồn 1**.
 
 ### 1. Kênh và thể loại
 
-- Kênh YouTube đã tạo 21/11/2026: **Sử Ký Kể Chuyện**, handle `@sukykechuyentv`, ID `UCRviAcP2062pyOWADwzXVAw`. Page Facebook: `https://www.facebook.com/profile.php?id=61596491473917`.
+- Kênh YouTube đã tạo 21/11/2026: **Sử Ký Kể Chuyện**, handle `@sukykechuyentv`, ID `UCRviAcP2062pyOWADwzXVAw`. Page Facebook: `https://www.facebook.com/profile.php?id=61596491473917` — id dùng cho Graph API là `1514543635066059`.
 - Thêm hồ sơ `lich-su` vào `PROFILES` (`src/lib/channel-profile.ts`) **trước** khi tạo bộ (khoá chưa khai báo sẽ rơi về hashtag tiên hiệp): `youtubeTitle: "Sử Ký Kể Chuyện"`, `publishEveryDays: 3`, hashtag kiểu `#LichSu #SuKyKeChuyen #LichSuTheGioi`, playlist "Lịch Sử Kể Chuyện".
 - Thể loại mới `src/lib/story/history.ts` theo mẫu `life.ts`: hằng `HISTORY_GENRE`, `isHistoryStory(s)`, bible kênh, danh sách đề tài, prompt viết, hằng số độ dài. **Không** tái dùng `isLifeStory`. Rẽ nhánh ở các chỗ `life.ts` đang rẽ: `service.ts`, `prompts.ts`, `render.ts`, `daily.ts`.
 - Tạo bộ bằng CLI như `newlife` (vd `render.ts newhistory:lich-su`): một bộ `genre=HISTORY_GENRE, channel=lich-su, autopilot=true`, mỗi "chương" = một video độc lập, không gộp tập.
