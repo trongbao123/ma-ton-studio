@@ -7,6 +7,8 @@ import { saveChapterAction, setApprovedAction } from "@/app/actions";
 import { ActionForm } from "@/components/action-form";
 import { CopyButton } from "@/components/copy-button";
 import { StatusBadge } from "@/components/status-badge";
+import { HistoryDossier } from "@/components/history-dossier";
+import { isHistoryStory } from "@/lib/story/history";
 import { WriteButton } from "@/components/write-button";
 import { manualPromptOf, previousChapters } from "@/lib/story/service";
 import { db } from "@/db";
@@ -75,6 +77,8 @@ async function ChapterDetail({ params }: { params: Promise<{ id: string }> }) {
           )}
         </div>
       </div>
+
+      {isHistoryStory(s) && <HistoryDossier chapterId={c.id} dossier={c.dossier} issues={c.factIssues} />}
 
       {approved ? (
         <article className="card whitespace-pre-wrap font-serif text-base leading-relaxed">{c.content}</article>
