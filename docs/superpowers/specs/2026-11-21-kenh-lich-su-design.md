@@ -128,6 +128,14 @@ Nhánh dựng riêng cho thể loại lịch sử, tái dùng `zoompan`/xfade/AS
 - **Âm thanh chiến trận theo cảnh** (kịch bản/cảnh gắn nhãn): tiếng hô xung trận của đám đông, trống thúc quân, tù và/kèn, ngựa hí, binh khí, nổ/pháo, sóng nước, mưa gió, lửa. Nguồn CC0/giấy phép rõ, lưu trong repo kèm ghi công. Tiếng hô là **tiếng gào không thành lời**; câu hô có chữ (vd "Sát Thát!") chỉ dùng khi câu đó có nguyên văn trong hồ sơ của video (luật không hư cấu).
 - **Mở đầu như trailer 30–45 giây**: cold open dựng riêng — khoảnh khắc căng nhất của kịch bản (HỒI 1 đã mở in medias res), trống dồn + tiếng hô, thẻ năm quét đỏ, câu hỏi treo, rồi vào kể. Học cơ chế cold open đang chạy ở kênh tiên hiệp (`coldOpenClips`, HOOK_ZONE).
 
+### 6c. Hình kiểu "đạo diễn" (chủ kênh 22/11/2026 — thay cho ảnh hiện vật bảo tàng, bị chê)
+
+- **Cấm ảnh chụp hiện vật bảo tàng / tượng đài / ảnh chụp hiện đại.** Video mẫu không dùng loại này.
+- Phong cách kết hợp (chủ kênh chọn): bối cảnh/mở/kết = giấy cũ sepia + tranh khắc; hành quân/giao chiến = bản đồ phẳng đậm (thẻ ngày vàng, nhãn chữ to, mũi tên cong có quân chạy, nổ, hộp chữ đáy) + **người giấy 2D/2.5D** (AI vẽ nhân vật cắt giấy theo đúng thời, tách nền, cử động: đi nhún, vung giáo, ngựa phi, ngã).
+- **Bản đồ địa hình 3D** (Blender, độ cao thật Terrarium/SRTM, texture bản đồ phẳng đậm, mũi tên ống 3D, chữ dựng đứng) cho cảnh đắt giá (~2–4 phút/video). Render trên **Kaggle GPU** (T4, ~30 giờ/tuần dùng chung) — hết giờ thì cảnh đó tự lùi về bản đồ 2D. Đã dựng thử trên máy chủ kênh (RTX 3060).
+- **Claude đạo diễn dựng**: mỗi câu kịch bản → danh sách cảnh (loại cảnh, điểm cắt theo khoảng lặng giọng, máy quay đứng/đẩy nhẹ ≤10%/lia mượt, chữ bật lên, trống/tiếng hô). Luật: không zoom giật trong một cảnh — đổi vùng thì cắt sang cảnh mới; cảnh 3–6 giây; chữ/nhãn/nhân vật không đè nhau. Dựng xong Claude soi khung hình (vision) và tự sửa.
+- Toạ độ địa danh: OpenStreetMap Nominatim (≤1 lượt/giây, User-Agent chung), kiểm nằm trong vùng đề tài; đường bờ biển/sông: Natural Earth (public domain).
+
 ### 7. Giọng đọc
 
 Một giọng nam trầm, nhịp tài liệu. Dùng ivoi khi có key, không thì Gemini — cơ chế `narrate` hiện có, không nhân `NARRATION_TEMPO`. Kho giọng ivoi hiện tại (`IVOI_VOICES`) chưa có giọng hợp tài liệu (giọng nam đang có là "Ngạn Anh" người già và giọng tiên hiệp) → **trước khi chốt**, đọc thử một đoạn kịch bản bằng 3–4 giọng ivoi/Gemini, gửi chủ kênh nghe chọn (quyết định của mình). Vì TTS dùng chung, video lịch sử xếp hàng cùng kênh Chuyện Đời theo nhịp `publishEveryDays`.
