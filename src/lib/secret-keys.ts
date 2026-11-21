@@ -18,6 +18,7 @@ export const SECRET_KEYS: SecretKey[] = [
   { env: "YOUTUBE_CLIENT_SECRET", label: "YouTube OAuth client secret", group: "service", brand: "youtube", help: "Google Cloud → Credentials (xem README)" },
   { env: "FB_APP_ID", label: "Facebook App ID", group: "service", help: "developers.facebook.com → Ứng dụng của tôi → Cài đặt → Cơ bản" },
   { env: "FB_APP_SECRET", label: "Facebook App Secret", group: "service", help: "developers.facebook.com → Cài đặt → Cơ bản → Khoá bí mật" },
+  { env: "TAVILY_API_KEY", label: "Tavily (tìm tư liệu web cho kênh lịch sử)", group: "service", help: "app.tavily.com → API Keys · free 1.000 lượt/tháng" },
 ];
 
 export const SECRETS_KEY = "api_keys";
