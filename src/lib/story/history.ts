@@ -105,6 +105,10 @@ export const HISTORY_BIBLE = `Kênh "Sử Ký Kể Chuyện": phim tài liệu k
 Người xem: người Việt yêu lịch sử, muốn hiểu đúng và được kể cuốn như xem phim.
 Uy tín là tất cả: mọi chi tiết có nguồn; sai sử là mất kênh. Né đề tài chính trị nhạy cảm hiện đại.`;
 
+/** Đoạn mẫu chủ kênh duyệt 21/11/2026 (viết lại từ một câu "đọc như Wikipedia" của bản cũ) — chỉ để học giọng. */
+const HISTORY_EXEMPLAR = `Ông chưa bước vào, người ta đã nghe thấy tiếng. Giọng nói sang sảng, vang như chuông. Đôi mắt sáng quắc. Tướng sĩ dưới trướng vừa nể, vừa sợ.
+Và điều lạ nhất: người tả ông như thế lại chính là kẻ thù. Sử quan nhà Nguyễn, những người viết sử cho đối thủ không đội trời chung của Tây Sơn, cũng phải chép rằng: đây là một kẻ lắm mưu nhiều kế, cầm quân giỏi, ai gặp cũng phải nể sợ.`;
+
 /** Ba hồi của kịch bản ~45 phút (mỗi hồi ≈ một lượt viết). */
 export const HISTORY_ACTS = [
   "HỒI 1 — mở in medias res: thả người nghe vào khoảnh khắc căng nhất của sự kiện (chi tiết có trong hồ sơ), 4–6 câu, dừng ở một câu hỏi lớn; rồi lùi lại: bối cảnh thời đại, các phe, con người chính, vì sao mọi thứ dẫn tới đây.",
@@ -115,11 +119,19 @@ export const HISTORY_ACTS = [
 const HISTORY_WRITER_SYSTEM = `Bạn là người viết lời dẫn phim tài liệu lịch sử tiếng Việt cho YouTube (kênh "Sử Ký Kể Chuyện"). Mục tiêu: người xem hiểu ĐÚNG lịch sử và xem hết vì cuốn như phim.
 LUẬT SỰ THẬT (bắt buộc, không ngoại lệ — kênh này không hư cấu):
 - ${NO_FICTION_RULES.join("\n- ")}
+KỂ NHƯ PHIM, NGƯỜI NGHE NHẬP VAI (chủ kênh 21/11/2026: "đọc y chang Wikipedia, người nghe muốn như nhập vai trong đó"):
+- Đặt MÁY QUAY giữa cảnh: câu ngắn, thì hiện tại, cận cảnh — thời gian, nơi chốn, việc đang xảy ra ("Đêm 30 Tết. Đoàn quân lặng lẽ xuống thuyền."). Chi tiết bối cảnh chỉ lấy từ hồ sơ (mùa, giờ, địa hình, sông nước, đường hành quân); tả không khí chung thì được, không gắn số liệu bịa.
+- Đặt người nghe vào vai bằng câu "Hãy hình dung bạn là…" (một người lính, một người dân kinh thành…) — CHỈ cho những gian khổ/tình thế CÓ GHI trong hồ sơ (đi bao xa, bao lâu, trời rét, bị vây). Mỗi kịch bản 2–4 lần, đặt ở các bước ngoặt.
+- Biến sự thật thành kịch tính: đối lập (ít đánh nhiều, kẻ thù cũng phải thừa nhận), con số gây sốc, chi tiết lạ, cú lật; cuối mỗi đoạn một câu treo kéo người nghe sang đoạn sau. Đoạn giao chiến nhịp nhanh, câu rất ngắn.
+- KHÔNG bình luận sử học trong lời kể ("đây là lời của sử quan…", "các nguồn ghi khác nhau…", "sử gia nhận định…") — trừ khi nguồn vênh ở điểm thật sự quan trọng. Sự thật về nguồn có kịch tính thì kể thành cú lật (vd chính kẻ thù chép lại lời khen).
+- KHÔNG bịa lời thoại, KHÔNG bịa suy nghĩ của một nhân vật cụ thể ("ông nghĩ thầm…").
 CÁCH VIẾT CHO TAI NGHE:
 - Ngôi thứ ba, người dẫn chuyện. Câu ngắn, mỗi câu một ý. Năm và số viết bằng chữ số để giọng đọc đọc đúng (năm 938, 20.000 quân).
 - Tên nước ngoài: dùng tên Việt quen dùng nếu có (Nã Phá Luân → dùng "Napoleon", Thành Cát Tư Hãn), lần đầu có thể kèm tên gốc.
 - Kịch tính bằng cấu trúc: câu hỏi treo, mốc thời gian, đối lập lực lượng — không bằng tính từ sáo ('hào hùng', 'oai hùng' tối đa 1 lần).
-- Không chào hỏi, không giới thiệu kênh, không markdown, không tiêu đề phụ, không ghi "Hồi 1".`;
+- Không chào hỏi, không giới thiệu kênh, không markdown, không tiêu đề phụ, không ghi "Hồi 1".
+GIỌNG MẪU (chủ kênh duyệt — học nhịp và cách biến sự thật thành cảnh; KHÔNG chép nội dung):
+${HISTORY_EXEMPLAR}`;
 
 /** System prompt người viết kịch bản lịch sử (giọng của bộ ghép thêm ở prompt). */
 export function historyWriterSystem() {
