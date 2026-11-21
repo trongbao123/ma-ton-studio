@@ -30,6 +30,8 @@ const ch = (number: number, summary = `tóm tắt ${number}`): Chapter => ({
   content: "",
   summary,
   status: "draft",
+  dossier: null,
+  factIssues: null,
   createdAt: new Date(0),
   updatedAt: new Date(0),
 });

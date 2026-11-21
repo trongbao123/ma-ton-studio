@@ -1,5 +1,6 @@
 import { boolean, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, unique } from "drizzle-orm/pg-core";
 import type { VideoProgress } from "@/lib/flow/progress";
+import type { Dossier, FactIssue } from "@/lib/story/history-types";
 
 export const chapterStatus = pgEnum("chapter_status", ["outline", "draft", "approved"]);
 export const videoStatus = pgEnum("video_status", ["queued", "rendering", "ready", "failed", "published"]);
@@ -48,6 +49,10 @@ export const chapters = pgTable(
     /** Tóm tắt ngắn sau khi viết — đưa vào prompt các chương sau để giữ mạch truyện. */
     summary: text("summary").notNull().default(""),
     status: chapterStatus("status").notNull().default("outline"),
+    /** Kênh lịch sử: hồ sơ tư liệu (Wikipedia) gom trước khi viết — kịch bản chỉ được dùng chi tiết trong này. */
+    dossier: jsonb("dossier").$type<Dossier | null>(),
+    /** Kênh lịch sử: lỗi sự thật còn lại sau soát — có giá trị = "chờ sửa", lượt viết tự động bỏ qua đề tài này. */
+    factIssues: jsonb("fact_issues").$type<FactIssue[] | null>(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },

@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type { Chapter, Series } from "@/db/schema";
 import { isLifeStory, lifeChapterPrompt, lifeContinueTask, lifeOutlinePrompt } from "./life";
+import { historyChapterPrompt, historyContinueTask, historyOutlinePrompt, isHistoryStory } from "./history";
+import { dossierText } from "./dossier";
 
 /** Số chương gần nhất đưa nguyên tóm tắt vào prompt; xa hơn thì bỏ để prompt không phình. */
 export const RECENT_SUMMARY_WINDOW = 15;
@@ -133,6 +135,7 @@ export function openerLine(s: Pick<Series, "episodeChapters">, startAt: number, 
 /** `trends`: đoạn xu hướng khán giả hiện tại (trendsBrief) — có thì lồng vào, không có thì dàn ý như cũ. */
 export function outlinePrompt(s: Series, previous: Chapter[], count: number, trends?: string | null) {
   if (isLifeStory(s)) return lifeOutlinePrompt(s, previous, count);
+  if (isHistoryStory(s)) return historyOutlinePrompt(s, previous, count);
   const startAt = (previous.at(-1)?.number ?? 0) + 1;
   return {
     system: WRITER_SYSTEM,
@@ -161,6 +164,8 @@ export const maxContinues = (targetWords: number) => (targetWords >= 15000 ? 7 :
 export function chapterPrompt(s: Series, previous: RecalledChapter[], chapter: Chapter, opts: { partial?: boolean } = {}) {
   // Chuyện đời: mỗi chương một truyện độc lập — không cần trí nhớ các chương trước.
   if (isLifeStory(s)) return lifeChapterPrompt(s, chapter);
+  // Lịch sử: hồ sơ do service gom trước lượt đầu (chưa có thì prompt nói rõ — bản thủ công vẫn xem được).
+  if (isHistoryStory(s)) return historyChapterPrompt(s, chapter, chapter.dossier ? dossierText(chapter.dossier) : "(chưa gom hồ sơ tư liệu)");
   const long = isLongChapter(s.targetWords);
   const length = long
     ? `Chương DÀI khoảng ${s.targetWords} từ, chia 6–8 cảnh liền mạch.${
@@ -186,6 +191,16 @@ Cách viết (bắt buộc):
       chapter.number <= FIRST_HOUR_CHAPTERS ? `\n\n${firstHourBlock([chapter.number])}` : ""
     }`,
   };
+}
+
+/** Cặp system + prompt gửi AI. */
+export type PromptPair = { system: string; prompt: string };
+
+/** Viết tiếp kịch bản lịch sử: ghép phần đã viết + nhiệm vụ lượt kế (hồ sơ đã nằm trong `base`). */
+export function historyContinuePrompt(base: PromptPair, written: string, targetWords: number): PromptPair {
+  const words = wordCount(written);
+  const task = historyContinueTask(words, targetWords);
+  return { system: base.system, prompt: `${base.prompt}\n\n# Phần đã viết (${words} từ)\n${written}\n\nKịch bản chưa xong. ${task}` };
 }
 
 export function continuePrompt(base: { system: string; prompt: string }, written: string, targetWords: number, life = false) {

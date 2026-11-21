@@ -69,7 +69,7 @@ Chủ kênh chọn **A + nguồn 1**.
 
 ### 1. Kênh và thể loại
 
-- Kênh YouTube đã tạo 21/11/2026: **Sử Ký Kể Chuyện**, handle `@sukykechuyentv`, ID `UCRviAcP2062pyOWADwzXVAw`. Page Facebook: `https://www.facebook.com/profile.php?id=61596491473917`.
+- Kênh YouTube đã tạo 21/11/2026: **Sử Ký Kể Chuyện**, handle `@sukykechuyentv`, ID `UCRviAcP2062pyOWADwzXVAw`. Page Facebook: `https://www.facebook.com/profile.php?id=61596491473917` — id dùng cho Graph API là `1514543635066059`.
 - Thêm hồ sơ `lich-su` vào `PROFILES` (`src/lib/channel-profile.ts`) **trước** khi tạo bộ (khoá chưa khai báo sẽ rơi về hashtag tiên hiệp): `youtubeTitle: "Sử Ký Kể Chuyện"`, `publishEveryDays: 3`, hashtag kiểu `#LichSu #SuKyKeChuyen #LichSuTheGioi`, playlist "Lịch Sử Kể Chuyện".
 - Thể loại mới `src/lib/story/history.ts` theo mẫu `life.ts`: hằng `HISTORY_GENRE`, `isHistoryStory(s)`, bible kênh, danh sách đề tài, prompt viết, hằng số độ dài. **Không** tái dùng `isLifeStory`. Rẽ nhánh ở các chỗ `life.ts` đang rẽ: `service.ts`, `prompts.ts`, `render.ts`, `daily.ts`.
 - Tạo bộ bằng CLI như `newlife` (vd `render.ts newhistory:lich-su`): một bộ `genre=HISTORY_GENRE, channel=lich-su, autopilot=true`, mỗi "chương" = một video độc lập, không gộp tập.
@@ -78,9 +78,13 @@ Chủ kênh chọn **A + nguồn 1**.
 
 ### 2. Hồ sơ tư liệu (bước mới, trước khi viết)
 
-Cho mỗi đề tài, gom một **hồ sơ** văn bản:
-- Bài Wikipedia tiếng Việt + tiếng Anh của sự kiện/nhân vật (và các bài liên kết chính: trận, nhân vật chủ chốt), lấy qua API Wikipedia; giữ nguyên văn + URL + phần chú thích nguồn.
-- Lưu hồ sơ cùng chương (chỗ lưu để builder chọn), để lượt viết, lượt soát và mô tả video cùng dùng.
+Chủ kênh 21/11/2026: "kiếm tư liệu đầy đủ từ nhiều trang web chứ thiếu gì" — đề tài mỏng KHÔNG rút ngắn video mà gom rộng hơn, nhưng **chỉ nguồn tin cậy** (lượt soát coi hồ sơ là chuẩn; lẫn trang sai thì kịch bản sai mà vẫn "đạt"). Ba lớp nguồn:
+1. **Wikipedia**: bài chính (vi + en) + tối đa 5 bài liên quan lấy từ liên kết trong phần mở đầu bài tiếng Anh (nhân vật, đối thủ, địa danh, sự kiện trước/sau).
+2. **Sử liệu gốc trên Wikisource**: đề tài Việt Nam tìm trong vi.wikisource các bộ sử (Đại Việt sử ký toàn thư, Khâm định Việt sử thông giám cương mục, Đại Nam thực lục, Việt sử lược, An Nam chí lược) và lấy đoạn quanh từ khoá; đề tài thế giới tìm en.wikisource (bản dịch Herodotus, Plutarch, Livy…).
+3. **Web tin cậy** qua API tìm kiếm Tavily (`TAVILY_API_KEY`, free 1.000 lượt/tháng; không có key thì bỏ qua lớp này), CHỈ trong danh sách tên miền cho phép (Britannica, World History Encyclopedia, History.com, National Geographic, Smithsonian, Livius, BBC, Bảo tàng Lịch sử quốc gia, báo lớn VN…); lưu nguyên đoạn + URL.
+- Mỗi nguồn ghi loại (`wikipedia` / `wikisource` / `web`), tiêu đề, URL; có trần ký tự từng loại để prompt không quá lớn. Hồ sơ dưới ngưỡng tối thiểu → báo lỗi, không viết.
+- Khi nguồn mâu thuẫn: lời kể nói rõ; ưu tiên sử liệu gốc và bách khoa (Britannica) hơn báo.
+- Lưu hồ sơ cùng chương (`chapters.dossier`), dùng cho lượt viết, lượt soát và mục "Nguồn tham khảo" của mô tả video.
 
 ### 3. Kịch bản
 
@@ -141,6 +145,15 @@ Một giọng nam trầm, nhịp tài liệu. Dùng ivoi khi có key, không th�
 ### 10. Kiểm tra trước khi đăng (QC)
 
 Video lịch sử chỉ được đăng khi: lượt soát sự thật đạt; mọi ảnh tư liệu có giấy phép hợp lệ + ghi công; mọi ảnh GPT có nhãn "Minh họa"; không có cảnh nào dùng ảnh của cảnh khác; không khoảng đen (blackdetect). Thiếu một điều → giữ `ready` chờ, Telegram cho chủ kênh.
+
+### 11. Trang quản lý + webhook Facebook (chủ kênh thêm 21/11/2026; "làm full" → trang quản lý làm SỚM, ngay sau tư liệu; webhook/số liệu khi có video)
+
+Chủ kênh: "với UI mới đi nha chứ khó quản lý lắm" + "bắt webhook rồi kéo về làm nhiệm vụ" — chọn 1, 3, 4:
+- **Trang quản lý kênh lịch sử** trên web: danh sách đề tài + trạng thái (chưa viết / đang viết / chờ sửa / có video), nút viết kịch bản, xem & sửa lỗi sự thật, hàng chờ Reels/video Facebook (xem trước, caption, đăng / tải nháp).
+- **(1) Bình luận Facebook**: webhook Page (`feed` — comment) → AI trả lời dưới tên Page, CHỈ dựa vào hồ sơ tư liệu của video đó (không bịa; câu hỏi ngoài hồ sơ thì trả lời lịch sự là chưa có nguồn); bình luận tiêu cực/nhạy cảm/spam → không trả lời, báo Telegram.
+- **(3) Trạng thái bài đăng**: webhook video/Reel xử lý xong hoặc lỗi → cập nhật trạng thái trên web; lỗi xử lý thì tự đăng lại 1 lần, vẫn lỗi → Telegram.
+- **(4) Số liệu**: định kỳ (trong cron daily) kéo lượt xem/tương tác Reel + video từ Graph API về web để so Reel nào ăn view.
+- Webhook cần route công khai trên Vercel có kiểm chữ ký `X-Hub-Signature-256` bằng App Secret + verify token; app "Su Ky Publisher" đăng ký nhận sự kiện Page.
 
 ## Việc chủ kênh tự làm
 

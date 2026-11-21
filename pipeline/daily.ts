@@ -8,6 +8,8 @@ import { maxContinues } from "@/lib/story/prompts";
 import { quotaDay } from "@/lib/ai/usage";
 import { aiUsage } from "@/db/schema";
 import { isLifeStory } from "@/lib/story/life";
+import { pickChapterToWrite } from "@/lib/story/history";
+import { FactCheckFailedError } from "@/lib/story/fact-check";
 import { loadSecrets } from "@/lib/secrets";
 import { ensureWebsub } from "@/lib/websub";
 import { commentOnPublished } from "./comment";
@@ -22,12 +24,14 @@ const MAX_PENDING = 3;
 
 async function writeNext(seriesId: number, targetWords: number): Promise<{ id: number; number: number; title: string; words: number }> {
   const list = await db().select().from(chapters).where(eq(chapters.seriesId, seriesId)).orderBy(asc(chapters.number));
-  if (list.filter((c) => c.status === "outline").length < 2) {
+  // Đề tài lịch sử "chờ sửa" (còn lỗi sự thật) không tính là còn dàn ý và không được viết lại tự động.
+  if (list.filter((c) => c.status === "outline" && c.factIssues == null).length < 2) {
     console.log("  lên dàn ý 10 chương");
-    await planChapters(seriesId, 10);
+    // Không thêm được chương nào (lịch sử: AI đề xuất toàn đề tài bị loại) → dừng, không gọi AI lặp mãi tới hết quota.
+    if (!(await planChapters(seriesId, 10))) throw new Error("Lên dàn ý không ra chương nào hợp lệ (đề tài nhạy cảm/thiếu Wikipedia) — xem lại prompt dàn ý.");
     return writeNext(seriesId, targetWords);
   }
-  const next = list.find((c) => c.status === "outline")!;
+  const next = pickChapterToWrite(list)!;
   console.log(`  viết chương ${next.number}: ${next.title}`);
   let r = await writeChapterStep(next.id, next.content ? "continue" : "start");
   if (r.warning) {
@@ -37,6 +41,26 @@ async function writeNext(seriesId: number, targetWords: number): Promise<{ id: n
   for (let i = 0; i < maxContinues(targetWords) && !r.enough; i++) r = await writeChapterStep(next.id, "continue");
   const done = await writeChapterStep(next.id, "finish");
   return { id: next.id, number: next.number, title: next.title, words: done.words };
+}
+
+/**
+ * Ghi nhận lỗi khi viết một bộ. Trả true nếu là hết quota (dừng viết các bộ sau). Lỗi sự thật kênh lịch sử đã báo Telegram
+ * và chuyển đề tài sang "chờ sửa" — không tính là lỗi hệ thống.
+ */
+async function reportWriteError(e: unknown, seriesTitle: string, failures: string[]): Promise<boolean> {
+  if (e instanceof QuotaExhaustedError) {
+    console.log(`⏸ ${e.message}`);
+    run.quotaHit = true;
+    await notifyQuotaOnce(e.message);
+    return true;
+  }
+  if (e instanceof FactCheckFailedError) {
+    console.log(`  ⚠ ${e.message} — chờ sửa, lượt sau viết đề tài kế`);
+    return false;
+  }
+  console.error(e);
+  failures.push(`${seriesTitle}: ${e instanceof Error ? e.message : e}`);
+  return false;
 }
 
 /** Báo hết quota tối đa 1 lần mỗi ngày quota — job chạy 3 tiếng/lần, không spam. */
@@ -264,15 +288,7 @@ async function main() {
         );
       }
     } catch (e) {
-      if (e instanceof QuotaExhaustedError) {
-        console.log(`⏸ ${e.message}`);
-        quotaLeft = false;
-        run.quotaHit = true;
-        await notifyQuotaOnce(e.message);
-      } else {
-        console.error(e);
-        failures.push(`${s.title}: ${e instanceof Error ? e.message : e}`);
-      }
+      if (await reportWriteError(e, s.title, failures)) quotaLeft = false;
     }
   }
   }

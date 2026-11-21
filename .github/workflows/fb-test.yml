@@ -13,7 +13,15 @@ on:
         required: true
         default: reel
         type: choice
-        options: [reel, video]
+        options: [reel, video, delete]
+      ids:
+        description: "Chế độ delete: id các bài cần xoá, cách nhau dấu phẩy"
+        required: false
+        default: ""
+      draft:
+        description: "Tải dạng nháp (chủ kênh tự bấm đăng trên Meta Business Suite)"
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -28,6 +36,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
       - name: Tạo clip thử
+        if: inputs.mode != 'delete'
         run: |
           if [ "$MODE" = reel ]; then SIZE=1080x1920; SECS=10; else SIZE=1920x1080; SECS=20; fi
           ffmpeg -v error -f lavfi -i "color=c=0x3b2a1a:s=$SIZE:d=$SECS" -f lavfi -i anullsrc=r=44100:cl=stereo -shortest \
@@ -35,9 +44,13 @@ jobs:
         env:
           MODE: ${{ inputs.mode }}
       # Đầu vào truyền qua env (không chèn thẳng vào lệnh) để tránh chèn lệnh.
-      - run: pnpm exec tsx scripts/fb-test-post.mts "$CHANNEL" "$MODE" test.mp4 "Thử hệ thống — sẽ xoá" "Bài thử tự động"
+      - run: |
+          if [ "$MODE" = delete ]; then TARGET="$IDS"; else TARGET=test.mp4; fi
+          pnpm exec tsx scripts/fb-test-post.mts "$CHANNEL" "$MODE" "$TARGET" "Thử hệ thống — sẽ xoá" "Bài thử tự động"
         env:
           CHANNEL: ${{ inputs.channel }}
           MODE: ${{ inputs.mode }}
+          IDS: ${{ inputs.ids }}
+          FB_DRAFT: ${{ inputs.draft && '1' || '0' }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SECRETS_KEY: ${{ secrets.SECRETS_KEY }}

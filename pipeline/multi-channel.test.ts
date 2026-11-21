@@ -16,7 +16,7 @@ const series = (o: Partial<Series> = {}): Series => ({
 });
 const chapter = (o: Partial<Chapter> = {}): Chapter => ({
   id: 1, seriesId: 9, number: 1, title: LIFE_PILOT[0].title, outline: pilotOutline(LIFE_PILOT[0]), content: "", summary: "",
-  status: "outline", createdAt: new Date(), updatedAt: new Date(), ...o,
+  status: "outline", dossier: null, factIssues: null, createdAt: new Date(), updatedAt: new Date(), ...o,
 });
 
 describe("khoá kênh", () => {
