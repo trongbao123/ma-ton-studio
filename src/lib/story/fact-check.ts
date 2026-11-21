@@ -59,12 +59,11 @@ BỎ QUA câu tả không khí chung không gắn số liệu/tên (gió, sông 
 }
 
 /** Tên nguồn tra cứu không được xuất hiện trong lời kể (sử liệu gốc / sử gia thì được). */
-const REFERENCE_MENTION = /wikipedia|bách khoa|hồ sơ|tư liệu|tài liệu tham khảo|britannica|world history|history\.com|national geographic|smithsonian|vnexpress|tuổi trẻ|thanh niên|nghiên cứu lịch sử|tạp chí/i;
+const REFERENCE_MENTION = /wikipedia|bách khoa|hồ sơ|tư liệu|tài liệu tham khảo|britannica|world history|history\.com|national geographic|smithsonian|vnexpress|báo tuổi trẻ|báo thanh niên|nghiên cứu lịch sử|tạp chí/i;
 
 /** Câu trong kịch bản nêu tên nguồn tra cứu — lớp kiểm bằng code sau lượt soát AI (AI có thể bỏ sót). */
 export function referenceMentionIssues(script: string): FactIssue[] {
-  const sentences = script.match(/[^.!?…
-]+[.!?…]*/g) ?? [];
+  const sentences = script.match(/[^.!?…\n]+[.!?…]*/g) ?? [];
   return sentences
     .map((sentence) => sentence.trim())
     .filter((sentence) => REFERENCE_MENTION.test(sentence))

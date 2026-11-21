@@ -88,3 +88,9 @@ describe("lời kể không được nêu tên nguồn tra cứu", () => {
   });
 });
 
+
+describe("không bắt nhầm từ thường", () => {
+  it("'thời tuổi trẻ', 'thanh niên trai tráng' không phải tên báo", () => {
+    expect(referenceMentionIssues("Thời tuổi trẻ, ông dẫn thanh niên trai tráng ra trận.")).toEqual([]);
+  });
+});
