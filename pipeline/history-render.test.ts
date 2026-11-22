@@ -41,6 +41,32 @@ describe("chọn cách dựng từng cảnh (lùi cấp khi thiếu dữ liệu)
     expect(used.images[0]?.synthetic).toBe(true);
   });
 
+  it("AI vẽ cũng hỏng → lùi về thẻ chữ, KHÔNG ném lỗi giết cả job", async () => {
+    const r = renderers({
+      findArt: vi.fn(async () => []),
+      drawArt: vi.fn(async () => {
+        throw new Error("codex (gói) lỗi: prompt chỉ có dấu chấm");
+      }),
+    });
+    const used = await pickSceneRenderer({ shot: shot({ kind: "art", artQuery: "Tây Sơn" }), places, dir: "d", out: "o.mp4", renderers: r });
+    expect(used.kind).toBe("card");
+    expect(r.card).toHaveBeenCalled();
+  });
+
+  it("cảnh tranh đạo diễn bỏ trống cả artQuery lẫn artPrompt → thẻ chữ, không phí lượt tìm/vẽ", async () => {
+    const r = renderers();
+    const used = await pickSceneRenderer({ shot: shot({ kind: "art" }), places, dir: "d", out: "o.mp4", renderers: r });
+    expect(used.kind).toBe("card");
+    expect(r.findArt).not.toHaveBeenCalled();
+    expect(r.drawArt).not.toHaveBeenCalled();
+  });
+
+  it("tìm tranh trên Commons lỗi mạng → vẫn ra thẻ chữ", async () => {
+    const r = renderers({ findArt: vi.fn(async () => { throw new Error("Commons 503"); }) });
+    const used = await pickSceneRenderer({ shot: shot({ kind: "art", artPrompt: "chân dung Quang Trung" }), places, dir: "d", out: "o.mp4", renderers: r });
+    expect(used.kind).toBe("card");
+  });
+
   it("cảnh tranh có tranh thật → dùng tranh, không gọi AI vẽ", async () => {
     const r = renderers();
     const used = await pickSceneRenderer({ shot: shot({ kind: "art", artQuery: "Tây Sơn" }), places, dir: "d", out: "o.mp4", renderers: r });
