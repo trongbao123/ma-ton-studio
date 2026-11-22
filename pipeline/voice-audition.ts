@@ -26,10 +26,19 @@ type IvoiVoice = { voice_id?: string; id?: string; name?: string; gender?: strin
 
 /** Danh sách giọng ivoi (API đổi tên trường giữa các bản — nhận cả voice_id lẫn id). */
 async function ivoiVoices(): Promise<IvoiVoice[]> {
-  const res = await fetch("https://api.ivoi.vn/api/v1/tts/voices", { headers: { Authorization: `Bearer ${process.env.IVOI_API_KEY}` } });
-  if (!res.ok) throw new Error(`ivoi /voices ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  const body = (await res.json()) as IvoiVoice[] | { data?: IvoiVoice[]; voices?: IvoiVoice[] };
-  return Array.isArray(body) ? body : (body.data ?? body.voices ?? []);
+  const base = process.env.IVOI_BASE_URL ?? "https://ivoi.io/api/api/v1";
+  // API đổi đường dẫn giữa các bản — thử lần lượt, lấy danh sách đầu tiên có dữ liệu.
+  for (const pathname of ["/tts/voices", "/voices", "/tts/voice"]) {
+    const found = await fetch(`${base}${pathname}`, { headers: { Authorization: `Bearer ${process.env.IVOI_API_KEY}` } })
+      .then(async (r) => (r.ok ? ((await r.json()) as IvoiVoice[] | { data?: IvoiVoice[]; voices?: IvoiVoice[] }) : null))
+      .catch(() => null);
+    const fromApi = Array.isArray(found) ? found : (found?.data ?? found?.voices ?? []);
+    if (fromApi.length) {
+      console.log(`ivoi: lấy giọng từ ${pathname}`);
+      return fromApi;
+    }
+  }
+  throw new Error("Không endpoint nào trả danh sách giọng");
 }
 
 const isMale = (v: IvoiVoice) => /male|nam/i.test(`${v.gender ?? ""}`) && !/female|nữ/i.test(`${v.gender ?? ""}`);
