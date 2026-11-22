@@ -77,11 +77,26 @@ Bản dựng thử đã chạy được (tham khảo, KHÔNG phải code product
 **Produces (scene-map.ts):**
 - `MAP_PALETTE = { sea: "#1c3647", land: "#b9a375", river: "#2f6f9a", route: "#b3362a", routeShadow: "#6d1c14", label: "#ffffff", labelInk: "#111111", tag: "#d8ad2e", caption: "#2a2422" }` (tông trầm, không rực).
 - `renderMapScene(o: MapScene): Promise<void>` với `type MapScene = { shot: Shot; places: Map<string, {lat;lon}>; out: string; fps?: number }` — vẽ từng khung bằng SVG → PNG (resvg) → ffmpeg; mũi tên tuyến mọc dần, nhãn địa danh hiện khi mũi tên chạm, nổ ở `battles`, lính chibi chạy ở đầu mũi tên, thẻ vàng `title` trượt vào, hộp chữ đáy `subtitle`.
-- `chibiSoldier(o: { x: number; y: number; t: number; index: number; color: string }): string` — SVG người giấy đầu tròn, nhún theo nhịp bước.
+- Lính chibi là **ảnh do Codex vẽ** (xem `pipeline/sprites.ts`, Task 3b), không vẽ bằng SVG: `<image href="data:image/png;base64,…">` đặt trên bản đồ, nhún/đổi tư thế theo `t`.
 
-- [ ] Test (không chạy ffmpeg): `boxFor` với 2 điểm cách nhau 1° → tỉ lệ ngang/dọc = 16/9 sau khi nhân cos; `projector` đưa góc tây-bắc về (0,0) và đông-nam về (w,h); `chibiSoldier` khác nhau ở 2 thời điểm (có nhún).
+- [ ] Test (không chạy ffmpeg): `boxFor` với 2 điểm cách nhau 1° → tỉ lệ ngang/dọc = 16/9 sau khi nhân cos; `projector` đưa góc tây-bắc về (0,0) và đông-nam về (w,h).
 - [ ] Test khung SVG: `mapFrameSvg` (export) ở `t=0` chưa có nhãn địa danh cuối; ở `t` cuối có đủ mọi nhãn và không có chuỗi `NaN`.
 - [ ] FAIL → cài → PASS → commit `feat(lich-su): cảnh bản đồ phẳng + lính chibi`.
+
+### Task 3b: Hình nhân vật do Codex vẽ (sprite)
+
+**Files:** Create `pipeline/sprites.ts`, `sprites.test.ts`
+
+**Interfaces — Consumes:** `drawImage` (`pipeline/images.ts`) — đường vẽ ảnh hiện có, ưu tiên Codex.
+**Produces:**
+- `type SpriteKind = "infantry" | "cavalry" | "elephant" | "general" | "ship" | "cannon"`
+- `SPRITE_STYLE` — câu tả chung cho mọi prompt: *"flat 2D paper-cutout game sprite, side view, full body, thick dark outline, muted earthy colors, simple shapes, no text, transparent background, centered"*.
+- `spritePrompt(o: { kind: SpriteKind; side: string; era: string }): string` — ghép `SPRITE_STYLE` + mô tả quân phục/vũ khí đúng thời (`era`) và phe (`side`); CẤM chi tiết hiện đại.
+- `ensureSprite(o: { kind: SpriteKind; side: string; era: string; dir: string }): Promise<string>` — cache theo hash của prompt trong `dir`; đã có file hợp lệ thì không vẽ lại; vẽ xong **tách nền** (ffmpeg `colorkey` quanh màu góc ảnh) ra PNG trong suốt.
+- `spriteDataUri(file: string): Promise<string>` — PNG → `data:image/png;base64,…` để nhúng vào SVG khung bản đồ.
+
+- [ ] Test: `spritePrompt` chứa `SPRITE_STYLE`, chứa `era`/`side`, không chứa từ hiện đại ("tactical", "modern", "rifle"); `ensureSprite` gọi lần 2 với cùng tham số → `drawImage` chỉ được gọi 1 lần (cache); `spriteDataUri` trả chuỗi bắt đầu `data:image/png;base64,`.
+- [ ] FAIL → cài → PASS → commit `feat(lich-su): sprite nhân vật do Codex vẽ, tách nền, có cache`.
 
 ### Task 4: Cảnh thẻ chữ + cảnh tranh tư liệu
 
@@ -151,7 +166,7 @@ Bản dựng thử đã chạy được (tham khảo, KHÔNG phải code product
 - Luồng: còn lỗi QC → giữ `ready`, Telegram, **không đăng**.
 
 - [ ] Test `historyQc` (mock ffmpeg log): lệch 3 giây → có lỗi; `blackdetect` có dòng → có lỗi; ảnh synthetic không nhãn → có lỗi; tất cả sạch → `[]`.
-- [ ] Test lùi cấp: `terrain` trả `false` → gọi `renderMapScene`; `places` rỗng → gọi `renderCardScene`; `pickArtwork` trả `[]` → gọi AI vẽ và ảnh có `synthetic: true` (nhãn "Minh họa").
+- [ ] Test lùi cấp: `terrain` trả `false` → gọi `renderMapScene`; `places` rỗng → gọi `renderCardScene`; `pickArtwork` trả `[]` → gọi Codex vẽ (`drawImage`, prompt theo nét tranh khắc cổ) và ảnh có `synthetic: true` (nhãn "Minh họa").
 - [ ] Toàn bộ `pnpm exec vitest run && pnpm typecheck && pnpm lint`.
 - [ ] FAIL → cài → PASS → commit `feat(lich-su): ghép video lịch sử + QC trước khi đăng`.
 
