@@ -41,9 +41,30 @@ export type RenderedScene = { kind: Shot["kind"]; images: ArtImage[] };
 /** Địa danh của cảnh đã tra được toạ độ. */
 const knownPlaces = (shot: Shot, places: Map<string, GeoPoint>) => (shot.route ?? shot.places ?? []).filter((name) => places.has(name));
 
+/** Chữ tả tranh mà đạo diễn ghi cho cảnh; rỗng thì không tìm được mà cũng không vẽ được gì. */
+const artSubject = (shot: Shot) => `${shot.artQuery ?? ""} ${shot.artPrompt ?? ""}`.trim();
+
 /**
- * Dựng một cảnh, tự lùi cấp khi thiếu dữ liệu: 3D → bản đồ 2D → thẻ chữ; tranh tư liệu → AI vẽ (đóng nhãn "Minh họa").
- * Luôn ra được một file, không bao giờ để khung trống.
+ * Tranh cho một cảnh: tìm tranh cổ trước, không có thì nhờ AI vẽ. Trả null khi chịu thua —
+ * một cảnh không có tranh chỉ nên lùi về thẻ chữ, không được quyền giết cả job dựng 500+ cảnh.
+ */
+async function artFor({ shot, dir, renderers }: Pick<SceneJob, "shot" | "dir" | "renderers">): Promise<ArtImage | null> {
+  if (!artSubject(shot)) {
+    console.warn("⚠ Cảnh tranh không có artQuery lẫn artPrompt — lùi về thẻ chữ");
+    return null;
+  }
+  try {
+    const found = await renderers.findArt({ shot, dir });
+    return found[0] ?? (await renderers.drawArt({ shot, dir }));
+  } catch (e) {
+    console.warn("⚠ Cảnh tranh: tìm và vẽ đều hỏng — lùi về thẻ chữ:", e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
+/**
+ * Dựng một cảnh, tự lùi cấp khi thiếu dữ liệu: 3D → bản đồ 2D → thẻ chữ; tranh tư liệu → AI vẽ (đóng nhãn "Minh họa")
+ * → thẻ chữ. Luôn ra được một file, không bao giờ để khung trống.
  */
 export async function pickSceneRenderer({ shot, places, dir, out, renderers }: SceneJob): Promise<RenderedScene> {
   if (shot.kind === "card") {
@@ -51,10 +72,13 @@ export async function pickSceneRenderer({ shot, places, dir, out, renderers }: S
     return { kind: "card", images: [] };
   }
   if (shot.kind === "art") {
-    const found = await renderers.findArt({ shot, dir });
-    const art = found[0] ?? (await renderers.drawArt({ shot, dir }));
-    await renderers.art({ shot, art, out });
-    return { kind: "art", images: [art] };
+    const art = await artFor({ shot, dir, renderers });
+    if (art) {
+      await renderers.art({ shot, art, out });
+      return { kind: "art", images: [art] };
+    }
+    await renderers.card({ shot, out });
+    return { kind: "card", images: [] };
   }
   // map / terrain: cần ít nhất 2 địa danh có toạ độ, không thì chuyển sang thẻ chữ.
   if (knownPlaces(shot, places).length < 2) {
