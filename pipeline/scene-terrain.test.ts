@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Shot } from "@/lib/story/storyboard";
-import { renderTerrainScene, TERRAIN_MAX_SECONDS_PER_VIDEO, terrainBudget, type TerrainRun } from "./scene-terrain";
+import { renderTerrainScene, stopAfterFailure, TERRAIN_MAX_SECONDS_PER_VIDEO, terrainBudget, type TerrainRun } from "./scene-terrain";
 
 const places = new Map([
   ["Tam Điệp, Ninh Bình", { lat: 20.15, lon: 105.9 }],
@@ -47,5 +47,28 @@ describe("gửi việc 3D sang Kaggle", () => {
     const { kaggleTerrainJob } = await import("./scene-terrain");
     await expect(kaggleTerrainJob({ videoId: 1, log: () => {} })({ dir: ".render/x", framesDir: ".render/x/frames", shot })).rejects.toThrow(/Kaggle/i);
     if (saved) process.env.KAGGLE_API_TOKEN = saved;
+  });
+});
+
+describe("cầu dao Kaggle", () => {
+  it("hỏng một lần là mọi lượt sau trượt NGAY, không gọi Kaggle lại", async () => {
+    const kaggle = vi.fn(async () => {
+      throw new Error("Kernel 3D quá 20 phút");
+    });
+    const stopped: string[] = [];
+    const job = stopAfterFailure(kaggle, (reason) => stopped.push(reason));
+    await expect(job({ dir: "d", framesDir: "f", shot })).rejects.toThrow("quá 20 phút");
+    await expect(job({ dir: "d", framesDir: "f", shot })).rejects.toThrow(/tắt cảnh 3D/i);
+    await expect(job({ dir: "d", framesDir: "f", shot })).rejects.toThrow(/tắt cảnh 3D/i);
+    expect(kaggle).toHaveBeenCalledTimes(1);
+    expect(stopped).toHaveLength(1);
+  });
+
+  it("chạy trơn thì không chặn lượt nào", async () => {
+    const kaggle = vi.fn(async () => {});
+    const job = stopAfterFailure(kaggle);
+    await job({ dir: "d", framesDir: "f", shot });
+    await job({ dir: "d", framesDir: "f", shot });
+    expect(kaggle).toHaveBeenCalledTimes(2);
   });
 });
