@@ -34,6 +34,24 @@ export function terrainBudget(limit = TERRAIN_MAX_SECONDS_PER_VIDEO): TerrainBud
 /** Việc gửi sang Kaggle: đẩy dataset + chạy kernel Blender + tải khung hình về `framesDir`. */
 export type KaggleTerrainJob = (o: { dir: string; framesDir: string; shot: Shot }) => Promise<void>;
 
+/**
+ * Cầu dao: Kaggle hỏng hoặc hết giờ MỘT lần là tắt 3D cho cả video, lượt sau ném lỗi ngay.
+ * Không có cầu dao thì mỗi cảnh terrain lại chờ lại từ đầu — hàng chục cảnh × 20 phút, job hết giờ trước khi dựng xong.
+ */
+export function stopAfterFailure(job: KaggleTerrainJob, onStop?: (reason: string) => void): KaggleTerrainJob {
+  let stopped = "";
+  return async (o) => {
+    if (stopped) throw new Error(`Đã tắt cảnh 3D cho video này sau lần Kaggle hỏng đầu tiên (${stopped})`);
+    try {
+      await job(o);
+    } catch (e) {
+      stopped = e instanceof Error ? e.message : String(e);
+      onStop?.(stopped);
+      throw e;
+    }
+  };
+}
+
 export type TerrainRun = {
   shot: Shot;
   places: Map<string, GeoPoint>;
@@ -98,8 +116,11 @@ export async function renderTerrainScene({ shot, places, dir, out, budget, runOn
   }
 }
 
-/** Chờ kernel Blender tối đa ngần này phút (cài Blender ~2 phút + render). */
-const KAGGLE_MAX_WAIT_MINUTES = 55;
+/**
+ * Chờ kernel Blender tối đa ngần này phút (cài Blender ~2 phút + render). Để 55 phút thì một video 527 cảnh
+ * chờ Kaggle lâu hơn cả hạn 355 phút của job — thà lùi sớm về bản đồ 2D còn hơn chết giờ.
+ */
+const KAGGLE_MAX_WAIT_MINUTES = 20;
 const POLL_MS = 20_000;
 const MS_PER_MINUTE = 60_000;
 const SECONDS_PER_MINUTE = 60;

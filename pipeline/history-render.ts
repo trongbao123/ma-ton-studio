@@ -18,7 +18,7 @@ import { narrate } from "./render";
 import { artCredits, pickArtwork, renderArtScene, type ArtImage } from "./scene-art";
 import { renderCardScene } from "./scene-card";
 import { renderMapScene } from "./scene-map";
-import { kaggleTerrainJob, renderTerrainScene, terrainBudget } from "./scene-terrain";
+import { kaggleTerrainJob, renderTerrainScene, stopAfterFailure, terrainBudget } from "./scene-terrain";
 import { ensureSprite, spriteDataUri } from "./sprites";
 import { toAss } from "./text";
 import { IVOI_PREFIX } from "./tts-ivoi";
@@ -109,9 +109,11 @@ export type RendererSetup = { videoId: number; era: string; side: string; topicT
 /** Bộ dựng cảnh thật (gọi ffmpeg, Kaggle, Commons, Codex). */
 function realRenderers(setup: RendererSetup): SceneRenderers {
   const budget = terrainBudget();
+  const runOnKaggle = stopAfterFailure(kaggleTerrainJob({ videoId: setup.videoId, log: setup.log }), (reason) =>
+    setup.log(`Tắt cảnh 3D cho cả video sau lần Kaggle hỏng đầu tiên (${reason}) — các cảnh sau dùng bản đồ 2D`),
+  );
   return {
-    terrain: ({ shot, places, dir, out }) =>
-      renderTerrainScene({ shot, places, dir, out, budget, runOnKaggle: kaggleTerrainJob({ videoId: setup.videoId, log: setup.log }) }),
+    terrain: ({ shot, places, dir, out }) => renderTerrainScene({ shot, places, dir, out, budget, runOnKaggle }),
     map: async ({ shot, places, dir, out }) => {
       const infantry = await ensureSprite({ kind: "infantry", side: setup.side, era: setup.era, dir })
         .then(spriteDataUri)
