@@ -126,6 +126,8 @@ export function seriesCommand(arg: string): Promise<unknown> | null {
   // Soát lại kịch bản lịch sử (sau khi chủ kênh sửa tay đoạn sai) rồi chốt — đạt thì gỡ cờ "chờ sửa".
   // BẢN DỰNG THỬ phong cách kênh lịch sử (spike) — đoạn mẫu ~40 giây + mẫu giọng, đưa lên release "history-preview".
   if (arg.startsWith("historypreview:")) return import("./history-preview").then((x) => x.historyPreview(Number(arg.slice(15))));
+  // BẢN THỬ GIỌNG (spike): đọc 1 đoạn bằng mọi giọng nam ivoi + giọng Gemini hợp tài liệu → release "history-preview".
+  if (arg === "voices") return import("./voice-audition").then((x) => x.auditionVoices());
   if (arg.startsWith("factcheck:")) return import("./history-script").then((x) => x.recheckHistoryScript(Number(arg.slice(10))));
   if (arg.startsWith("pov:")) return firstPerson(arg.slice(4).split(",").map(Number));
   if (arg === "series") return listSeries();
