@@ -1411,7 +1411,7 @@ if (process.argv[1]?.endsWith("render.ts")) {
     if (arg.startsWith("thumbs:")) return import("./rethumb").then((x) => x.rethumb(Number(arg.slice(7))));
     if (arg === "trends") return import("./trends").then((x) => x.scanTrends());
     // Lệnh về bộ truyện: newseries:, newlife[:kênh], newhistory[:kênh], historyscript:<id>, pov:, series — xem new-series.ts.
-    if (/^(newseries:|newlife(:|$)|newhistory(:|$)|historyscript:|factcheck:|historypreview:|historyvideo:|voices$|pov:|series$)/.test(arg)) return import("./new-series").then((x) => x.seriesCommand(arg));
+    if (/^(newseries:|newlife(:|$)|newhistory(:|$)|historyscript:|factcheck:|historyvideo:|pov:|series$)/.test(arg)) return import("./new-series").then((x) => x.seriesCommand(arg));
     if (arg.startsWith("compile:")) return import("./compile").then((x) => x.compileSeries(Number(arg.slice(8))));
     return renderVideo(Number(arg));
   };
