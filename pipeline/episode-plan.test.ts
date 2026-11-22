@@ -28,8 +28,8 @@ describe("chaptersToWrite", () => {
   it("kho 3 tập + 2 chương lẻ: chỉ viết 1", () => expect(chaptersToWrite({ ...base, stockChapters: 11 })).toBe(1));
   it("không âm khi kho vượt", () => expect(chaptersToWrite({ ...base, stockChapters: 15 })).toBe(0));
   it("mặc định trần cao: kho 4 tập vẫn viết tiếp (sản xuất liên tục)", () => {
-    const { maxEpisodes: _, ...noCap } = base;
-    expect(chaptersToWrite({ ...noCap, stockChapters: 12 })).toBe(6);
+    const { chaptersPerDay, writtenToday, episodeChapters } = base; // bỏ maxEpisodes
+    expect(chaptersToWrite({ chaptersPerDay, writtenToday, episodeChapters, stockChapters: 12 })).toBe(6);
   });
 });
 
