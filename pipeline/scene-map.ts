@@ -55,6 +55,8 @@ export type MapFrame = {
   t: number;
   /** Ảnh sprite nền trong suốt theo loại quân (data URI); rỗng thì không vẽ lính. */
   sprites: Partial<Record<SpriteKind, string>>;
+  /** Nền (biển/đất/sông/bờ biển) dựng sẵn bằng `baseLayersSvg`; bỏ trống thì tự dựng lại cho khung này. */
+  base?: string;
 };
 
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
@@ -62,9 +64,19 @@ const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
 const ease = (x: number) => (x < EASE_HALF ? 2 * x * x : 1 - (-2 * x + 2) ** 2 / 2);
 const escapeXml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-/** Các điểm của tuyến hành quân (bỏ địa danh chưa tra được toạ độ). */
-function routePoints(shot: Shot, places: Map<string, GeoPoint>): GeoPoint[] {
-  return (shot.route ?? shot.places ?? []).map((name) => places.get(name)).filter((p): p is GeoPoint => p != null);
+/** Địa danh của cảnh đã tra được toạ độ (theo thứ tự tuyến hành quân). */
+function knownPlaces(shot: Shot, places: Map<string, GeoPoint>): string[] {
+  return (shot.route ?? shot.places ?? []).filter((name) => places.has(name));
+}
+
+/** Khung bản đồ ôm hết địa danh của cảnh. */
+function boxOf(known: string[], places: Map<string, GeoPoint>) {
+  return boxFor(known.map((name) => places.get(name)!), ASPECT);
+}
+
+/** Hàm chiếu của cảnh — cố định suốt cảnh, nên mọi khung hình của cảnh chiếu giống nhau. */
+function projectorFor(known: string[], places: Map<string, GeoPoint>) {
+  return projector(boxOf(known, places), MAP_W, MAP_H);
 }
 
 /** Đường cong mềm qua các điểm (Catmull-Rom → Bezier) + độ dài gần đúng + mốc tiến độ từng điểm. */
@@ -139,15 +151,24 @@ function burstSvg(x: number, y: number, k: number) {
 /** Tên hiển thị: bỏ phần tỉnh/nước sau dấu phẩy, viết hoa. */
 export const displayName = (query: string) => query.split(",")[0].trim().toUpperCase();
 
+/**
+ * Nền bản đồ: biển, đất, sông, bờ biển. Nền không đổi trong suốt một cảnh — hình đất/sông là hàng nghìn đường,
+ * dựng lại cho từng khung (25 khung/giây) là phần tốn nhất của cảnh bản đồ. Dựng một lần rồi truyền vào `MapFrame.base`.
+ */
+export function baseLayersSvg(shapes: MapShapes, project: (lon: number, lat: number) => [number, number]): string {
+  return `<rect width="${MAP_W}" height="${MAP_H}" fill="${MAP_PALETTE.sea}"/>
+<g fill="${MAP_PALETTE.land}">${shapes.land.map((r) => `<path d="${pathData(r, project, true)}"/>`).join("")}</g>
+<g fill="none" stroke="${MAP_PALETTE.river}" stroke-width="7" stroke-linecap="round">${shapes.rivers.map((r) => `<path d="${pathData(r, project, false)}"/>`).join("")}</g>
+<g fill="none" stroke="${MAP_PALETTE.coast}" stroke-width="2.5">${shapes.coast.map((r) => `<path d="${pathData(r, project, false)}"/>`).join("")}</g>`;
+}
+
 /** Một khung hình của cảnh bản đồ (SVG). */
-export function mapFrameSvg({ shot, places, shapes, t, sprites }: MapFrame): string {
+export function mapFrameSvg({ shot, places, shapes, t, sprites, base }: MapFrame): string {
   const length = Math.max(0.001, shot.end - shot.start);
   const progress = clamp01((t - shot.start) / length);
   const drawn = ease(clamp01((progress - DRAW_FROM) / (DRAW_TO - DRAW_FROM)));
-  const names = shot.route ?? shot.places ?? [];
-  const known = names.filter((n) => places.has(n));
-  const box = boxFor(known.map((n) => places.get(n)!), ASPECT);
-  const project = projector(box, MAP_W, MAP_H);
+  const known = knownPlaces(shot, places);
+  const project = projectorFor(known, places);
   const points = known.map((n) => project(places.get(n)!.lon, places.get(n)!.lat));
   const curve = points.length > 1 ? routeCurve(points) : null;
 
@@ -185,10 +206,7 @@ export function mapFrameSvg({ shot, places, shapes, t, sprites }: MapFrame): str
   const tagIn = clamp01(progress / 0.12);
   const captionIn = clamp01((progress - 0.18) / 0.12);
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${MAP_W}" height="${MAP_H}" viewBox="0 0 ${MAP_W} ${MAP_H}">
-<rect width="${MAP_W}" height="${MAP_H}" fill="${MAP_PALETTE.sea}"/>
-<g fill="${MAP_PALETTE.land}">${shapes.land.map((r) => `<path d="${pathData(r, project, true)}"/>`).join("")}</g>
-<g fill="none" stroke="${MAP_PALETTE.river}" stroke-width="7" stroke-linecap="round">${shapes.rivers.map((r) => `<path d="${pathData(r, project, false)}"/>`).join("")}</g>
-<g fill="none" stroke="${MAP_PALETTE.coast}" stroke-width="2.5">${shapes.coast.map((r) => `<path d="${pathData(r, project, false)}"/>`).join("")}</g>
+${base ?? baseLayersSvg(shapes, project)}
 ${curve ? `<path d="${curve.d}" fill="none" stroke="${MAP_PALETTE.routeShadow}" stroke-width="30" stroke-linecap="round" stroke-dasharray="${curve.length.toFixed(1)}" stroke-dashoffset="${(curve.length * (1 - drawn)).toFixed(1)}" opacity="0.55"/>
 <path d="${curve.d}" fill="none" stroke="${MAP_PALETTE.route}" stroke-width="18" stroke-linecap="round" stroke-dasharray="${curve.length.toFixed(1)}" stroke-dashoffset="${(curve.length * (1 - drawn)).toFixed(1)}"/>` : ""}
 ${labels}${bursts}${army}
@@ -203,16 +221,19 @@ export type MapScene = { shot: Shot; places: Map<string, GeoPoint>; sprites: Par
 
 /** Dựng cảnh bản đồ ra mp4: vẽ từng khung bằng SVG → PNG rồi ghép. */
 export async function renderMapScene({ shot, places, sprites, dir, out }: MapScene) {
-  const names = shot.route ?? shot.places ?? [];
-  const known = names.filter((n) => places.has(n));
-  if (!known.length) throw new Error(`Cảnh bản đồ không có địa danh nào tra được toạ độ: ${names.join(", ")}`);
-  const shapes = await loadShapes(boxFor(known.map((n) => places.get(n)!), ASPECT));
+  const known = knownPlaces(shot, places);
+  if (!known.length) {
+    throw new Error(`Cảnh bản đồ không có địa danh nào tra được toạ độ: ${(shot.route ?? shot.places ?? []).join(", ")}`);
+  }
+  const shapes = await loadShapes(boxOf(known, places));
+  // Nền dựng MỘT lần cho cả cảnh — không dựng lại hàng nghìn đường đất/sông cho từng khung.
+  const base = baseLayersSvg(shapes, projectorFor(known, places));
   const frames = path.join(dir, "frames");
   await mkdir(frames, { recursive: true });
   const fonts = [path.resolve("pipeline/fonts/BeVietnamPro-Bold.ttf"), path.resolve("pipeline/fonts/PlayfairDisplay-Black.ttf")];
   const count = Math.max(1, Math.round((shot.end - shot.start) * MAP_FPS));
   for (let i = 0; i < count; i++) {
-    const svg = mapFrameSvg({ shot, places, shapes, sprites, t: shot.start + i / MAP_FPS });
+    const svg = mapFrameSvg({ shot, places, shapes, sprites, base, t: shot.start + i / MAP_FPS });
     const png = new Resvg(svg, { font: { fontFiles: fonts, loadSystemFonts: false, defaultFontFamily: "Be Vietnam Pro" } }).render().asPng();
     await writeFile(path.join(frames, `f${String(i).padStart(5, "0")}.png`), png);
   }

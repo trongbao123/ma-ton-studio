@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Shot } from "@/lib/story/storyboard";
-import { LABEL_MIN_GAP, layoutLabels, MAP_PALETTE, mapFrameSvg, type MapFrame } from "./scene-map";
+import { baseLayersSvg, LABEL_MIN_GAP, layoutLabels, MAP_PALETTE, mapFrameSvg, type MapFrame } from "./scene-map";
 
 const places = new Map([
   ["Tam Điệp, Ninh Bình", { lat: 20.15, lon: 105.9 }],
@@ -77,5 +77,15 @@ describe("nhãn địa danh không đè nhau", () => {
   it("nhãn bị đẩy xa thì có đường nối về đúng chấm địa danh", () => {
     const svg = mapFrameSvg({ ...frame(crowded.end), shot: crowded, places: near });
     expect(svg).toContain("data-leader");
+  });
+});
+
+describe("dựng cảnh bản đồ không để rác", () => {
+  it("vẽ nền MỘT lần cho cả cảnh, không dựng lại mỗi khung", () => {
+    const base = baseLayersSvg(shapes, (lon: number, lat: number) => [lon, lat] as [number, number]);
+    const first = mapFrameSvg({ ...frame(1), base });
+    const second = mapFrameSvg({ ...frame(2), base });
+    expect(first).toContain(base);
+    expect(second).toContain(base);
   });
 });

@@ -1,7 +1,7 @@
 // Claude đạo diễn: biến kịch bản lịch sử thành danh sách cảnh (loại cảnh, máy quay, âm thanh, chữ), rồi đổi sang mốc
 // thời gian theo giọng đọc. Mỗi loại cảnh có một renderer riêng (scene-map / scene-card / scene-art / scene-terrain).
 import { z } from "zod";
-import type { Cue } from "@/../pipeline/text";
+import { sentences, type Cue } from "@/../pipeline/text";
 import type { TextProvider } from "@/lib/ai/types";
 import type { PromptPair } from "./prompts";
 
@@ -51,15 +51,22 @@ export const storyboardSchema = z.object({
   ),
 });
 
+/** Đánh số sẵn từng câu cho AI — bắt model tự đếm 500+ câu là lệch chắc chắn. */
+export function numberSentences(script: string): string {
+  return sentences(script)
+    .map((sentence, i) => `[${i}] ${sentence}`)
+    .join("\n");
+}
+
 /** Prompt đạo diễn: kịch bản + hồ sơ → danh sách cảnh phủ kín kịch bản. */
 export function storyboardPrompt(script: string, dossierText: string): PromptPair {
   return {
     system: `Bạn là đạo diễn dựng phim tài liệu lịch sử. Bạn KHÔNG viết lại lời kể — bạn quyết mỗi câu lên hình bằng cảnh gì.
 Phong cách kênh: bản đồ phẳng màu TRẦM + lính giấy 2D cho hành quân/giao chiến; giấy cũ sepia + tranh khắc cho bối cảnh, mở và kết.
 TUYỆT ĐỐI: không châm biếm nhân vật lịch sử, không ảnh chụp hiện vật bảo tàng / tượng đài / ảnh hiện đại, không avatar người dẫn.`,
-    prompt: `KỊCH BẢN (đánh số câu từ 0):
+    prompt: `KỊCH BẢN (mỗi câu có sẵn số thứ tự trong ngoặc vuông — dùng đúng số đó cho "from"/"to"):
 <kich_ban>
-${script}
+${numberSentences(script)}
 </kich_ban>
 
 HỒ SƠ TƯ LIỆU (chỉ để biết địa danh, nhân vật, mốc thời gian có thật):
@@ -91,11 +98,20 @@ export async function directScript(ai: TextProvider, script: string, dossierText
   return scenes.sort((a, b) => a.from - b.from);
 }
 
-/** Giây bắt đầu/kết thúc của một dải câu theo cue giọng đọc. */
-function spanOf(cues: Cue[], from: number, to: number, seconds: number) {
-  const first = cues[Math.min(from, cues.length - 1)];
-  const last = cues[Math.min(to, cues.length - 1)];
-  return { start: first?.start ?? 0, end: last?.end ?? seconds };
+/**
+ * Mốc giây của từng CÂU. Mốc giọng (cue) nhỏ hơn câu — text.ts còn chẻ câu dài thành nhiều cue 70 ký tự —
+ * nên không được tra `cues[chỉ số câu]`: phải quy theo tỉ lệ ký tự trên toàn bộ lời đọc.
+ */
+export function sentenceTimes(cues: Cue[], seconds: number): { start: number; end: number }[] {
+  const spoken = cues.map((c) => c.text).join(" ");
+  const parts = sentences(spoken);
+  const total = parts.reduce((n, p) => n + p.length, 0) || 1;
+  let walked = 0;
+  return parts.map((part) => {
+    const start = (walked / total) * seconds;
+    walked += part.length;
+    return { start, end: (walked / total) * seconds };
+  });
 }
 
 /** Chia một shot quá dài thành các phần ≤ SCENE_MAX_SECONDS, cắt đều. */
@@ -123,13 +139,41 @@ function mergeShort(shots: Shot[]): Shot[] {
   return merged;
 }
 
-/** Cảnh của AI → shot có mốc giây: chia cảnh dài, gộp cảnh ngắn, cảnh cuối khớp đúng độ dài giọng đọc. */
+/**
+ * Cảnh của AI → shot có mốc giây: quy chỉ số câu ra giây, chia cảnh dài, gộp cảnh ngắn, nối liền mạch.
+ * AI phủ thiếu phần cuối thì CHÈN THÊM cảnh (nhân bản cảnh cuối) — không giãn một cảnh ra hàng chục phút.
+ */
 export function scenesToShots(scenes: DirectedScene[], cues: Cue[], seconds: number): Shot[] {
-  const raw = scenes.flatMap((scene) => splitLong({ ...scene, ...spanOf(cues, scene.from, scene.to, seconds) }));
+  const times = sentenceTimes(cues, seconds);
+  const spanOf = (from: number, to: number) => {
+    const first = times[Math.min(Math.max(0, from), times.length - 1)];
+    const last = times[Math.min(Math.max(0, to), times.length - 1)];
+    return { start: first?.start ?? 0, end: Math.max(last?.end ?? seconds, (first?.start ?? 0) + 0.1) };
+  };
+  const raw = scenes.flatMap((scene) => splitLong({ ...scene, ...spanOf(scene.from, scene.to) }));
   const shots = mergeShort(raw);
   if (!shots.length) return [];
   shots[0].start = 0;
-  shots[shots.length - 1].end = seconds;
   for (let i = 1; i < shots.length; i++) shots[i].start = shots[i - 1].end;
-  return shots;
+  return chainToEnd(shots, seconds);
+}
+
+/** Nối các shot liền mạch tới hết giọng đọc; thiếu thì thêm cảnh mới giống cảnh cuối, thừa thì cắt bớt. */
+function chainToEnd(shots: Shot[], seconds: number): Shot[] {
+  const filled = shots.filter((shot) => shot.start < seconds);
+  const last = filled.at(-1)!;
+  if (last.end > seconds) last.end = seconds;
+  while (last.end < seconds || filled.at(-1)!.end < seconds) {
+    const tail = filled.at(-1)!;
+    if (tail.end >= seconds) break;
+    const end = Math.min(seconds, tail.end + SCENE_MAX_SECONDS);
+    filled.push({ ...tail, start: tail.end, end });
+  }
+  const tail = filled.at(-1)!;
+  // Phần đuôi ngắn hơn cảnh tối thiểu: nhập vào cảnh trước thay vì để một cảnh chớp nhoáng.
+  if (filled.length > 1 && tail.end - tail.start < SCENE_MIN_SECONDS) {
+    filled[filled.length - 2].end = tail.end;
+    filled.pop();
+  }
+  return filled;
 }

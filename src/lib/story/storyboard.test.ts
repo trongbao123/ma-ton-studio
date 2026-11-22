@@ -10,7 +10,7 @@ const scene = (o: Partial<DirectedScene> & { from: number; to: number }): Direct
 });
 
 /** Mỗi câu 1 giây, khoảng lặng ở cuối mỗi câu. */
-const cues = (n: number): Cue[] => Array.from({ length: n }, (_, i) => ({ start: i, end: i + 1, text: `câu ${i}` }) as Cue);
+const cues = (n: number): Cue[] => Array.from({ length: n }, (_, i) => ({ start: i, end: i + 1, text: `Câu ${i}.` }) as Cue);
 
 describe("đổi cảnh thành shot theo mốc giọng đọc", () => {
   it("cảnh dài hơn 6 giây bị chia nhỏ, cảnh ngắn hơn 3 giây gộp với cảnh kề cùng loại", () => {
@@ -45,5 +45,34 @@ describe("prompt đạo diễn", () => {
     expect(p.prompt).toContain("HỒ SƠ ABC");
     for (const kind of ["map", "terrain", "card", "art"]) expect(p.prompt).toContain(kind);
     expect(`${p.system}\n${p.prompt}`).toMatch(/không châm biếm/i);
+  });
+});
+
+describe("đổi chỉ số CÂU sang giây (mốc giọng chia nhỏ hơn câu)", () => {
+  /** Giống thật: mỗi câu dài bị text.ts chẻ thành nhiều cue 70 ký tự. */
+  const longScript = Array.from({ length: 6 }, (_, i) => `Câu số ${i} ${"x".repeat(110)}.`).join(" ");
+  const manyCues: Cue[] = [];
+  {
+    let t = 0;
+    for (const piece of longScript.match(/.{1,70}/g) ?? []) {
+      manyCues.push({ start: t, end: t + 1, text: piece } as Cue);
+      t += 1;
+    }
+  }
+
+  it("cảnh phủ hết 6 câu thì phủ hết giọng đọc, không dồn vào cảnh cuối", () => {
+    const shots = scenesToShots([scene({ from: 0, to: 2 }), scene({ from: 3, to: 5 })], manyCues, manyCues.length);
+    for (const s of shots) expect(s.end - s.start).toBeLessThanOrEqual(SCENE_MAX_SECONDS);
+    expect(shots.at(-1)!.end).toBe(manyCues.length);
+  });
+
+  it("AI chỉ phủ 60% số câu → chèn thêm cảnh, KHÔNG giãn cảnh cuối thành hàng chục phút", () => {
+    const shots = scenesToShots([scene({ from: 0, to: 1 }), scene({ from: 2, to: 3 })], manyCues, manyCues.length);
+    for (const s of shots) expect(s.end - s.start).toBeLessThanOrEqual(SCENE_MAX_SECONDS);
+    expect(shots.at(-1)!.end).toBe(manyCues.length);
+  });
+
+  it("prompt đánh số từng câu để AI khỏi tự đếm", () => {
+    expect(storyboardPrompt("Câu một. Câu hai. Câu ba.", "hồ sơ").prompt).toContain("[1] Câu hai.");
   });
 });

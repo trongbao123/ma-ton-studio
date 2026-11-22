@@ -66,8 +66,33 @@ const touchesBox = (ring: number[][], box: GeoBox) =>
 
 export type MapShapes = { land: number[][][]; rivers: number[][][]; coast: number[][][] };
 
-/** Hình đất, sông, bờ biển trong khung. */
-export async function loadShapes(box: GeoBox, dir?: string): Promise<MapShapes> {
+/** Số khung bản đồ giữ lại trong bộ nhớ — mỗi khung giữ cả hình đất/sông/bờ biển nên không giữ vô hạn. */
+const SHAPE_CACHE_MAX = 6;
+/** Hình đã lọc theo khung, giữ lại cho cảnh sau: 3 file geojson gốc gần 30 MB, đọc + parse lại mỗi cảnh là đắt. */
+const shapeCache = new Map<string, Promise<MapShapes>>();
+
+/**
+ * Hình đất, sông, bờ biển trong khung. Khung nào đã đọc thì dùng lại luôn — một cảnh thường cần hình hai lần
+ * (bản đồ phẳng và địa hình 3D cùng khung), và các cảnh cùng tuyến hành quân cho ra đúng một khung.
+ */
+export function loadShapes(box: GeoBox, dir?: string): Promise<MapShapes> {
+  const key = `${dir ?? ""}|${box.w},${box.e},${box.s},${box.n}`;
+  const cached = shapeCache.get(key);
+  if (cached) return cached;
+  // Đọc lỗi thì bỏ khỏi cache, để lần sau còn đọc lại được thay vì nhớ mãi cái lỗi.
+  const job = readShapes(box, dir).catch((err: unknown) => {
+    shapeCache.delete(key);
+    throw err;
+  });
+  shapeCache.set(key, job);
+  if (shapeCache.size > SHAPE_CACHE_MAX) {
+    const oldest = shapeCache.keys().next().value;
+    if (oldest) shapeCache.delete(oldest);
+  }
+  return job;
+}
+
+async function readShapes(box: GeoBox, dir?: string): Promise<MapShapes> {
   const geoDir = await ensureGeoData(dir);
   const read = async (name: string) => {
     const fc = JSON.parse(await readFile(path.join(geoDir, `${name}.geojson`), "utf8")) as { features: { geometry: Geometry }[] };
