@@ -10,6 +10,8 @@ import {
   historyTopicStatus,
   HISTORY_STATUS_LABEL,
   validateHistoryTopic,
+  HISTORY_IVOI_VOICE,
+  HISTORY_TEMPO,
   approvalBlockedReason,
   historyScriptComplete,
   topicOutline,
@@ -129,5 +131,12 @@ describe("giọng kể nhập vai (chủ kênh 21/11/2026)", () => {
     expect(system).toMatch(/máy quay/i);
     expect(system).toMatch(/KHÔNG bình luận sử học/);
     expect(system).toMatch(/GIỌNG MẪU/);
+  });
+});
+
+describe("giọng đọc kênh lịch sử", () => {
+  it("dùng giọng History US của ivoi, nhịp tài liệu (không tăng tốc)", () => {
+    expect(HISTORY_IVOI_VOICE).toBe("en_male_history_1");
+    expect(HISTORY_TEMPO).toBe(1);
   });
 });
