@@ -2,12 +2,12 @@
 // hợp phim tài liệu, rồi đưa lên release "history-preview" để chủ kênh nghe chọn.
 // CLI: render.ts "voices"
 import { execFile } from "node:child_process";
-import { mkdir, readdir } from "node:fs/promises";
+import { mkdir, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { loadSecrets } from "@/lib/secrets";
 import { speak } from "./tts";
-import { ivoiReady, speakIvoi } from "./tts-ivoi";
+import { ivoiReady } from "./tts-ivoi";
 
 const run = promisify(execFile);
 const DIR = path.resolve(".render", "voice-audition");
@@ -21,6 +21,39 @@ const SAMPLE =
  * Giọng Gemini hợp người dẫn phim tài liệu (Google mô tả trong ngoặc). Charon/Algenib đã nghe ở vòng trước.
  */
 const GEMINI_VOICES = ["Orus", "Alnilam", "Rasalgethi", "Iapetus", "Sadaltager", "Schedar", "Algieba", "Umbriel", "Enceladus", "Zubenelgenubi"];
+
+const IVOI_BASE = process.env.IVOI_BASE_URL ?? "https://ivoi.io/api/api/v1";
+const JOB_TIMEOUT_MS = 180_000;
+const POLL_MS = 3_000;
+
+type IvoiJob = { job_id?: string; status?: string; audio_url?: string | null; error_message?: string | null };
+
+/**
+ * Đọc thử MỘT giọng, gọi thẳng API: speakIvoi dùng lại bản đọc cũ cùng nội dung, nên thử nhiều giọng với cùng một đoạn
+ * sẽ trả về đúng một giọng cho tất cả (đã dính lỗi này ở vòng trước).
+ */
+async function synthOnce(text: string, voiceId: string, outFile: string) {
+  const api = async (pathname: string, init?: RequestInit) => {
+    const sent = await fetch(`${IVOI_BASE}${pathname}`, {
+      ...init,
+      headers: { Authorization: `Bearer ${process.env.IVOI_API_KEY}`, "Content-Type": "application/json", ...init?.headers },
+    });
+    const body = (await sent.json().catch(() => ({}))) as IvoiJob;
+    if (!sent.ok) throw new Error(`ivoi ${sent.status}: ${JSON.stringify(body).slice(0, 160)}`);
+    return body;
+  };
+  let job = await api("/tts/synthesize", { method: "POST", body: JSON.stringify({ text, voice_id: voiceId, format: "mp3", speed: 1.0 }) });
+  const until = Date.now() + JOB_TIMEOUT_MS;
+  while (job.status !== "completed") {
+    if (job.status === "failed" || job.status === "error") throw new Error(`job lỗi: ${job.error_message ?? "không rõ"}`);
+    if (Date.now() > until) throw new Error(`job ${job.job_id} quá ${JOB_TIMEOUT_MS / 1000} giây`);
+    await new Promise((r) => setTimeout(r, POLL_MS));
+    job = await api(`/tts/jobs/${job.job_id}`);
+  }
+  const audio = await fetch(job.audio_url!);
+  if (!audio.ok) throw new Error(`tải audio ${audio.status}`);
+  await writeFile(outFile, Buffer.from(await audio.arrayBuffer()));
+}
 
 type IvoiVoice = { voice_id?: string; id?: string; name?: string; gender?: string; description?: string; price_multiplier?: number };
 
@@ -62,7 +95,7 @@ export async function auditionVoices() {
       const id = v.voice_id ?? v.id;
       if (!id) continue;
       const file = path.join(DIR, `ivoi-${id}.mp3`);
-      await speakIvoi(SAMPLE, file, id).then(
+      await synthOnce(SAMPLE, id, file).then(
         () => {
           made.push(file);
           console.log(`  ✔ ${id}${v.name ? ` — ${v.name}` : ""}${v.description ? ` (${v.description.slice(0, 60)})` : ""}`);
