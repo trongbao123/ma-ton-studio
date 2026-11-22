@@ -1,6 +1,6 @@
 // Ghép video kênh lịch sử: chọn cách dựng cho từng cảnh (lùi cấp khi thiếu dữ liệu), nối lại, trộn tiếng,
 // rồi kiểm tra trước khi cho đăng. Thiếu dữ liệu không bao giờ để khung trống — luôn có cảnh thay thế.
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
@@ -12,6 +12,7 @@ import { geocodeAll, type GeoPoint } from "@/lib/story/geocode";
 import { HISTORY_IVOI_VOICE, HISTORY_TEMPO } from "@/lib/story/history";
 import { directScript, scenesToShots, type Shot } from "@/lib/story/storyboard";
 import { duration, ffmpeg, ffmpegLog, memoizeAsync, pool } from "./ffmpeg";
+import { ensureRelease, uploadAsset } from "./release";
 import { historyAudioArgs } from "./history-audio";
 import { coldOpenShots, renderColdOpen } from "./history-coldopen";
 import { narrate } from "./render";
@@ -126,6 +127,8 @@ const CUE_CHARS = 70;
 const PROGRESS_EVERY = 10;
 /** Runner GitHub có 4 nhân — dựng 3 cảnh cùng lúc, chừa một nhân cho ffmpeg ghép và hệ thống. */
 const SCENE_PARALLEL_DEFAULT = 3;
+/** Đổi byte sang MB cho dòng log kích thước file. */
+const BYTES_PER_MB = 1_000_000;
 const SCENE_PARALLEL = Math.max(1, Number(process.env.SCENE_PARALLEL ?? SCENE_PARALLEL_DEFAULT));
 const ART_SEED = 11;
 
@@ -182,9 +185,33 @@ export class HistoryQcError extends Error {
   }
 }
 
+/** Đường dẫn job Actions đang chạy, để màn Studio bấm vào xem log. */
+const runUrl = () =>
+  process.env.GITHUB_RUN_ID ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}` : null;
+
+/**
+ * Cất video vừa dựng: đẩy file lên release của video rồi ghi lại vào DB. KHÔNG cất thì file nằm trong
+ * thư mục tạm của máy chạy job và mất sạch lúc job kết thúc — đúng chuyện đã xảy ra với video #91.
+ * Cất cả khi QC trượt, để chủ kênh còn xem tận mắt hỏng ở đâu.
+ */
+async function keepVideo(videoId: number, file: string, seconds: number, problems: string[]) {
+  const releaseId = await ensureRelease(videoId, true);
+  await uploadAsset(videoId, releaseId, file);
+  await db()
+    .update(videos)
+    .set({
+      status: problems.length ? "failed" : "ready",
+      durationSec: Math.round(seconds),
+      error: problems.length ? problems.join("\n").slice(0, 2000) : null,
+      updatedAt: new Date(),
+    })
+    .where(eq(videos.id, videoId));
+}
+
 /**
  * Dựng trọn video lịch sử cho `videoId`: giọng đọc → Claude đạo diễn → dựng từng cảnh (tự lùi cấp) →
- * mở đầu trailer → nối, đốt phụ đề, trộn tiếng → soát QC. Không đạt QC thì ném HistoryQcError (không đăng).
+ * mở đầu trailer → nối, đốt phụ đề, trộn tiếng → soát QC → cất vào release. Không đạt QC thì vẫn cất
+ * file lại nhưng ném HistoryQcError (không đăng).
  */
 export async function renderHistoryVideo(videoId: number): Promise<{ file: string; credits: string; seconds: number }> {
   await loadSecrets(true);
@@ -198,6 +225,8 @@ export async function renderHistoryVideo(videoId: number): Promise<{ file: strin
   if (!chapter.dossier) throw new Error(`Chương #${chapter.id} chưa gom hồ sơ tư liệu`);
   const dir = path.resolve(".render", `history-${videoId}`);
   await mkdir(dir, { recursive: true });
+  // Đánh dấu đang dựng ngay từ đầu: không có dòng này thì màn Studio treo ở "Chờ render" suốt mấy tiếng.
+  await db().update(videos).set({ status: "rendering", error: null, runUrl: runUrl(), updatedAt: new Date() }).where(eq(videos.id, videoId));
   const log = (text: string) => console.log(`  ${text}`);
 
   const narration = await narrate(chapter.content, dir, `${IVOI_PREFIX}${HISTORY_IVOI_VOICE}`, undefined, CUE_CHARS, HISTORY_TEMPO);
@@ -251,6 +280,8 @@ export async function renderHistoryVideo(videoId: number): Promise<{ file: strin
   const blackLog = await ffmpegLog(["-i", file, "-vf", "blackdetect=d=0.6:pix_th=0.1", "-an", "-f", "null", "-"]);
   const openSeconds = openParts.reduce((n, p) => n + (p.shot.end - p.shot.start), 0);
   const problems = await historyQc({ seconds: narration.seconds + openSeconds, measured, blackLog, shots, images });
+  log(`Cất video vào kho (${((await stat(file)).size / BYTES_PER_MB).toFixed(0)} MB)`);
+  await keepVideo(videoId, file, measured, problems);
   if (problems.length) throw new HistoryQcError(problems);
   log(`Video xong: ${measured.toFixed(0)} giây`);
   return { file, credits: artCredits(images), seconds: measured };

@@ -4,7 +4,7 @@ import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { chapters } from "@/db/schema";
 import { loadSecrets } from "@/lib/secrets";
-import { notify } from "@/lib/notify";
+import { notify, WEB_URL } from "@/lib/notify";
 import { FactCheckFailedError } from "@/lib/story/fact-check";
 import { isHistoryStory, pickChapterToWrite } from "@/lib/story/history";
 import { maxContinues } from "@/lib/story/prompts";
@@ -18,6 +18,8 @@ function recheckSkipReason(history: boolean, chapter: { content: string; status:
   return null;
 }
 
+const SECONDS_PER_MINUTE = 60;
+
 /** Dựng video cho một chương lịch sử đã duyệt (CLI: render.ts "historyvideo:<videoId>"). */
 export async function buildHistoryVideo(videoId: number) {
   const { renderHistoryVideo, HistoryQcError } = await import("./history-render");
@@ -25,6 +27,8 @@ export async function buildHistoryVideo(videoId: number) {
     const made = await renderHistoryVideo(videoId);
     console.log(`✔ Video #${videoId}: ${made.file} (${made.seconds.toFixed(0)} giây)`);
     if (made.credits) console.log(made.credits);
+    await notify(`🎞 <b>Video lịch sử #${videoId} đã dựng xong</b> — ${Math.round(made.seconds / SECONDS_PER_MINUTE)} phút
+👉 ${WEB_URL}/videos/${videoId}`);
     return made;
   } catch (e) {
     if (!(e instanceof HistoryQcError)) throw e;
