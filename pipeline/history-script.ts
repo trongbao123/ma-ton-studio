@@ -4,6 +4,7 @@ import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { chapters } from "@/db/schema";
 import { loadSecrets } from "@/lib/secrets";
+import { notify } from "@/lib/notify";
 import { FactCheckFailedError } from "@/lib/story/fact-check";
 import { isHistoryStory, pickChapterToWrite } from "@/lib/story/history";
 import { maxContinues } from "@/lib/story/prompts";
@@ -15,6 +16,23 @@ function recheckSkipReason(history: boolean, chapter: { content: string; status:
   if (!chapter.content.trim()) return "chưa có kịch bản";
   if (chapter.status === "approved") return "đã duyệt — bỏ duyệt trước";
   return null;
+}
+
+/** Dựng video cho một chương lịch sử đã duyệt (CLI: render.ts "historyvideo:<videoId>"). */
+export async function buildHistoryVideo(videoId: number) {
+  const { renderHistoryVideo, HistoryQcError } = await import("./history-render");
+  try {
+    const made = await renderHistoryVideo(videoId);
+    console.log(`✔ Video #${videoId}: ${made.file} (${made.seconds.toFixed(0)} giây)`);
+    if (made.credits) console.log(made.credits);
+    return made;
+  } catch (e) {
+    if (!(e instanceof HistoryQcError)) throw e;
+    console.log(`⚠ Video #${videoId} chưa đạt kiểm tra, KHÔNG đăng:`);
+    for (const problem of e.problems) console.log(`  • ${problem}`);
+    await notify(`⚠️ Video #${videoId} (kênh lịch sử) chưa đạt kiểm tra:\n${e.problems.slice(0, 5).join("\n")}`);
+    return null;
+  }
 }
 
 /** Soát lại + chốt một kịch bản lịch sử đã viết (vd sau khi sửa tay); còn lỗi → null (đã báo Telegram). */
