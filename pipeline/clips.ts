@@ -62,7 +62,7 @@ async function draftClip(s: Series, ch: { number: number; title: string; summary
 }
 
 /** Tiêu đề: AI 3 phương án + vidIQ gợi ý (type "short"), chấm hết bằng vidiq_score_title type "short", lấy điểm cao nhất. */
-async function chooseClipTitle(d: ClipDraft, keywords: string[]): Promise<{ best: ScoredTitle; all: ScoredTitle[] }> {
+async function chooseClipTitle(d: ClipDraft): Promise<{ best: ScoredTitle; all: ScoredTitle[] }> {
   const options = d.titleOptions.map((t) => ensureShortsTag(t));
   const res = await pickBestTitle(options, d.description, CLIP_TITLE_TARGET, CLIP_TITLE_ROUNDS, "short").catch(() => null);
   const all = res?.all ?? options.map((title) => ({ title, score: null }));
@@ -122,7 +122,7 @@ async function makeOne(c: Ctx): Promise<number> {
   const [ch] = await db().select({ number: chapters.number, title: chapters.title, summary: chapters.summary, content: chapters.content }).from(chapters).where(eq(chapters.id, c.src.chapterId));
   if (!ch?.content.trim()) throw new Error(`Chương #${c.src.chapterId} chưa có nội dung`);
   const draft = await draftClip(c.s, ch, c.keywords);
-  const { best, all } = await chooseClipTitle(draft, c.keywords);
+  const { best, all } = await chooseClipTitle(draft);
   console.log(`  Tiêu đề (${best.score ?? "?"}): ${best.title}`);
 
   const dir = path.resolve(`.render/clip-${c.src.chapterId}`);
