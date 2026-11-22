@@ -70,7 +70,8 @@ Bản dựng thử đã chạy được (tham khảo, KHÔNG phải code product
 **Interfaces — Produces (geo-base.ts):**
 - `type GeoBox = { w: number; e: number; s: number; n: number }`
 - `boxFor(points: { lat: number; lon: number }[], aspect: number): GeoBox` — khung ôm hết điểm + đệm 25%, đúng tỉ lệ 16:9 sau khi nhân `cos(vĩ độ)`.
-- `loadShapes(box: GeoBox): Promise<{ land: number[][][]; rivers: number[][][]; coast: number[][][] }>` — đọc `pipeline/geo/*.geojson` (tải sẵn vào repo, Natural Earth PD), lọc theo `box`.
+- `GEO_FILES = ["ne_10m_land", "ne_10m_coastline", "ne_10m_rivers_lake_centerlines"]`; `ensureGeoData(dir?: string): Promise<string>` — tải từ `https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/<tên>.geojson` vào `.render/geo` (15 MB, PD — KHÔNG commit vào repo; cache `.render` của Actions giữ lại giữa các lần chạy), đã có thì bỏ qua.
+- `loadShapes(box: GeoBox): Promise<{ land: number[][][]; rivers: number[][][]; coast: number[][][] }>` — đọc file đã tải, lọc theo `box`.
 - `projector(box: GeoBox, w: number, h: number): (lon: number, lat: number) => [number, number]`
 
 **Produces (scene-map.ts):**
@@ -126,18 +127,31 @@ Bản dựng thử đã chạy được (tham khảo, KHÔNG phải code product
 - [ ] Test `moodOfShot` 4 nhánh; `musicPlan` gộp 3 cảnh march liền nhau thành 1 đoạn; `drumTrack` có đúng số nhịp bằng số cảnh battle + 2 nhịp mở đầu; `historyAudioArgs` chứa `sidechaincompress` (ducking) và `-c:a aac`.
 - [ ] FAIL → cài → PASS → commit `feat(lich-su): nhạc theo đoạn + trống trận + tiếng hô`.
 
+### Task 6b: Mở đầu kiểu trailer 30–45 giây
+
+**Files:** Create `pipeline/history-coldopen.ts`, `history-coldopen.test.ts`
+
+**Interfaces — Consumes:** Task 1 (`Shot`), 3–6.
+**Produces:**
+- `COLD_OPEN_SECONDS = { min: 30, max: 45 }`
+- `coldOpenShots(shots: Shot[]): Shot[]` — chọn các cảnh **căng nhất** (ưu tiên có `battles`, rồi `sfx` chứa `drum`/`shout`), cắt mỗi cảnh còn 1,5–2,5 giây, tổng nằm trong `COLD_OPEN_SECONDS`, giữ đúng thứ tự thời gian, kết bằng một `card` mang câu hỏi treo.
+- `renderColdOpen(o: { shots: Shot[]; narration: Narration; dir: string; out: string }): Promise<void>` — nhịp cắt nhanh (1,5–2,5 giây), trống dồn mạnh dần, thẻ năm quét đỏ, chữ hook, kết bằng một nhịp lặng 0,5 giây rồi vào video chính.
+
+- [ ] Test `coldOpenShots`: tổng giây nằm trong 30–45; mọi cảnh ≤2,5 giây; cảnh có `battles` được chọn trước cảnh không có; thứ tự thời gian giữ nguyên; kịch bản không có cảnh `battles` nào → vẫn trả đủ cảnh cho 30 giây.
+- [ ] FAIL → cài → PASS → commit `feat(lich-su): mở đầu kiểu trailer 30–45 giây`.
+
 ### Task 7: Ghép cả video + QC + nối vào luồng render
 
 **Files:** Create `pipeline/history-render.ts`, `history-render.test.ts`; Modify `pipeline/render.ts` (nhánh `isHistoryStory`), `pipeline/history-script.ts` (CLI `historyvideo:<videoId>`)
 
 **Interfaces — Consumes:** Task 1–6.
 **Produces:**
-- `renderHistoryVideo(videoId: number): Promise<void>` — đọc chương + hồ sơ → `narrate` (giọng History US, tempo 1) → `directScript` → `scenesToShots` → `geocodeAll` → dựng từng cảnh theo `kind` (lỗi/thiếu dữ liệu → lùi: terrain→map, map→card, art→AI vẽ) → nối bằng cắt thẳng (cảnh cùng đoạn) hoặc mực loang (đổi đoạn) → `historyAudioArgs` → đốt phụ đề glow → mô tả kèm nguồn + ghi công ảnh.
+- `renderHistoryVideo(videoId: number): Promise<void>` — đọc chương + hồ sơ → `narrate` (giọng History US, tempo 1) → `directScript` → `scenesToShots` → `geocodeAll` → dựng từng cảnh theo `kind` → `renderColdOpen` ghép vào đầu (lỗi/thiếu dữ liệu → lùi: terrain→map, map→card, art→AI vẽ) → nối bằng cắt thẳng (cảnh cùng đoạn) hoặc mực loang (đổi đoạn) → `historyAudioArgs` → đốt phụ đề glow → mô tả kèm nguồn + ghi công ảnh.
 - `historyQc(o: { file: string; shots: Shot[]; images: ArtImage[]; seconds: number }): Promise<string[]>` — trả danh sách lỗi: lệch độ dài > 2 giây, có khoảng đen (`blackdetect`), ảnh thiếu ghi công, ảnh AI thiếu nhãn "Minh họa", cảnh dùng lại ảnh của cảnh khác. Rỗng = đạt.
 - Luồng: còn lỗi QC → giữ `ready`, Telegram, **không đăng**.
 
 - [ ] Test `historyQc` (mock ffmpeg log): lệch 3 giây → có lỗi; `blackdetect` có dòng → có lỗi; ảnh synthetic không nhãn → có lỗi; tất cả sạch → `[]`.
-- [ ] Test lùi cấp: `terrain` trả `false` → gọi `renderMapScene`; `places` rỗng → gọi `renderCardScene`.
+- [ ] Test lùi cấp: `terrain` trả `false` → gọi `renderMapScene`; `places` rỗng → gọi `renderCardScene`; `pickArtwork` trả `[]` → gọi AI vẽ và ảnh có `synthetic: true` (nhãn "Minh họa").
 - [ ] Toàn bộ `pnpm exec vitest run && pnpm typecheck && pnpm lint`.
 - [ ] FAIL → cài → PASS → commit `feat(lich-su): ghép video lịch sử + QC trước khi đăng`.
 
