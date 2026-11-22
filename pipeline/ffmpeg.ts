@@ -64,6 +64,15 @@ export function escText(s: string) {
   return s.replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "\u2019").replace(/%/g, "\\%");
 }
 
+/**
+ * Bọc một việc async để nó chỉ chạy ĐÚNG MỘT LẦN, mọi lời gọi sau (kể cả song song) dùng lại kết quả đó.
+ * Khác `inflight` của drawImage: giữ cả sau khi xong, nên việc nặng dùng chung cả video (vẽ sprite) không làm lại.
+ */
+export function memoizeAsync<R>(job: () => Promise<R>): () => Promise<R> {
+  let started: Promise<R> | null = null;
+  return () => (started ??= job());
+}
+
 /** Chạy tối đa `limit` việc song song. */
 export async function pool<T, R>(items: T[], limit: number, fn: (item: T, i: number) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array(items.length);

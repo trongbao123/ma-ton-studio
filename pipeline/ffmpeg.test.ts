@@ -2,7 +2,7 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { once } from "./ffmpeg";
+import { memoizeAsync, once } from "./ffmpeg";
 
 let dir = "";
 beforeEach(async () => {
@@ -40,5 +40,20 @@ describe("once", () => {
     const file = path.join(dir, "x.mp4");
     await writeFile(file, "");
     expect(await once(file, (tmp) => writeFile(tmp, "ok"))).toBe(true);
+  });
+});
+
+describe("memoizeAsync", () => {
+  it("gọi nhiều lần, kể cả song song, việc nặng chỉ chạy một lần", async () => {
+    let calls = 0;
+    const draw = memoizeAsync(async () => {
+      calls++;
+      await new Promise((r) => setTimeout(r, 10));
+      return "sprite.png";
+    });
+    const [a, b, c] = await Promise.all([draw(), draw(), draw()]);
+    expect([a, b, c]).toEqual(["sprite.png", "sprite.png", "sprite.png"]);
+    expect(await draw()).toBe("sprite.png");
+    expect(calls).toBe(1);
   });
 });

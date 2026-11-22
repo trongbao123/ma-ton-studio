@@ -1,6 +1,6 @@
 // Ghép video kênh lịch sử: chọn cách dựng cho từng cảnh (lùi cấp khi thiếu dữ liệu), nối lại, trộn tiếng,
 // rồi kiểm tra trước khi cho đăng. Thiếu dữ liệu không bao giờ để khung trống — luôn có cảnh thay thế.
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
@@ -11,7 +11,7 @@ import { dossierText } from "@/lib/story/dossier";
 import { geocodeAll, type GeoPoint } from "@/lib/story/geocode";
 import { HISTORY_IVOI_VOICE, HISTORY_TEMPO } from "@/lib/story/history";
 import { directScript, scenesToShots, type Shot } from "@/lib/story/storyboard";
-import { duration, ffmpeg, ffmpegLog } from "./ffmpeg";
+import { duration, ffmpeg, ffmpegLog, memoizeAsync, pool } from "./ffmpeg";
 import { historyAudioArgs } from "./history-audio";
 import { coldOpenShots, renderColdOpen } from "./history-coldopen";
 import { narrate } from "./render";
@@ -124,11 +124,15 @@ const SUBTITLE_MARGIN = 100;
 /** Chữ mỗi mốc phụ đề — dài hơn thì một dòng tràn màn hình. */
 const CUE_CHARS = 70;
 const PROGRESS_EVERY = 10;
+/** Runner GitHub có 4 nhân — dựng 3 cảnh cùng lúc, chừa một nhân cho ffmpeg ghép và hệ thống. */
+const SCENE_PARALLEL_DEFAULT = 3;
+const SCENE_PARALLEL = Math.max(1, Number(process.env.SCENE_PARALLEL ?? SCENE_PARALLEL_DEFAULT));
 const ART_SEED = 11;
 
 const filterPath = (p: string) => p.replace(/\\/g, "/").replace(/:/g, "\\:");
 
-export type RendererSetup = { videoId: number; era: string; side: string; topicTerms: string[]; log: (text: string) => void };
+/** `dir` là thư mục GỐC của video (không phải của một cảnh) — chỗ để thứ dùng chung như sprite lính giấy. */
+export type RendererSetup = { videoId: number; era: string; side: string; topicTerms: string[]; dir: string; log: (text: string) => void };
 
 /** Bộ dựng cảnh thật (gọi ffmpeg, Kaggle, Commons, Codex). */
 function realRenderers(setup: RendererSetup): SceneRenderers {
@@ -136,15 +140,20 @@ function realRenderers(setup: RendererSetup): SceneRenderers {
   const runOnKaggle = stopAfterFailure(kaggleTerrainJob({ videoId: setup.videoId, log: setup.log }), (reason) =>
     setup.log(`Tắt cảnh 3D cho cả video sau lần Kaggle hỏng đầu tiên (${reason}) — các cảnh sau dùng bản đồ 2D`),
   );
+  // Lính giấy vẽ MỘT lần cho cả video, để ở thư mục gốc: trước đây mỗi cảnh một thư mục riêng nên cảnh nào
+  // cũng trượt cache và gọi AI vẽ lại (Codex vài phút/ảnh) — hàng trăm cảnh bản đồ là hàng giờ đốt không công.
+  const infantrySprite = memoizeAsync(() =>
+    ensureSprite({ kind: "infantry", side: setup.side, era: setup.era, dir: setup.dir })
+      .then(spriteDataUri)
+      .catch((e: unknown) => {
+        setup.log(`Không vẽ được lính giấy: ${e instanceof Error ? e.message : e}`);
+        return undefined;
+      }),
+  );
   return {
     terrain: ({ shot, places, dir, out }) => renderTerrainScene({ shot, places, dir, out, budget, runOnKaggle }),
     map: async ({ shot, places, dir, out }) => {
-      const infantry = await ensureSprite({ kind: "infantry", side: setup.side, era: setup.era, dir })
-        .then(spriteDataUri)
-        .catch((e: unknown) => {
-          setup.log(`Không vẽ được lính giấy: ${e instanceof Error ? e.message : e}`);
-          return undefined;
-        });
+      const infantry = await infantrySprite();
       await renderMapScene({ shot, places, sprites: infantry ? { infantry } : {}, dir, out });
     },
     card: ({ shot, out }) => renderCardScene({ shot, out }),
@@ -199,18 +208,24 @@ export async function renderHistoryVideo(videoId: number): Promise<{ file: strin
   log(`Đạo diễn ${shots.length} cảnh`);
 
   const places = await geocodeAll(shots.flatMap((s) => [...(s.places ?? []), ...(s.route ?? []), ...(s.battles ?? [])]));
-  const renderers = realRenderers({ videoId, era: chapter.title, side: "quân đội thời kỳ đó", topicTerms: [chapter.title.split(":")[0].trim()], log });
-  const images: ArtImage[] = [];
-  const sceneFiles: string[] = [];
-  for (const [i, shot] of shots.entries()) {
+  const renderers = realRenderers({ videoId, era: chapter.title, side: "quân đội thời kỳ đó", topicTerms: [chapter.title.split(":")[0].trim()], dir, log });
+  // Dựng nhiều cảnh cùng lúc: mỗi cảnh chỉ ăn một nhân CPU (Resvg + ffmpeg), chạy tuần tự thì 3 nhân còn lại
+  // của runner ngồi không. pool() trả kết quả ĐÚNG thứ tự đầu vào nên thứ tự cảnh không đổi.
+  let done = 0;
+  const built = await pool(shots, SCENE_PARALLEL, async (shot, i) => {
     const sceneDir = path.join(dir, `scene-${String(i).padStart(3, "0")}`);
     await mkdir(sceneDir, { recursive: true });
     const out = path.join(sceneDir, "scene.mp4");
     const used = await pickSceneRenderer({ shot, places, dir: sceneDir, out, renderers });
-    images.push(...used.images);
-    sceneFiles.push(out);
-    if (i % PROGRESS_EVERY === 0) log(`Dựng cảnh ${i + 1}/${shots.length}`);
-  }
+    // Khung PNG chỉ để ghép ra mp4 của cảnh (~103 KB/khung, ~13 MB mỗi cảnh 5 giây) — giữ lại cả 456 cảnh
+    // là ~6 GB đĩa runner, đủ để job chết vì hết chỗ ở khúc cuối.
+    await rm(path.join(sceneDir, "frames"), { recursive: true, force: true });
+    done++;
+    if (done % PROGRESS_EVERY === 0 || done === shots.length) log(`Dựng cảnh ${done}/${shots.length}`);
+    return { out, images: used.images };
+  });
+  const sceneFiles = built.map((b) => b.out);
+  const images = built.flatMap((b) => b.images);
 
   const body = path.join(dir, "body.mp4");
   await concatScenes(sceneFiles, path.join(dir, "scenes.txt"), body);
