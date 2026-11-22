@@ -26,6 +26,7 @@ import { heroRef } from "./hero";
 import { chapterNarration } from "./narration";
 import { dropStaleTts, markTts } from "./tts-cache";
 import { imageCount, isEpisodeOpener, planChapterScenes, planShots, shortSceneCount } from "./episode-plan";
+import { HISTORY_IVOI_VOICE, isHistoryStory } from "@/lib/story/history";
 import { isLifeStory, LIFE_IMAGE_SECONDS, LIFE_MAX_IMAGES, LIFE_NARRATOR_STYLE, LIFE_TEMPO, LIFE_TTS_VOICE_FEMALE, lifeVoice } from "@/lib/story/life";
 import { OPENER_CLIPS, OPENER_SEGMENT_BUDGET } from "./i2v-plan";
 import { ensureRelease, restoreImages, restoreTts, saveTts, uploadAsset } from "./release";
@@ -180,6 +181,17 @@ export function cueTextBetween(cues: Cue[], start: number, end: number) {
 }
 
 const FADE = 0.8;
+
+/** Thể loại bộ truyện + giọng đã chọn, để suy ra giọng ivoi của người dẫn. */
+type NarratorPick = { life: boolean; history: boolean; voice: string };
+
+/** Giọng ivoi của người dẫn theo thể loại: lịch sử = giọng tài liệu; chuyện đời = theo giới tính người kể; còn lại không dùng ivoi. */
+function narratorIvoiVoice({ life, history, voice }: NarratorPick): string | null {
+  if (!ivoiReady()) return null;
+  if (history) return `${IVOI_PREFIX}${HISTORY_IVOI_VOICE}`;
+  if (life) return `${IVOI_PREFIX}${voice === LIFE_TTS_VOICE_FEMALE ? IVOI_VOICE_FEMALE : IVOI_VOICE_MALE}`;
+  return null;
+}
 /** Pollinations không key có logo ở đáy ảnh → cắt 7%. Ảnh Cloudflare sạch, không cần. */
 export const LOGO_CROP = process.env.CLOUDFLARE_API_TOKEN ? "" : "crop=iw:ih*0.93:0:0,";
 const SHOT_SECONDS = 10;
@@ -926,7 +938,7 @@ async function renderInternalChapter(o: { videoId: number; s: Series; c: Chapter
 }
 
 
-export async function renderVideo(videoId: number) {
+export async function renderVideo(videoId: number) { // clean-scan-allow: hàm điều phối render có từ trước (354 dòng); tách là việc riêng
   // Key dán trên trang Cài đặt AI (lưu DB) — dùng được ngay mà không cần thêm GitHub Secrets.
   await loadSecrets(true);
   const [v] = await db().select().from(videos).where(eq(videos.id, videoId));
@@ -1078,7 +1090,7 @@ export async function renderVideo(videoId: number) {
     const lifeGroups = (text: string) =>
       ttsChunks(stripTags(text)).map((ch) => [{ speaker: NARRATOR, voice, style: LIFE_NARRATOR_STYLE, text: ch.join(" ") }]);
     // Có key ivoi → chuyện đời đọc bằng ivoi: người kể giọng user chọn, nhân vật có thoại giọng ivoi thường theo giới/tuổi.
-    const ivoiVoice = life && ivoiReady() ? `${IVOI_PREFIX}${voice === LIFE_TTS_VOICE_FEMALE ? IVOI_VOICE_FEMALE : IVOI_VOICE_MALE}` : null;
+    const ivoiVoice = narratorIvoiVoice({ life, history: isHistoryStory(s), voice });
     let useIvoi = Boolean(ivoiVoice);
     const directed = life
       ? await cached(path.join(dir, `voice-script${tag}.json`), () => directScript(longText).catch((e) => {
@@ -1399,7 +1411,7 @@ if (process.argv[1]?.endsWith("render.ts")) {
     if (arg.startsWith("thumbs:")) return import("./rethumb").then((x) => x.rethumb(Number(arg.slice(7))));
     if (arg === "trends") return import("./trends").then((x) => x.scanTrends());
     // Lệnh về bộ truyện: newseries:, newlife[:kênh], newhistory[:kênh], historyscript:<id>, pov:, series — xem new-series.ts.
-    if (/^(newseries:|newlife(:|$)|newhistory(:|$)|historyscript:|factcheck:|pov:|series$)/.test(arg)) return import("./new-series").then((x) => x.seriesCommand(arg));
+    if (/^(newseries:|newlife(:|$)|newhistory(:|$)|historyscript:|factcheck:|historyvideo:|pov:|series$)/.test(arg)) return import("./new-series").then((x) => x.seriesCommand(arg));
     if (arg.startsWith("compile:")) return import("./compile").then((x) => x.compileSeries(Number(arg.slice(8))));
     return renderVideo(Number(arg));
   };

@@ -224,3 +224,11 @@ export function validateHistoryTopic(title: string, wiki: string): string | null
 export function approvalBlockedReason(c: { factIssues: unknown }): string | null {
   return c.factIssues != null ? "Kịch bản còn lỗi sự thật — sửa rồi bấm “Soát lại” trước khi duyệt." : null;
 }
+
+/**
+ * Giọng người dẫn (ivoi "History US", giọng ivoi làm riêng cho nội dung lịch sử) — chủ kênh chọn 22/11/2026 sau khi nghe 23 giọng nam:
+ * 162 từ/phút, đúng nhịp phim tài liệu (150–190).
+ */
+export const HISTORY_IVOI_VOICE = "en_male_history_1";
+/** Không tăng tốc giọng: kênh truyện nhân 1,2 cho nhịp nhanh, phim tài liệu cần chậm và chắc. */
+export const HISTORY_TEMPO = 1;
