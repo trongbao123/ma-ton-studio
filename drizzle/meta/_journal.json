@@ -64,6 +64,13 @@
       "when": 1795000000000,
       "tag": "0008_history_dossier",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1795319513694,
+      "tag": "0009_places",
+      "breakpoints": true
     }
   ]
 }

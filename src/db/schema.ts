@@ -1,4 +1,4 @@
-import { boolean, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, unique } from "drizzle-orm/pg-core";
+import { boolean, doublePrecision, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, unique } from "drizzle-orm/pg-core";
 import type { VideoProgress } from "@/lib/flow/progress";
 import type { Dossier, FactIssue } from "@/lib/story/history-types";
 
@@ -150,3 +150,11 @@ export const aiUsage = pgTable(
   },
   (t) => [unique("ai_usage_day_model").on(t.day, t.model)],
 );
+
+/** Toạ độ địa danh đã tra (OpenStreetMap Nominatim) — lat/lon NULL nghĩa là đã tra và không tìm thấy. */
+export const places = pgTable("places", {
+  query: text("query").primaryKey(),
+  lat: doublePrecision("lat"),
+  lon: doublePrecision("lon"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
