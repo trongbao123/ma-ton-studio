@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { draftBible, planChapters } from "@/lib/story/service";
 
 // Đi qua db() để có fetch tự thử lại khi mạng chập.
-const sql = async (s: TemplateStringsArray, ...v: unknown[]) => (await db().execute(q(s, ...v))).rows as Record<string, unknown>[];
+const sql = async (s: TemplateStringsArray, ...v: unknown[]) => (await db().execute(q(s, ...v))) as unknown as Record<string, unknown>[];
 const idea = `Tu tiên dài kỳ NGUYÊN TÁC của kênh: viết theo đúng lối của Đấu La Đại Lục 3, Quang Âm Chi Ngoại, Thôn Phệ Tinh Không rồi cải biên cho đỉnh hơn — cảm xúc, cao trào, ly kỳ, bánh cuốn. Tên người, tông môn, địa danh, chiêu thức tự đặt mới; lấy cơ chế, mô-típ, kiểu nhân vật, cảm giác — không chép nguyên tình tiết.
 
 THẾ GIỚI:

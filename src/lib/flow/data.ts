@@ -83,7 +83,7 @@ export async function loadFlowPage(
   if (!row) return null;
   const { v, c, s } = row;
   const tracked = v.progress?.steps.images?.model;
-  const [settingRows, compRows, usage] = await db().batch([
+  const [settingRows, compRows, usage] = await Promise.all([
     db().select({ key: appSettings.key, value: appSettings.value }).from(appSettings).where(inArray(appSettings.key, [...SETTING_KEYS, ytKey(s.channel)])),
     compilationRows(v.id),
     // Pipeline chưa ghi model ảnh (video cũ) thì suy từ lượt dùng trong ngày render; đã ghi thì lô này trả rỗng.
