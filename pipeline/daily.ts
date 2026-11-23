@@ -14,7 +14,7 @@ import { loadSecrets } from "@/lib/secrets";
 import { ensureWebsub } from "@/lib/websub";
 import { commentOnPublished } from "./comment";
 import { compileSeries, compileState, seriesRows, withStaleAsFailed } from "./compile";
-import { chaptersToWrite, episodeBacklog, vnDay, writtenMarker } from "./episode-plan";
+import { chaptersToWrite, episodeBacklog, focusChannel, vnDay, writtenMarker } from "./episode-plan";
 import { renderVideo } from "./render";
 import { pool } from "./ffmpeg";
 
@@ -105,7 +105,11 @@ async function renderQueue(failures: string[]) {
       .innerJoin(series, eq(series.id, chapters.seriesId))
       .where(and(eq(videos.status, "queued"), eq(series.autopilot, true)))
       .orderBy(asc(videos.id))
-  ).sort((a, b) => Number(a.channel === "main") - Number(b.channel === "main") || a.id - b.id);
+  )
+    .sort((a, b) => Number(a.channel === "main") - Number(b.channel === "main") || a.id - b.id)
+    // Ngày lịch sử: không render tự động video chuyện đời — dành lượt vẽ ảnh cho kênh lịch sử (render tay vẫn được).
+    .filter((v) => v.channel !== "chuyen-doi" || focusChannel() === "chuyen-doi");
+  if (focusChannel() === "lich-su") console.log("  Hôm nay là ngày kênh lịch sử — tạm không render video chuyện đời");
   let quota: string | null = null;
   // Nhiều luồng: RENDER_PARALLEL chương cùng lúc; hết quota thì không bắt đầu chương mới (chương đang chạy tự dừng ở quota).
   await pool(queue, RENDER_PARALLEL, async (v) => {
