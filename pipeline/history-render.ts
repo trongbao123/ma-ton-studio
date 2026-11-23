@@ -12,7 +12,7 @@ import { geocodeAll, type GeoPoint } from "@/lib/story/geocode";
 import { HISTORY_IVOI_VOICE, HISTORY_TEMPO } from "@/lib/story/history";
 import { directScript, scenesToShots, type Shot } from "@/lib/story/storyboard";
 import { duration, ffmpeg, ffmpegLog, memoizeAsync, pool } from "./ffmpeg";
-import { ensureRelease, uploadAsset } from "./release";
+import { ensureRelease, fitForRelease, uploadAsset } from "./release";
 import { historyAudioArgs } from "./history-audio";
 import { coldOpenShots, renderColdOpen } from "./history-coldopen";
 import { narrate } from "./render";
@@ -196,7 +196,8 @@ const runUrl = () =>
  */
 async function keepVideo(videoId: number, file: string, seconds: number, problems: string[]) {
   const releaseId = await ensureRelease(videoId, true);
-  await uploadAsset(videoId, releaseId, file);
+  // Quá 2 GiB thì GitHub từ chối → nén lại trước; vẫn đẩy lên với tên long.mp4 (publish đọc tên này).
+  await uploadAsset(videoId, releaseId, await fitForRelease(file, seconds), "long.mp4");
   await db()
     .update(videos)
     .set({
