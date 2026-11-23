@@ -1,25 +1,20 @@
-import { neon, neonConfig } from "@neondatabase/serverless";
-import { drizzle } from "drizzle-orm/neon-http";
+import postgres from "postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
 import * as schema from "./schema";
-
-// Pipeline chờ AI vài phút rồi mới ghi DB → socket keep-alive cũ bị đóng, fetch lỗi "fetch failed". Thử lại khi lỗi mạng.
-neonConfig.fetchFunction = async (input: RequestInfo | URL, init?: RequestInit) => {
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return await fetch(input, init);
-    } catch (e) {
-      if (attempt >= 6) throw e;
-      await new Promise((r) => setTimeout(r, 3000 * (attempt + 1)));
-    }
-  }
-};
 
 let instance: ReturnType<typeof createDb> | undefined;
 
+/**
+ * Postgres chuẩn (Supabase / Neon / bất kỳ) qua postgres-js. 23/11/2026: Neon free hết hạn mức (402, khoá cả compute)
+ * → chuyển Supabase free; driver chung để sau này chép dữ liệu Neon sang mà không đổi code.
+ * `prepare: false`: Supabase pooler chế độ transaction (cổng 6543) không hỗ trợ prepared statement.
+ * Serverless (Vercel) mỗi lần gọi một kết nối ngắn → max nhỏ, đóng khi rảnh.
+ */
 function createDb() {
   const url = process.env.DATABASE_URL;
-  if (!url) throw new Error("Thiếu DATABASE_URL — kết nối Neon trong Vercel → Storage.");
-  return drizzle(neon(url), { schema });
+  if (!url) throw new Error("Thiếu DATABASE_URL — chuỗi kết nối Postgres (Supabase → Project Settings → Database → Connection pooling).");
+  const client = postgres(url, { prepare: false, max: Number(process.env.DB_POOL_MAX ?? 5), idle_timeout: 20, connect_timeout: 30, ssl: url.includes("localhost") ? false : "require" });
+  return drizzle(client, { schema });
 }
 
 /** Khởi tạo lười để `next build` không cần DATABASE_URL. */
