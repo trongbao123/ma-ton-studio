@@ -29,7 +29,7 @@ import { imageCount, isEpisodeOpener, planChapterScenes, planShots, shortSceneCo
 import { HISTORY_IVOI_VOICE, isHistoryStory } from "@/lib/story/history";
 import { isLifeStory, LIFE_IMAGE_SECONDS, LIFE_MAX_IMAGES, LIFE_NARRATOR_STYLE, LIFE_TEMPO, LIFE_TTS_VOICE_FEMALE, lifeVoice } from "@/lib/story/life";
 import { OPENER_CLIPS, OPENER_SEGMENT_BUDGET } from "./i2v-plan";
-import { ensureRelease, restoreImages, restoreTts, saveTts, uploadAsset } from "./release";
+import { ensureRelease, fitForRelease, restoreImages, restoreTts, saveTts, uploadAsset } from "./release";
 import { keepOrNextSlot } from "./schedule";
 import { loadSecrets } from "@/lib/secrets";
 import { chooseTitle, genreSeeds, keywordResearch, scoreTitles } from "./vidiq";
@@ -1317,7 +1317,7 @@ export async function renderVideo(videoId: number) { // clean-scan-allow: hàm �
 
     track.log("video", "Upload file lên kho");
     // Bản có mở đầu vẫn lên kho tên long.mp4 (publish/replace đọc tên này).
-    await uploadAsset(videoId, releaseId, finalLong, "long.mp4");
+    await uploadAsset(videoId, releaseId, await fitForRelease(finalLong, fullSeconds), "long.mp4");
     for (const f of [...extras, thumb, metaFile]) await uploadAsset(videoId, releaseId, f);
     track.finish("video");
     await track.flush();

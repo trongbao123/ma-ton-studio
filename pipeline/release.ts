@@ -140,3 +140,30 @@ export async function restoreTts(videoId: number, dir: string): Promise<number> 
   await run("tar", ["-xkf", path.join(dir, "tts-cache.tar"), "-C", dir]).catch(() => null);
   return (await have()) - before;
 }
+
+/** Giới hạn 1 file trên GitHub Release là 2 GiB; chừa biên. */
+export const RELEASE_MAX_BYTES = 1.9 * 1024 ** 3;
+/** Mục tiêu khi phải nén lại: ~1,8 GB. */
+const SHRINK_TARGET_BYTES = 1.8e9;
+
+/** Bitrate video (bit/giây) để file `seconds` giây vừa `target` byte, trừ phần tiếng; sàn 1,2 Mbps để không vỡ hình. */
+export function shrinkBitrate(seconds: number, target = SHRINK_TARGET_BYTES, audioBps = 192_000) {
+  return Math.max(1_200_000, Math.floor((target * 8) / Math.max(1, seconds) - audioBps));
+}
+
+/**
+ * Video quá 2 GiB thì GitHub từ chối (422 "size") và job mất trắng bản đã dựng (#91: 2.243 MB sau ~2 giờ dựng, 22/11/2026).
+ * File vượt RELEASE_MAX_BYTES → mã hoá lại hình theo bitrate tính từ thời lượng (tiếng giữ nguyên), trả đường dẫn file mới.
+ */
+export async function fitForRelease(file: string, seconds: number): Promise<string> {
+  const { stat } = await import("node:fs/promises");
+  const size = (await stat(file)).size;
+  if (size <= RELEASE_MAX_BYTES) return file;
+  const { ffmpeg } = await import("./ffmpeg");
+  const bps = shrinkBitrate(seconds);
+  const out = file.replace(/\.mp4$/, "-fit.mp4");
+  console.log(`  File ${(size / 1e6).toFixed(0)} MB vượt giới hạn 2 GB của release — nén lại ở ${(bps / 1e6).toFixed(2)} Mbps`);
+  await ffmpeg(["-y", "-i", file, "-c:v", "libx264", "-preset", "veryfast", "-b:v", String(bps), "-maxrate", String(Math.round(bps * 1.4)), "-bufsize", String(bps * 2), "-c:a", "copy", "-movflags", "+faststart", out]);
+  console.log(`  Sau khi nén: ${((await stat(out)).size / 1e6).toFixed(0)} MB`);
+  return out;
+}
