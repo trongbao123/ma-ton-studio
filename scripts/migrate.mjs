@@ -3,7 +3,7 @@ import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 
-const url = process.env.DATABASE_URL;
+const url = process.env.DB_URL ?? process.env.DATABASE_URL;
 if (!url) {
   console.log("[migrate] Không có DATABASE_URL — bỏ qua migration.");
 } else {
