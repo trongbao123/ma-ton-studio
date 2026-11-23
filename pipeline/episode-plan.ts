@@ -250,3 +250,14 @@ export function planRotation(o: { episodes: RotationEpisode[]; order: number[]; 
   }
   return out;
 }
+
+/**
+ * Chia ngày giữa hai kênh (chủ kênh 23/11/2026: "hôm nay cho kênh lịch sử, mai cho chuyện đời, cứ mỗi ngày chia nhau").
+ * Ngày VN chẵn/lẻ tính từ mốc 23/11/2026 = ngày lịch sử. Mục đích: hai kênh không giành lượt vẽ Codex (gói Plus) khi render.
+ */
+export type FocusChannel = "lich-su" | "chuyen-doi";
+const FOCUS_ANCHOR = Date.UTC(2026, 10, 23);
+export function focusChannel(at = new Date()): FocusChannel {
+  const days = Math.round((Date.parse(`${vnDay(at)}T00:00:00Z`) - FOCUS_ANCHOR) / 86_400_000);
+  return ((days % 2) + 2) % 2 === 0 ? "lich-su" : "chuyen-doi";
+}
