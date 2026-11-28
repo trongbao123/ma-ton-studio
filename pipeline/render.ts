@@ -11,6 +11,7 @@ import { chapters, series, videos, type Chapter, type Series, type VideoMeta } f
 import { QuotaExhaustedError, textProvider } from "@/lib/ai";
 import { escapeHtml, notify, WEB_URL } from "@/lib/notify";
 import { drawImage, imagesReady } from "./images";
+import { claimRenderDir, renderDirOwner } from "./render-dir";
 import { duration, escText, ffmpeg, ffmpegLog, filterPath, measureLufs, once, pool } from "./ffmpeg";
 import { blastFilter, type BlastLayout } from "./thumb-blast";
 import { Tracker } from "./progress";
@@ -966,6 +967,7 @@ export async function renderVideo(videoId: number) { // clean-scan-allow: hàm �
   const track = new Tracker(videoId);
   // Giữ thư mục giữa các lần chạy (được cache trên Actions) để không tốn lại quota TTS/ảnh đã làm.
   const dir = path.resolve(`.render/video-${videoId}`);
+  if (await claimRenderDir(dir, renderDirOwner(videoId, v.createdAt))) console.log(`  Thư mục cache video-${videoId} là của video khác trùng id — đã xoá, vẽ lại từ đầu`);
   const shortDir = path.join(dir, "short");
   await mkdir(shortDir, { recursive: true });
   /** Release của lần chạy này — lỗi giữa chừng (hết lượt/credit…) vẫn lưu phần giọng đã đọc. */
