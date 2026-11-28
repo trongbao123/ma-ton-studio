@@ -16,7 +16,7 @@ Resume: `git pull` trên `main`. Mọi nhánh dưới đây đã merge (trừ kh
 - (Tuỳ) thêm `DB_URL` Supabase vào `.env.local` để chạy script/đọc DB từ máy nhà.
 
 ## Còn dở / theo dõi
-- Neon vẫn khoá (vượt hạn mức). `neon-watch` báo Telegram khi mở; script `scripts/migrate-neon.mjs` hiện XOÁ SẠCH đích → phải sửa sang kiểu GỘP trước khi chạy (id Neon 1–21 trùng id Supabase 1–21 → đổi số các dòng cũ).
+- Neon vẫn khoá (vượt hạn mức). `neon-watch` báo Telegram khi mở → Actions chạy workflow **neon-merge**: `dry` trước, ổn thì `run`. Gộp KHÔNG xoá: dòng cũ nhận id mới ≥ 10000, chương cũ của bộ đang chạy mang số âm, video dở → failed; `selftest` đã đạt 12/12 (28/11).
 - Lượt dựng thử VieNeu: run 46137108282 (video #21) — xem giọng/phụ đề có khớp.
 - Video lịch sử đầu tiên chạy thật: xem log job `historyauto:2`, kiểm mô tả + ghi công + thumbnail trên YouTube.
 - Dữ liệu mẫu giọng ở `C:\Users\admin\voice-test` (máy nhà, không trong repo).
