@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ArtImage } from "./scene-art";
 import {
-  countHistoryBacklog, hasRequiredCredits, HISTORY_BUFFER, pickHistoryVideoToFinish, pickHistoryVideoToRebuild, recoverOverflowCredits, type HistoryQueueRow,
+  countHistoryBacklog, hasRequiredCredits, HISTORY_BUFFER, parseChapterRef, pickHistoryVideoToFinish, pickHistoryVideoToRebuild, pickReadyScript, recoverOverflowCredits, type HistoryQueueRow,
 } from "./history-script";
 
 const art = (o: Partial<ArtImage> = {}): ArtImage => ({ file: "a.jpg", title: "File:A.jpg", url: "u", license: "Public domain", artist: "X", synthetic: false, ...o });
@@ -124,4 +124,25 @@ describe("khôi phục ảnh ghi công chưa nằm trong mô tả (meta cũ chư
     const images = [art({ title: "File:Trung.jpg" }), art({ title: "File:Trung.jpg" })];
     expect(recoverOverflowCredits("Không nhắc.", images)).toHaveLength(1);
   });
+});
+
+describe("pickReadyScript — kịch bản đã soát đạt chưa có video thì xếp hàng trước khi viết mới", () => {
+  const ch = (o: Partial<{ id: number; status: string; content: string; factIssues: unknown }>) => ({ id: 1, status: "draft", content: "kịch bản", factIssues: null, ...o });
+
+  it("draft, hết lỗi sự thật, có nội dung, chưa có video → chọn", () => {
+    expect(pickReadyScript([ch({})], new Set())?.id).toBe(1);
+  });
+
+  it("còn lỗi sự thật / chưa viết / đã có video / đã duyệt → không chọn", () => {
+    expect(pickReadyScript([ch({ factIssues: [{ quote: "x" }] })], new Set())).toBeUndefined();
+    expect(pickReadyScript([ch({ status: "outline", content: "" })], new Set())).toBeUndefined();
+    expect(pickReadyScript([ch({})], new Set([1]))).toBeUndefined();
+    expect(pickReadyScript([ch({ status: "approved" })], new Set())).toBeUndefined();
+  });
+});
+
+describe("parseChapterRef — factcheck: nhận id chương hoặc <bộ>/<số đề tài>", () => {
+  it("id chương", () => expect(parseChapterRef("123")).toEqual({ chapterId: 123 }));
+  it("bộ/số", () => expect(parseChapterRef("2/1")).toEqual({ seriesId: 2, number: 1 }));
+  it("sai dạng → null", () => expect(parseChapterRef("abc")).toBeNull());
 });

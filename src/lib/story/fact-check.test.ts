@@ -41,6 +41,20 @@ describe("soát sự thật nhiều vòng", () => {
     expect(generateJson).toHaveBeenCalledTimes(1 + FACT_FIX_ROUNDS);
     expect(r.issues).toEqual(last);
   });
+  it("vòng cuối còn lỗi nhưng định vị được câu → áp câu sửa luôn, đạt (không gác cả kịch bản vì vài câu)", async () => {
+    const last = [issue("Ông tích trữ lương thảo, luyện binh.", "Ông luyện binh."), issue(" Hai mươi hai ngày ở biên ải.", "")];
+    const { ai } = fakeAi([issue("x", "y")], [issue("x", "y")], last);
+    const r = await factCheckScript(ai, "Ông tích trữ lương thảo, luyện binh. Hai mươi hai ngày ở biên ải. Hết.", "HỒ SƠ");
+    expect(r.issues).toEqual([]);
+    expect(r.script).toBe("Ông luyện binh. Hết.");
+  });
+  it("vòng cuối: lỗi định vị được thì sửa, lỗi không định vị được thì giữ lại (chờ sửa)", async () => {
+    const lost = issue("câu không có trong kịch bản", "x");
+    const { ai } = fakeAi([issue("x", "y")], [issue("x", "y")], [issue("Năm 939", "Năm 938"), lost]);
+    const r = await factCheckScript(ai, "Năm 939 Ngô Quyền thắng.", "HỒ SƠ");
+    expect(r.script).toBe("Năm 938 Ngô Quyền thắng.");
+    expect(r.issues).toEqual([lost]);
+  });
   it("prompt soát chứa nguyên kịch bản và hồ sơ", () => {
     const p = factCheckPrompt("KỊCH BẢN XYZ", "HỒ SƠ ABC");
     expect(p.prompt).toContain("KỊCH BẢN XYZ");
