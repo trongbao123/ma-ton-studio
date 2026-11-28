@@ -21,6 +21,8 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 24, cache: pnpm }
       - uses: ./.github/actions/setup-ffmpeg
+      # Giọng đọc VieNeu (miễn phí, CPU) cho chuyện đời + lịch sử; lỗi cài thì tự quay về ivoi/Gemini.
+      - uses: ./.github/actions/setup-vieneu
       # Mô hình độ sâu cho parallax 2.5D (Depth Anything V2 Small int8, ~27MB): tải 1 lần rồi cache; thiếu/lỗi thì dựng zoompan như cũ.
       - uses: actions/cache@v4
         with:

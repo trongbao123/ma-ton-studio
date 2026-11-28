@@ -9,20 +9,19 @@ import { textProvider } from "@/lib/ai";
 import { loadSecrets } from "@/lib/secrets";
 import { dossierText } from "@/lib/story/dossier";
 import { geocodeAll, type GeoPoint } from "@/lib/story/geocode";
-import { HISTORY_IVOI_VOICE, HISTORY_TEMPO } from "@/lib/story/history";
+import { HISTORY_TEMPO } from "@/lib/story/history";
 import { directScript, scenesToShots, type Shot } from "@/lib/story/storyboard";
 import { duration, ffmpeg, ffmpegLog, memoizeAsync, pool } from "./ffmpeg";
 import { ensureRelease, fitForRelease, uploadAsset } from "./release";
 import { historyAudioArgs, musicPlan } from "./history-audio";
 import { coldOpenShots, renderColdOpen } from "./history-coldopen";
-import { narrate } from "./render";
+import { isEngineUnavailable, narrate, narratorEngines, type Narration } from "./render";
 import { artCredits, pickArtwork, renderArtScene, type ArtImage } from "./scene-art";
 import { renderCardScene } from "./scene-card";
 import { renderMapScene } from "./scene-map";
 import { kaggleTerrainJob, renderTerrainScene, stopAfterFailure, terrainBudget } from "./scene-terrain";
 import { ensureSprite, spriteDataUri } from "./sprites";
 import { toAss } from "./text";
-import { IVOI_PREFIX } from "./tts-ivoi";
 
 /** Các cách dựng cảnh (tiêm vào để test không chạy ffmpeg). */
 export type SceneRenderers = {
@@ -67,6 +66,21 @@ async function artFor({ shot, dir, renderers }: Pick<SceneJob, "shot" | "dir" | 
  * Dựng một cảnh, tự lùi cấp khi thiếu dữ liệu: 3D → bản đồ 2D → thẻ chữ; tranh tư liệu → AI vẽ (đóng nhãn "Minh họa")
  * → thẻ chữ. Luôn ra được một file, không bao giờ để khung trống.
  */
+/** Đọc kịch bản lịch sử: VieNeu giọng Thanh Bình (miễn phí) → ivoi giọng tài liệu (dự phòng) → Gemini. */
+async function narrateHistory(content: string, dir: string): Promise<Narration> {
+  for (const engine of narratorEngines({ life: false, history: true, voice: "" })) {
+    try {
+      const narration = await narrate(content, dir, `${engine.prefix}${engine.narrator}`, undefined, CUE_CHARS, HISTORY_TEMPO);
+      console.log(`  Giọng ${engine.name} ${engine.narrator}`);
+      return narration;
+    } catch (e) {
+      if (!isEngineUnavailable(e)) throw e;
+      console.warn(`  ⚠ ${engine.name} không dùng được (${e instanceof Error ? e.message : e}) — thử bộ máy kế tiếp`);
+    }
+  }
+  return narrate(content, dir, HISTORY_GEMINI_VOICE, undefined, CUE_CHARS, HISTORY_TEMPO);
+}
+
 export async function pickSceneRenderer({ shot, places, dir, out, renderers }: SceneJob): Promise<RenderedScene> {
   if (shot.kind === "card") {
     await renderers.card({ shot, out });
@@ -124,6 +138,8 @@ const SUBTITLE_SIZE = 68;
 const SUBTITLE_MARGIN = 100;
 /** Chữ mỗi mốc phụ đề — dài hơn thì một dòng tràn màn hình. */
 const CUE_CHARS = 70;
+/** Giọng Gemini khi cả VieNeu lẫn ivoi đều không dùng được (trầm, hợp thuyết minh). */
+const HISTORY_GEMINI_VOICE = "Algenib";
 const PROGRESS_EVERY = 10;
 /** Runner GitHub có 4 nhân — dựng 3 cảnh cùng lúc, chừa một nhân cho ffmpeg ghép và hệ thống. */
 const SCENE_PARALLEL_DEFAULT = 3;
@@ -231,7 +247,7 @@ export async function renderHistoryVideo(videoId: number): Promise<{ file: strin
   await db().update(videos).set({ status: "rendering", error: null, runUrl: runUrl(), updatedAt: new Date() }).where(eq(videos.id, videoId));
   const log = (text: string) => console.log(`  ${text}`);
 
-  const narration = await narrate(chapter.content, dir, `${IVOI_PREFIX}${HISTORY_IVOI_VOICE}`, undefined, CUE_CHARS, HISTORY_TEMPO);
+  const narration = await narrateHistory(chapter.content, dir);
   log(`Giọng đọc ${narration.seconds.toFixed(0)} giây`);
   const sources = dossierText(chapter.dossier);
   const scenes = await directScript(textProvider(), chapter.content, sources);
