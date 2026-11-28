@@ -19,13 +19,17 @@ function loadEnvLocal() {
 
 const sslFor = (url: string) => (url.includes("localhost") || url.includes("127.0.0.1") ? false : "require");
 
-/** Bỏ `id` (để sequence cấp id mới) và bọc cột json/jsonb cho postgres-js. */
-function insertable(tx: Sql, row: Row, jsonCols: Set<string>): Row {
-  return Object.fromEntries(
-    Object.entries(row)
-      .filter(([k]) => k !== "id")
-      .map(([k, v]) => [k, jsonCols.has(k) && v != null ? tx.json(v as postgres.JSONValue) : v]),
-  );
+/** Tham số JSON gửi dạng chuỗi rồi ép `::text::jsonb` trong SQL — `sql.json()` của postgres-js hỏng khi `prepare: false`
+ *  (tự kiểm neon-merge 28/11/2026: "Received an instance of Object"), còn ép thẳng `::jsonb` thì bị mã hoá JSON hai lần. */
+const jsonText = (v: unknown) => (v == null ? null : JSON.stringify(v));
+
+/** Chèn một dòng (bỏ `id` để sequence cấp id mới), cột json/jsonb gửi qua `jsonText`; trả id mới. */
+async function insertRow(tx: Sql, table: string, row: Row, jsonCols: Set<string>): Promise<number> {
+  const cols = Object.keys(row).filter((k) => k !== "id");
+  const params = cols.map((k) => (jsonCols.has(k) ? jsonText(row[k]) : row[k])) as postgres.ParameterOrJSON<never>[];
+  const placeholders = cols.map((k, i) => (jsonCols.has(k) ? `$${i + 1}::text::jsonb` : `$${i + 1}`));
+  const [inserted] = await tx.unsafe(`insert into "${table}" (${cols.map((c) => `"${c}"`).join(", ")}) values (${placeholders.join(", ")}) returning id`, params);
+  return inserted.id as number;
 }
 
 async function jsonColumns(tx: Sql, table: string) {
@@ -60,9 +64,9 @@ export async function mergeNeon(srcUrl: string, dstUrl: string, dry: boolean) {
           continue;
         }
         // Bộ không còn chạy (kênh tu tiên cũ…): thêm vào ở trạng thái TẮT tự chạy.
-        const [row] = await tx`insert into series ${tx(insertable(tx, { ...s, autopilot: false }, json.series))} returning id`;
-        maps.series.set(s.id as number, row.id as number);
-        console.log(`  bộ cũ #${s.id} ${s.title} → thêm mới #${row.id} (tắt autopilot)`);
+        const newId = await insertRow(tx, "series", { ...s, autopilot: false }, json.series);
+        maps.series.set(s.id as number, newId);
+        console.log(`  bộ cũ #${s.id} ${s.title} → thêm mới #${newId} (tắt autopilot)`);
       }
 
       const mergedSeries = new Set(oldSeries.filter((s) => seriesPlan.get(s.id as number) != null).map((s) => s.id as number));
@@ -75,20 +79,18 @@ export async function mergeNeon(srcUrl: string, dstUrl: string, dry: boolean) {
           reused++;
           continue;
         }
-        const [row] = await tx`insert into chapters ${tx(insertable(tx, { ...c, series_id: plan.seriesId, number: plan.number }, json.chapters))} returning id`;
-        maps.chapters.set(c.id as number, row.id as number);
+        maps.chapters.set(c.id as number, await insertRow(tx, "chapters", { ...c, series_id: plan.seriesId, number: plan.number }, json.chapters));
       }
       console.log(`  chương: ${oldChapters.length - reused} thêm mới, ${reused} trùng tên → dùng chương đang có`);
 
       // Lượt 1 chèn video để có bản đồ id; lượt 2 đổi id trong meta (bản gộp trỏ tới video khác).
       for (const v of oldVideos) {
         const { status, error } = importedVideoStatus(v.status as string);
-        const [row] = await tx`insert into videos ${tx(insertable(tx, { ...v, chapter_id: maps.chapters.get(v.chapter_id as number)!, status, error: error ?? v.error }, json.videos))} returning id`;
-        maps.videos.set(v.id as number, row.id as number);
+        maps.videos.set(v.id as number, await insertRow(tx, "videos", { ...v, chapter_id: maps.chapters.get(v.chapter_id as number)!, status, error: error ?? v.error }, json.videos));
       }
       for (const v of oldVideos) {
         const meta = remapVideoMeta(v.meta as VideoMeta | null, maps);
-        if (meta) await tx`update videos set meta = ${tx.json(meta as unknown as postgres.JSONValue)} where id = ${maps.videos.get(v.id as number)!}`;
+        if (meta) await tx`update videos set meta = ${jsonText(meta)}::text::jsonb where id = ${maps.videos.get(v.id as number)!}`;
       }
       console.log(`  video: ${oldVideos.length} thêm mới (dở dang → failed, không tự render)`);
 
@@ -97,10 +99,10 @@ export async function mergeNeon(srcUrl: string, dstUrl: string, dry: boolean) {
         const [cur] = await tx`select value from app_settings where key = ${s.key as string}`;
         const plan = remapSetting(s.key as string, s.value, maps.series, cur?.value ?? null);
         if (!plan) continue;
-        const settingJson = tx.json(plan.value as postgres.JSONValue);
+        const settingJson = jsonText(plan.value);
         const done = plan.overwrite
-          ? await tx`insert into app_settings (key, value) values (${plan.key}, ${settingJson}) on conflict (key) do update set value = excluded.value returning key`
-          : await tx`insert into app_settings (key, value) values (${plan.key}, ${settingJson}) on conflict (key) do nothing returning key`;
+          ? await tx`insert into app_settings (key, value) values (${plan.key}, ${settingJson}::text::jsonb) on conflict (key) do update set value = excluded.value returning key`
+          : await tx`insert into app_settings (key, value) values (${plan.key}, ${settingJson}::text::jsonb) on conflict (key) do nothing returning key`;
         settings += done.length;
       }
       for (const u of oldUsage) await tx`insert into ai_usage ${tx(u)} on conflict (day, model) do nothing`;
