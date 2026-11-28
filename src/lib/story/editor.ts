@@ -9,6 +9,15 @@ export const OPENING_WORDS = 300;
 const MAX_REWRITES = 2;
 
 type Prompt = { system: string; prompt: string };
+
+/** Bộ luật chấm mở đầu theo thể loại: luật đánh số + vai biên tập viên. */
+export type OpeningCheck = { rules: readonly string[]; editor: string };
+
+/** Mặc định: kênh tu tiên (OPENING_RULES). Chuyện đời dùng LIFE_OPENING_CHECK. */
+export const XIANXIA_OPENING_CHECK: OpeningCheck = {
+  rules: OPENING_RULES,
+  editor: "Bạn là biên tập viên khó tính của kênh truyện audio tu tiên trên YouTube. Bạn chấm xem đoạn mở đầu có giữ được người nghe trong 20 giây đầu không.",
+};
 export type Ai = { generateText(req: TextRequest): Promise<string>; generateJson<T>(req: JsonRequest<T>): Promise<T> };
 
 /** Đoạn văn: ngăn bằng dòng trống; chương AI viết chỉ xuống dòng đơn thì tính mỗi dòng là một đoạn. */
@@ -35,15 +44,15 @@ export const reviewSchema = z.object({
   note: z.string().describe("1 câu: lỗi nặng nhất"),
 });
 
-export function reviewPrompt(opening: string): Prompt {
+export function reviewPrompt(opening: string, check: OpeningCheck = XIANXIA_OPENING_CHECK): Prompt {
   return {
-    system: "Bạn là biên tập viên khó tính của kênh truyện audio tu tiên trên YouTube. Bạn chấm xem đoạn mở đầu có giữ được người nghe trong 20 giây đầu không.",
-    prompt: `Chấm đoạn mở đầu chương dưới đây theo từng luật (đánh số từ 0). Chỉ đạt khi đúng TẤT CẢ.\n\n${OPENING_RULES.map((r, i) => `${i}. ${r}`).join("\n")}\n\n# Đoạn mở đầu\n${opening}`,
+    system: check.editor,
+    prompt: `Chấm đoạn mở đầu chương dưới đây theo từng luật (đánh số từ 0). Chỉ đạt khi đúng TẤT CẢ.\n\n${check.rules.map((r, i) => `${i}. ${r}`).join("\n")}\n\n# Đoạn mở đầu\n${opening}`,
   };
 }
 
-export function rewriteOpeningPrompt(base: Prompt, opening: string, failed: number[]): Prompt {
-  const rules = failed.filter((i) => OPENING_RULES[i]).map((i) => `- ${OPENING_RULES[i]}`);
+export function rewriteOpeningPrompt(base: Prompt, opening: string, failed: number[], check: OpeningCheck = XIANXIA_OPENING_CHECK): Prompt {
+  const rules = failed.filter((i) => check.rules[i]).map((i) => `- ${check.rules[i]}`);
   return {
     system: base.system,
     prompt: `${base.prompt}\n\n# Đoạn mở đầu đã viết\n${opening}\n\nĐoạn mở đầu trên CHƯA đạt các luật sau:\n${rules.join("\n")}\n\nViết lại CHỈ đoạn mở đầu này: giữ nguyên diễn biến, nhân vật và chỗ dừng để nối tiếp được phần sau, độ dài tương đương (~${wordCount(opening)} từ), sửa đúng các lỗi trên. Chỉ trả về đoạn mở đầu mới, không viết tiếp, không lời bình.`,
@@ -62,21 +71,21 @@ export function replaceOpening(content: string, newOpening: string) {
   return rest ? `${head}\n\n${rest}` : head;
 }
 
-async function review(ai: Ai, opening: string) {
-  return ai.generateJson({ ...reviewPrompt(opening), schema: reviewSchema, temperature: 0.2, tier: "cheap", task: "summary" });
+async function review(ai: Ai, opening: string, check: OpeningCheck) {
+  return ai.generateJson({ ...reviewPrompt(opening, check), schema: reviewSchema, temperature: 0.2, tier: "cheap", task: "summary" });
 }
 
-export async function polishOpening(content: string, base: Prompt, ai: Ai): Promise<{ content: string; warning: string | null }> {
+export async function polishOpening(content: string, base: Prompt, ai: Ai, check: OpeningCheck = XIANXIA_OPENING_CHECK): Promise<{ content: string; warning: string | null }> {
   if (!content.trim()) return { content, warning: null };
   let best = { content, failed: Number.POSITIVE_INFINITY, rules: [] as number[] };
   let current = content;
   try {
     for (let round = 0; ; round++) {
-      const r = await review(ai, splitOpening(current).opening);
+      const r = await review(ai, splitOpening(current).opening, check);
       if (r.pass) return { content: current, warning: null };
       if (r.failed.length < best.failed) best = { content: current, failed: r.failed.length, rules: r.failed };
       if (round === MAX_REWRITES || wordCount(splitOpening(current).opening) > MAX_REWRITE_WORDS) break;
-      const fresh = await ai.generateText({ ...rewriteOpeningPrompt(base, splitOpening(current).opening, r.failed), maxOutputTokens: 4000, temperature: 0.8, task: "story" });
+      const fresh = await ai.generateText({ ...rewriteOpeningPrompt(base, splitOpening(current).opening, r.failed, check), maxOutputTokens: 4000, temperature: 0.8, task: "story" });
       current = replaceOpening(current, fresh);
     }
   } catch (e) {
@@ -84,7 +93,7 @@ export async function polishOpening(content: string, base: Prompt, ai: Ai): Prom
     console.warn("⚠ Biên tập viên AI lỗi — giữ bản hiện có:", e instanceof Error ? e.message.slice(0, 200) : e);
     return { content: Number.isFinite(best.failed) ? best.content : current, warning: null };
   }
-  const broken = best.rules.map((i) => OPENING_RULES[i]?.split(/[—;(]/)[0].trim()).filter(Boolean);
+  const broken = best.rules.map((i) => check.rules[i]?.split(/[—;(]/)[0].trim()).filter(Boolean);
   return { content: best.content, warning: `Mở đầu chưa đạt (biên tập viên AI): ${broken.join(" | ")}` };
 }
 

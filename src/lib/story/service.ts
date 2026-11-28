@@ -2,8 +2,8 @@ import { and, asc, eq, lt } from "drizzle-orm";
 import { db } from "@/db";
 import { chapters, series, type Chapter, type Series } from "@/db/schema";
 import { textProvider } from "@/lib/ai";
-import { polishOpening, shouldPolishOpening } from "./editor";
-import { isLifeStory, lifeIsFinalPart } from "./life";
+import { polishOpening, shouldPolishOpening, XIANXIA_OPENING_CHECK } from "./editor";
+import { isLifeStory, LIFE_OPENING_CHECK, lifeIsFinalPart } from "./life";
 import { historyIsFinalPart, historyScriptComplete, isHistoryStory, isSensitiveTopic, wikiTitleOf } from "./history";
 import { buildDossier, dossierText } from "./dossier";
 import { factCheckScript, FactCheckFailedError } from "./fact-check";
@@ -96,10 +96,10 @@ export async function writeChapterStep(chapterId: number, mode: WriteMode) {
     const save = (text: string) => db().update(chapters).set({ content: text, summary: "", status: "outline", updatedAt: new Date() }).where(eq(chapters.id, chapterId));
     // Lưu ngay bản vừa viết: bước chấm phía sau lỗi/bị cắt cũng không mất lượt viết 16k token.
     await save(content);
-    // Biên tập mở đầu chấm theo luật tiên hiệp (bàn tay vàng…) — chuyện đời có nhịp riêng nên bỏ qua.
-    if (mode === "start" && shouldPolishOpening() && !isLifeStory(s) && !history) {
-      // Biên tập viên AI chấm 300 từ đầu ngay lượt đầu — viết lại lúc này rẻ nhất, trước khi tốn các lượt viết tiếp và giọng đọc.
-      const polished = await polishOpening(content, base, ai);
+    // Biên tập viên AI chấm 300 từ đầu ngay lượt đầu — viết lại lúc này rẻ nhất, trước khi tốn các lượt viết tiếp và giọng đọc.
+    // Chuyện đời chấm theo luật riêng (28/11/2026: mở bằng tuổi mất ~60% người xem); lịch sử có soát sự thật riêng nên bỏ qua.
+    if (mode === "start" && shouldPolishOpening() && !history) {
+      const polished = await polishOpening(content, base, ai, isLifeStory(s) ? LIFE_OPENING_CHECK : XIANXIA_OPENING_CHECK);
       warning = polished.warning;
       if (polished.content !== content) await save((content = polished.content));
     }

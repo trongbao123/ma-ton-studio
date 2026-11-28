@@ -30,7 +30,7 @@ export const lifeMetaSchema = metaSchema.extend({
   titleAlternatives: z.array(z.string()).describe("2 phương án tiêu đề khác, góc tò mò khác nhau, cùng khuôn"),
   tags: z.array(z.string()).describe("15–25 tag tiếng Việt CÓ DẤU như người xem gõ tìm (vd 'chuyện đời', 'truyện audio cảm động', 'câu chuyện gia đình'); ít nhất 5 tag lấy nguyên văn từ danh sách từ khóa vidIQ nếu có; tổng 300–480 ký tự; không trùng"),
   shortTitle: z.string().describe(`Tiêu đề Short ≤ 60 ký tự, có #shorts; ${LIFE_TITLE_RULE}`),
-  shortScript: z.string().describe("Lời đọc Short 30–50 giây (70–110 từ): câu đầu là biến cố đau nhất, kể tình huống hấp dẫn nhất, dừng ngay trước sự thật, câu cuối mời nghe trọn câu chuyện trên kênh"),
+  shortScript: z.string().describe("Lời đọc Short 30–50 giây (70–110 từ) — cũng là đoạn mở đầu 0–40 giây của video dài: câu đầu (dưới 20 từ) là biến cố đau nhất, KHÔNG mở bằng tuổi/tên/quê/nghề ('Tôi năm nay … tuổi'), kể tình huống hấp dẫn nhất, dừng ngay trước sự thật, câu cuối mời nghe trọn câu chuyện trên kênh"),
   thumbnailText: z.string().describe(`Chữ trên thumbnail: ${LIFE_THUMB_TEXT_RULE}`),
   thumbnailPrompt: z.string().describe(LIFE_THUMB_PROMPT),
   characterLook: z.string().describe("English: appearance of the main character (age, face, hair, everyday modern Vietnamese clothes) to keep images consistent"),
