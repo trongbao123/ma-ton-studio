@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chunkCreditLines, COMMENT_MAX, commentTargets, creditCommentTargets, ctaComment, SHORT_DELAY_MS, type CreditCommentRow } from "./comment";
+import { chunkCreditLines, COMMENT_MAX, commentTargets, creditCommentTargets, ctaComment, MAX_CREDIT_COMMENT_ATTEMPTS, SHORT_DELAY_MS, type CreditCommentRow } from "./comment";
 
 const base = {
   seriesTitle: "Ma Tôn Trùng Sinh",
@@ -149,6 +149,11 @@ describe("creditCommentTargets — video lịch sử nào cần đăng bù bình
 
   it("đã đăng rồi (creditsCommentedAt) → KHÔNG chọn lại, không đăng chồng", () => {
     expect(creditCommentTargets([creditRow({ meta: { overflowCredits: ["x"], creditsCommentedAt: "2026-11-28T01:00:00Z" } })], now)).toEqual([]);
+  });
+
+  it("hỏng đủ số lần tối đa → thôi thử (lỗi vĩnh viễn không đốt quota YouTube mỗi lượt)", () => {
+    expect(creditCommentTargets([creditRow({ meta: { overflowCredits: ["x"], creditsCommentAttempts: MAX_CREDIT_COMMENT_ATTEMPTS - 1 } })], now)).toHaveLength(1);
+    expect(creditCommentTargets([creditRow({ meta: { overflowCredits: ["x"], creditsCommentAttempts: MAX_CREDIT_COMMENT_ATTEMPTS } })], now)).toEqual([]);
   });
 });
 

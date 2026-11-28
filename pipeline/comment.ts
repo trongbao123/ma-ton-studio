@@ -165,16 +165,21 @@ export async function commentOnPublished(now = new Date()): Promise<void> {
   }
 }
 
-export type CreditCommentRow = { id: number; youtubeVideoId: string | null; publishAt: Date | null; meta: { overflowCredits?: string[]; creditsCommentedAt?: string } | null };
+export type CreditCommentRow = { id: number; youtubeVideoId: string | null; publishAt: Date | null; meta: { overflowCredits?: string[]; creditsCommentedAt?: string; creditsCommentAttempts?: number } | null };
 
 /**
  * Video đã công khai (publishAt <= now), có id YouTube, còn ghi công ảnh dư (lịch sử: `meta.overflowCredits` —
  * ảnh không vừa mô tả) chưa đăng bình luận (`meta.creditsCommentedAt`). Lúc hoàn tất (`historyAuto`) video còn
  * riêng tư tới đúng giờ phát nên không đăng được ngay — phải đợi tới đây.
  */
+/** Lỗi vĩnh viễn (video tắt bình luận / bị xoá / về riêng tư) không được gọi API mãi — mỗi lượt thử tốn 50 unit quota YouTube. */
+export const MAX_CREDIT_COMMENT_ATTEMPTS = 3;
+
 export function creditCommentTargets<T extends CreditCommentRow>(rows: T[], now: Date): T[] {
   return rows.filter(
-    (r) => r.youtubeVideoId && r.publishAt && r.publishAt.getTime() <= now.getTime() && (r.meta?.overflowCredits?.length ?? 0) > 0 && !r.meta?.creditsCommentedAt,
+    (r) =>
+      r.youtubeVideoId && r.publishAt && r.publishAt.getTime() <= now.getTime() && (r.meta?.overflowCredits?.length ?? 0) > 0 && !r.meta?.creditsCommentedAt &&
+      (r.meta?.creditsCommentAttempts ?? 0) < MAX_CREDIT_COMMENT_ATTEMPTS,
   );
 }
 
@@ -232,6 +237,17 @@ async function notifyCreditLinesFailed(videoId: number, reason: string, lines: s
  * luận; gọi hàm này trong lượt daily, ngay sau `commentOnPublished`. Lỗi chỉ báo Telegram ở LẦN ĐẦU (đóng dấu
  * `meta.creditsCommentAttempts`) để không spam mỗi lượt daily (~3 giờ/lần).
  */
+/** Đăng các dòng ghi công; trả chuỗi lỗi (null = thành công) — mọi lỗi ném ra cũng quy về chuỗi lỗi. */
+async function creditCommentError(channel: string, youtubeVideoId: string, lines: string[]): Promise<string | null> {
+  try {
+    const auth = await getYoutubeAuth(channel).catch(() => null);
+    if (!auth) return "Chưa kết nối YouTube";
+    return await postCreditLines(await accessToken(auth.refreshToken), youtubeVideoId, lines);
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e);
+  }
+}
+
 export async function postPendingCreditComments(now = new Date()): Promise<void> {
   const rows = await db()
     .select({ id: videos.id, youtubeVideoId: videos.youtubeVideoId, publishAt: videos.publishAt, meta: videos.meta, channel: series.channel })
@@ -241,8 +257,8 @@ export async function postPendingCreditComments(now = new Date()): Promise<void>
     .where(and(isNotNull(videos.youtubeVideoId), isNotNull(videos.publishAt), lte(videos.publishAt, now)));
   for (const r of creditCommentTargets(rows, now)) {
     const lines = r.meta!.overflowCredits!;
-    const auth = await getYoutubeAuth(r.channel).catch(() => null);
-    const err = auth ? await postCreditLines(await accessToken(auth.refreshToken), r.youtubeVideoId!, lines) : "Chưa kết nối YouTube";
+    // Lỗi ném ra (refresh token bị thu hồi, mạng) tính như một lần thử hỏng của video này — không bỏ dở các video sau.
+    const err = await creditCommentError(r.channel, r.youtubeVideoId!, lines);
     if (!err) {
       await db().update(videos).set({ meta: { ...r.meta!, creditsCommentedAt: new Date().toISOString() } }).where(eq(videos.id, r.id));
       console.log(`  Đã đăng bình luận ghi công ảnh dư cho video #${r.id}`);
