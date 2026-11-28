@@ -18,9 +18,7 @@ import { isHistoryStory, pickChapterToWrite } from "@/lib/story/history";
 import { maxContinues } from "@/lib/story/prompts";
 import { getChapter, getSeries, writeChapterStep } from "@/lib/story/service";
 import { WIKI_USER_AGENT } from "@/lib/story/wiki-api";
-import { accessToken, getYoutubeAuth } from "@/lib/youtube";
-import { COMMENT_MAX, postComment } from "./comment";
-import { historyVideoMeta, pickThumbnailImage } from "./history-meta";
+import { artCreditLine, dedupeArtImages, historyVideoMeta, pickThumbnailImage } from "./history-meta";
 import { ensureRelease, uploadAsset } from "./release";
 import { thumbnail } from "./render";
 import { keepOrNextSlot } from "./schedule";
@@ -195,13 +193,14 @@ function creditsFromStoredMeta(stored: NonNullable<VideoMeta["historyCredits"]>)
 }
 
 /**
- * Có đủ dữ liệu ghi công để đăng không — video lịch sử nào dựng đạt QC cũng luôn có nhạc (musicPlan không bao
- * giờ rỗng khi còn cảnh, và QC đòi `shots.length` > 0). Rỗng nghĩa là mất dữ liệu ghi công (resume thiếu
- * `videos.meta.historyCredits`, hoặc video dựng tay bằng `historyvideo:` từ trước khi có trường này) — KHÔNG
- * được đăng vì sẽ thiếu ghi công bắt buộc của giấy phép CC BY (nhạc) / CC BY-SA (ảnh).
+ * Có historyCredits thật (không phải mặc định rỗng vì resume thiếu dữ liệu) không — kiểm thẳng bản ghi
+ * `images`/`musicFiles`, không suy qua một trường proxy (vd chỉ nhạc). `null` = không tìm được bản ghi
+ * `videos.meta.historyCredits` nào (resume job khác chưa lưu, hoặc video dựng tay bằng `historyvideo:` từ
+ * trước khi có trường này) — KHÔNG được đăng vì sẽ thiếu ghi công bắt buộc của giấy phép CC BY (nhạc) / CC
+ * BY-SA (ảnh).
  */
-export function hasRequiredCredits(credits: HistoryCredits): boolean {
-  return credits.musicFiles.length > 0;
+export function hasRequiredCredits(credits: HistoryCredits | null): credits is HistoryCredits {
+  return credits !== null && (credits.images.length > 0 || credits.musicFiles.length > 0);
 }
 
 const COMMONS_THUMB_WIDTH = 1920;
@@ -257,77 +256,47 @@ async function ensureLocalLongVideo(videoId: number, dir: string): Promise<strin
   return file;
 }
 
-/** Meta để đăng + dòng ghi công ảnh không vừa mô tả (đăng bình luận riêng — xem `postOverflowCredits`). */
+/** Meta để đăng + dòng ghi công ảnh không vừa mô tả (lưu vào `meta.overflowCredits`, đăng bình luận SAU khi video công khai — xem `postPendingCreditComments` ở comment.ts). */
 type HistoryFinishMeta = { meta: VideoMeta; overflowCredits: string[] };
 
 /** Đầu vào của `resolveHistoryMeta`: video + bộ truyện + ghi công đã dựng + meta hiện có (null = chưa có). */
 type ResolveHistoryMetaInput = { series: Series; chapter: Chapter; credits: HistoryCredits; existing: VideoMeta | null };
 
 /**
+ * Ảnh ghi công chưa nằm trong mô tả hiện có — dùng khi meta cũ (sinh trước khi có trường `overflowCredits`,
+ * hoặc job chết giữa lúc lưu) không có sẵn danh sách này. So bằng tên file ("File:Xxx.jpg" là định danh duy
+ * nhất trên Commons) có xuất hiện nguyên văn trong mô tả hay không — mô tả luôn in tên file ở dòng ghi công.
+ */
+export function recoverOverflowCredits(existingDescription: string, images: ArtImage[]): string[] {
+  return dedupeArtImages(images)
+    .filter((image) => !image.synthetic && !existingDescription.includes(image.title))
+    .map(artCreditLine);
+}
+
+/**
  * Tiêu đề/mô tả/thumbnail: chủ kênh đã có (sửa tay hoặc lượt trước đã sinh) thì GIỮ NGUYÊN, không gọi AI viết
- * lại tốn quota lẫn mất bản chủ kênh sửa; chưa có thì sinh mới.
+ * lại tốn quota lẫn mất bản chủ kênh sửa; chưa có thì sinh mới. `overflowCredits` đọc lại từ meta đã lưu —
+ * KHÔNG trả rỗng khi chủ kênh đã có meta, nếu không lượt hoàn tất sau sẽ làm mất ghi công ảnh còn dư.
  */
 async function resolveHistoryMeta(video: ResolveHistoryMetaInput): Promise<HistoryFinishMeta> {
-  if (video.existing?.title) return { meta: video.existing, overflowCredits: [] };
+  if (video.existing?.title) {
+    const overflowCredits = video.existing.overflowCredits ?? recoverOverflowCredits(video.existing.description, video.credits.images);
+    return { meta: video.existing, overflowCredits };
+  }
   return historyVideoMeta({ series: video.series, chapter: video.chapter, images: video.credits.images, musicFiles: video.credits.musicFiles });
 }
 
-/** Chia các dòng ghi công thành nhiều đoạn, mỗi đoạn không vượt `maxBytes` — một bình luận YouTube tối đa `COMMENT_MAX` ký tự. */
-export function chunkCreditLines(lines: string[], maxBytes: number): string[][] {
-  const chunks: string[][] = [];
-  let current: string[] = [];
-  let currentBytes = 0;
-  for (const line of lines) {
-    const lineBytes = Buffer.byteLength(line, "utf8") + 1;
-    if (current.length && currentBytes + lineBytes > maxBytes) {
-      chunks.push(current);
-      current = [];
-      currentBytes = 0;
-    }
-    current.push(line);
-    currentBytes += lineBytes;
-  }
-  if (current.length) chunks.push(current);
-  return chunks;
-}
-
-const OVERFLOW_CREDIT_HEADER = "Ghi công ảnh tư liệu (không đủ chỗ trong mô tả):";
-/** Chừa chỗ cho header + số thứ tự đoạn khi chia bình luận ghi công dài. */
-const OVERFLOW_CREDIT_HEADER_MARGIN = 50;
-
-/** Đầu vào của `postOverflowCredits`: video + id YouTube vừa đăng + kênh (để lấy đúng tài khoản) + dòng ghi công còn thiếu. */
-type PostOverflowCreditsInput = { videoId: number; youtubeId: string; channel: string; lines: string[] };
-
-/**
- * Ghi công ảnh không vừa mô tả (vượt ngân sách byte) đăng thành bình luận của video — KHÔNG bỏ bớt ghi công,
- * giấy phép CC BY-SA bắt buộc ghi công đủ từng ảnh. Chia nhiều bình luận nếu dài; đăng lỗi hay chưa kết nối
- * YouTube thì báo Telegram kèm nguyên nội dung để chủ kênh dán tay.
- */
-async function postOverflowCredits(o: PostOverflowCreditsInput) {
-  const { videoId, youtubeId, channel, lines } = o;
-  if (!lines.length) return;
-  const auth = await getYoutubeAuth(channel).catch(() => null);
-  if (!auth) {
-    await notify(`⚠️ Video lịch sử #${videoId}: còn ${lines.length} ảnh chưa ghi công trong mô tả (hết chỗ), chưa kết nối YouTube để đăng bình luận — ghi công tay giúp:\n${escapeHtml(lines.join("\n")).slice(0, 1500)}`);
-    return;
-  }
-  const token = await accessToken(auth.refreshToken);
-  const chunks = chunkCreditLines(lines, COMMENT_MAX - Buffer.byteLength(OVERFLOW_CREDIT_HEADER, "utf8") - OVERFLOW_CREDIT_HEADER_MARGIN);
-  for (const [i, chunk] of chunks.entries()) {
-    const text = `${OVERFLOW_CREDIT_HEADER}${chunks.length > 1 ? ` (${i + 1}/${chunks.length})` : ""}\n${chunk.join("\n")}`;
-    const err = await postComment(token, youtubeId, text);
-    if (err) await notify(`⚠️ Video lịch sử #${videoId}: đăng bình luận ghi công ảnh lỗi (${escapeHtml(err)}) — ghi công tay giúp:\n${escapeHtml(chunk.join("\n")).slice(0, 1500)}`);
-  }
-}
-
 /** Đầu vào của `finishHistoryVideo`: video đã dựng xong (QC đạt) + bộ truyện của nó (để biết kênh, lấy lịch đăng). */
-type FinishHistoryVideoInput = { videoId: number; series: Series; credits: HistoryCredits };
+type FinishHistoryVideoInput = { videoId: number; series: Series; credits: HistoryCredits | null };
 
 /**
  * Tạo tiêu đề/mô tả/thumbnail rồi đăng YouTube cho một video lịch sử đã dựng xong, QC đạt (status `ready`).
  * Gọi ngay sau khi `buildHistoryVideo` vừa dựng xong (còn `images`/`musicFiles` trong tay), hoặc để hoàn tất
  * một video đã dựng từ lượt trước mà chưa đăng được (đọc lại `videos.meta.historyCredits`). Thiếu ghi công
- * (nhạc/ảnh) thì KHÔNG đăng — đánh dấu `uploadStatus: failed` để lượt sau không chọn lại, báo Telegram.
+ * (nhạc/ảnh) thì KHÔNG đăng — đánh dấu `uploadStatus: failed` để lượt sau không chọn lại, báo Telegram. Ảnh
+ * ghi công không vừa mô tả lưu vào `meta.overflowCredits` — video vừa đăng còn RIÊNG TƯ tới đúng giờ phát nên
+ * KHÔNG đăng bình luận ngay ở đây (YouTube không nhận bình luận vào video riêng tư); daily.ts đăng bù khi
+ * video đã công khai (`postPendingCreditComments`, pipeline/comment.ts).
  */
 async function finishHistoryVideo(o: FinishHistoryVideoInput) {
   const { videoId, series: s, credits } = o;
@@ -343,7 +312,7 @@ async function finishHistoryVideo(o: FinishHistoryVideoInput) {
   await mkdir(dir, { recursive: true });
   const { meta, overflowCredits } = await resolveHistoryMeta({ series: s, chapter, credits, existing: v.meta });
   // Gộp vào meta hiện có (không ghi đè cả cột) — chủ kênh sửa tay, hoặc chính `historyCredits` vừa lưu, không được mất.
-  const finalMeta: VideoMeta = { ...(v.meta ?? {}), ...meta };
+  const finalMeta: VideoMeta = { ...(v.meta ?? {}), ...meta, overflowCredits };
   const src = await resolveThumbnailSource(credits.images, dir);
   const thumb = await thumbnail(dir, thumbnailFallbackPrompt(chapter.title), finalMeta.thumbnailText ?? "", src ? { src } : {});
   const releaseId = await ensureRelease(videoId, false);
@@ -362,9 +331,7 @@ async function finishHistoryVideo(o: FinishHistoryVideoInput) {
   if (!after?.youtubeVideoId) {
     // publishToYoutube tự báo Telegram khi đăng lỗi và đặt uploadStatus "failed" — lượt sau không chọn lại video này.
     console.warn(`⚠ Video #${videoId}: đăng YouTube không thành công, xem thông báo lỗi riêng.`);
-    return;
   }
-  await postOverflowCredits({ videoId, youtubeId: after.youtubeVideoId, channel: s.channel, lines: overflowCredits });
 }
 
 /** Một lượt `historyAuto`: đúng MỘT nhánh ưu tiên (a/b/c/d) rồi thoát — không gộp nhiều việc nặng vào một job. */
@@ -385,7 +352,7 @@ async function historyAutoStep(seriesId: number, s: Series): Promise<void> {
   if (toFinish && (await autoPublishEligible(toFinish))) {
     const stored = rows.find((v) => v.id === toFinish)!.meta?.historyCredits;
     console.log(`▶ ${s.title}: video #${toFinish} đã dựng xong, chưa đăng — hoàn tất (meta/thumbnail/đăng)`);
-    await finishHistoryVideo({ videoId: toFinish, series: s, credits: stored ? creditsFromStoredMeta(stored) : { images: [], musicFiles: [] } });
+    await finishHistoryVideo({ videoId: toFinish, series: s, credits: stored ? creditsFromStoredMeta(stored) : null });
     return;
   }
 

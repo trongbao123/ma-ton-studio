@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { COMMENT_MAX, commentTargets, ctaComment, SHORT_DELAY_MS } from "./comment";
+import { chunkCreditLines, COMMENT_MAX, commentTargets, creditCommentTargets, ctaComment, SHORT_DELAY_MS, type CreditCommentRow } from "./comment";
 
 const base = {
   seriesTitle: "Ma Tôn Trùng Sinh",
@@ -123,5 +123,49 @@ describe("commentTargets", () => {
 
   it("Short chậm hơn video dài đúng 2 tiếng", () => {
     expect(SHORT_DELAY_MS).toBe(2 * 3600_000);
+  });
+});
+
+describe("creditCommentTargets — video lịch sử nào cần đăng bù bình luận ghi công ảnh dư", () => {
+  const now = new Date("2026-11-28T12:00:00Z");
+  const creditRow = (o: Partial<CreditCommentRow>): CreditCommentRow => ({ id: 1, youtubeVideoId: "V1", publishAt: new Date("2026-11-28T00:00:00Z"), meta: { overflowCredits: ["- dòng ghi công"] }, ...o });
+
+  it("đã công khai (publishAt <= now), có id YouTube, còn overflowCredits, chưa đăng → chọn", () => {
+    expect(creditCommentTargets([creditRow({})], now).map((r) => r.id)).toEqual([1]);
+  });
+
+  it("publishAt trong tương lai (chưa công khai) → KHÔNG chọn (YouTube chưa nhận bình luận video riêng tư)", () => {
+    expect(creditCommentTargets([creditRow({ publishAt: new Date("2026-12-01T00:00:00Z") })], now)).toEqual([]);
+  });
+
+  it("chưa có youtubeVideoId → KHÔNG chọn", () => {
+    expect(creditCommentTargets([creditRow({ youtubeVideoId: null })], now)).toEqual([]);
+  });
+
+  it("overflowCredits rỗng hoặc không có → KHÔNG chọn (không có gì phải đăng bù)", () => {
+    expect(creditCommentTargets([creditRow({ meta: { overflowCredits: [] } })], now)).toEqual([]);
+    expect(creditCommentTargets([creditRow({ meta: {} })], now)).toEqual([]);
+  });
+
+  it("đã đăng rồi (creditsCommentedAt) → KHÔNG chọn lại, không đăng chồng", () => {
+    expect(creditCommentTargets([creditRow({ meta: { overflowCredits: ["x"], creditsCommentedAt: "2026-11-28T01:00:00Z" } })], now)).toEqual([]);
+  });
+});
+
+describe("chunkCreditLines — chia dòng ghi công thành nhiều đoạn, không bỏ dòng nào", () => {
+  it("đủ ngắn thì gộp vào một đoạn", () => {
+    expect(chunkCreditLines(["dòng 1", "dòng 2"], 1000)).toEqual([["dòng 1", "dòng 2"]]);
+  });
+
+  it("dài hơn ngân sách byte thì chia nhiều đoạn, không mất dòng nào, mỗi đoạn không vượt ngân sách", () => {
+    const lines = Array.from({ length: 30 }, (_, i) => `- File:Anh${i}.jpg — Tác giả — CC BY-SA 4.0 — https://commons.wikimedia.org/wiki/File:Anh${i}.jpg`);
+    const chunks = chunkCreditLines(lines, 300);
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.flat()).toEqual(lines);
+    for (const chunk of chunks) expect(Buffer.byteLength(chunk.join("\n"), "utf8")).toBeLessThanOrEqual(300);
+  });
+
+  it("danh sách rỗng → không có đoạn nào", () => {
+    expect(chunkCreditLines([], 300)).toEqual([]);
   });
 });

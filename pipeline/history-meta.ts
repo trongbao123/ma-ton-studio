@@ -65,7 +65,7 @@ export function dedupeArtImages(images: ArtImage[]): ArtImage[] {
 }
 
 /** Dòng ghi công một ảnh thật, đủ tên/tác giả/giấy phép/đường dẫn — dùng khi ảnh phải đăng thành bình luận (không vừa mô tả). */
-const artCreditLine = (image: ArtImage) => `- ${image.title} — ${image.artist || "không rõ tác giả"} — ${image.license} — ${image.url}`;
+export const artCreditLine = (image: ArtImage) => `- ${image.title} — ${image.artist || "không rõ tác giả"} — ${image.license} — ${image.url}`;
 
 export type ArtCreditBlockResult = { block: string; overflow: string[] };
 

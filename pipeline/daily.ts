@@ -12,7 +12,7 @@ import { HISTORY_GENRE, isHistoryStory, pickChapterToWrite } from "@/lib/story/h
 import { FactCheckFailedError } from "@/lib/story/fact-check";
 import { loadSecrets } from "@/lib/secrets";
 import { ensureWebsub } from "@/lib/websub";
-import { commentOnPublished } from "./comment";
+import { commentOnPublished, postPendingCreditComments } from "./comment";
 import { compileSeries, compileState, seriesRows, withStaleAsFailed } from "./compile";
 import { chaptersToWrite, episodeBacklog, focusChannel, type FocusChannel, vnDay, writtenMarker } from "./episode-plan";
 import { countHistoryBacklog, HISTORY_BUFFER } from "./history-script";
@@ -387,6 +387,8 @@ async function main() {
   if (focusChannel() === "lich-su") await dispatchHistoryJobs().catch((e) => failures.push(`dispatch lịch sử: ${e instanceof Error ? e.message : e}`));
   // Bình luận kêu gọi thích/chia sẻ/đăng ký cho video ĐÃ tới giờ phát (video lên lịch còn private thì YouTube không nhận bình luận).
   await commentOnPublished().catch((e) => console.warn("⚠ Bình luận kêu gọi:", e instanceof Error ? e.message : e));
+  // Lịch sử: ảnh ghi công không vừa mô tả (meta.overflowCredits) đăng bù thành bình luận khi video đã công khai.
+  await postPendingCreditComments().catch((e) => console.warn("⚠ Bình luận ghi công ảnh dư:", e instanceof Error ? e.message : e));
   quotaLeft = await writeSeries(autopilot.filter((s) => s.channel === "main"), failures, quotaLeft);
 
   await renderQueue(failures);

@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
+import type { ArtImage } from "./scene-art";
 import {
-  chunkCreditLines, countHistoryBacklog, hasRequiredCredits, HISTORY_BUFFER, pickHistoryVideoToFinish, pickHistoryVideoToRebuild, type HistoryQueueRow,
+  countHistoryBacklog, hasRequiredCredits, HISTORY_BUFFER, pickHistoryVideoToFinish, pickHistoryVideoToRebuild, recoverOverflowCredits, type HistoryQueueRow,
 } from "./history-script";
+
+const art = (o: Partial<ArtImage> = {}): ArtImage => ({ file: "a.jpg", title: "File:A.jpg", url: "u", license: "Public domain", artist: "X", synthetic: false, ...o });
 
 const row = (o: Partial<HistoryQueueRow>): HistoryQueueRow => ({ id: 1, status: "queued", youtubeVideoId: null, publishAt: null, meta: null, uploadStatus: "none", ...o });
 
@@ -80,35 +83,45 @@ describe("đếm kho video lịch sử (mọi trạng thái chưa phát xong, KH
   });
 });
 
-describe("đủ ghi công để đăng không — video lịch sử nào dựng đạt QC cũng luôn có nhạc", () => {
+describe("đủ ghi công để đăng không — kiểm thẳng bản ghi historyCredits (images+music), không chỉ suy từ nhạc", () => {
+  it("null (không tìm được bản ghi — resume thiếu dữ liệu, hoặc video dựng tay từ trước khi có trường này) → KHÔNG đủ, không được đăng", () => {
+    expect(hasRequiredCredits(null)).toBe(false);
+  });
+
   it("có nhạc đã dùng → đủ ghi công", () => {
     expect(hasRequiredCredits({ images: [], musicFiles: ["pipeline/music/Rites.mp3"] })).toBe(true);
   });
 
-  it("không có nhạc (mất dữ liệu historyCredits, hoặc video dựng tay từ trước) → KHÔNG đủ, không được đăng", () => {
-    expect(hasRequiredCredits({ images: [], musicFiles: [] })).toBe(false);
+  it("có ảnh thật dù không có nhạc (bản ghi vẫn có thật — kiểm thẳng cả 2 trường, không chỉ nhạc) → đủ ghi công", () => {
+    expect(hasRequiredCredits({ images: [art()], musicFiles: [] })).toBe(true);
   });
 
-  it("có ảnh nhưng không có nhạc → vẫn KHÔNG đủ (nhạc là tín hiệu duy nhất đáng tin — ảnh có thể hợp lệ là rỗng)", () => {
-    expect(hasRequiredCredits({ images: [{ file: "a.jpg", title: "File:A.jpg", url: "u", license: "PD", artist: "X", synthetic: false }], musicFiles: [] })).toBe(false);
+  it("bản ghi có thật nhưng cả ảnh và nhạc đều rỗng (video toàn cảnh bản đồ/thẻ chữ) → KHÔNG đủ (không phân biệt được với mất dữ liệu)", () => {
+    expect(hasRequiredCredits({ images: [], musicFiles: [] })).toBe(false);
   });
 });
 
-describe("chia dòng ghi công ảnh thành nhiều bình luận (không bỏ ghi công nào)", () => {
-  it("đủ ngắn thì gộp vào một đoạn", () => {
-    const chunks = chunkCreditLines(["dòng 1", "dòng 2"], 1000);
-    expect(chunks).toEqual([["dòng 1", "dòng 2"]]);
+describe("khôi phục ảnh ghi công chưa nằm trong mô tả (meta cũ chưa có trường overflowCredits)", () => {
+  it("ảnh có tên file đã xuất hiện trong mô tả → không tính là ảnh dư", () => {
+    const images = [art({ title: "File:Trong.jpg" })];
+    expect(recoverOverflowCredits("Mô tả có nhắc File:Trong.jpg ở đây.", images)).toEqual([]);
   });
 
-  it("dài hơn ngân sách byte thì chia nhiều đoạn, không mất dòng nào", () => {
-    const lines = Array.from({ length: 30 }, (_, i) => `- File:Anh${i}.jpg — Tác giả — CC BY-SA 4.0 — https://commons.wikimedia.org/wiki/File:Anh${i}.jpg`);
-    const chunks = chunkCreditLines(lines, 300);
-    expect(chunks.length).toBeGreaterThan(1);
-    expect(chunks.flat()).toEqual(lines);
-    for (const chunk of chunks) expect(Buffer.byteLength(chunk.join("\n"), "utf8")).toBeLessThanOrEqual(300);
+  it("ảnh chưa xuất hiện trong mô tả → tính là ảnh dư, đủ tên/tác giả/giấy phép/đường dẫn", () => {
+    const images = [art({ title: "File:Ngoai.jpg" })];
+    const got = recoverOverflowCredits("Mô tả không nhắc ảnh nào.", images);
+    expect(got).toHaveLength(1);
+    expect(got[0]).toMatch(/File:Ngoai\.jpg/);
+    expect(got[0]).toMatch(/Public domain/);
   });
 
-  it("danh sách rỗng → không có đoạn nào", () => {
-    expect(chunkCreditLines([], 300)).toEqual([]);
+  it("ảnh AI (synthetic) không bao giờ tính là ảnh dư — không có gì để ghi công", () => {
+    const images = [art({ title: "File:AiVe.jpg", synthetic: true })];
+    expect(recoverOverflowCredits("Mô tả không nhắc gì.", images)).toEqual([]);
+  });
+
+  it("ảnh trùng (storyboard dùng lại) chỉ tính dư một lần", () => {
+    const images = [art({ title: "File:Trung.jpg" }), art({ title: "File:Trung.jpg" })];
+    expect(recoverOverflowCredits("Không nhắc.", images)).toHaveLength(1);
   });
 });

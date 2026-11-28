@@ -97,6 +97,16 @@ export type VideoMeta = {
    * ở lượt job trước mà chưa đăng được (vd hết quota AI lúc tạo tiêu đề/mô tả) — không phải dựng lại từ đầu.
    */
   historyCredits?: { images: { title: string; url: string; license: string; artist: string; synthetic: boolean }[]; musicFiles: string[] };
+  /**
+   * Lịch sử: dòng ghi công ảnh KHÔNG vừa mô tả (vượt trần 5000 byte của YouTube) — video lúc hoàn tất (meta/
+   * thumbnail/đăng) còn ở chế độ riêng tư tới đúng giờ phát nên chưa đăng bình luận được ngay; daily.ts
+   * (`postPendingCreditComments`) đăng bù khi video đã công khai rồi đóng dấu `creditsCommentedAt`.
+   */
+  overflowCredits?: string[];
+  /** Đã đăng xong bình luận ghi công ảnh dư — có rồi thì không đăng lại. */
+  creditsCommentedAt?: string;
+  /** Số lần thử đăng bình luận ghi công ảnh dư thất bại — chỉ báo Telegram ở lần đầu, tránh spam mỗi lượt daily. */
+  creditsCommentAttempts?: number;
 };
 
 /** Một lần render cho một chương: video dài + 1 Short + thumbnail, lưu ở GitHub Release `video-<id>`. */
