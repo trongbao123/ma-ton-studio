@@ -22,12 +22,29 @@ export const COMMENT_MAX = 10_000;
 /** Short đăng sau video dài 2 tiếng (publishToYoutube) — bình luận cũng phải đợi tới lúc đó. */
 export const SHORT_DELAY_MS = 2 * 3600_000;
 
+export type CtaCommentInput = {
+  seriesTitle: string; episodeNo?: number; playlistUrl: string | null; channelUrl: string; publishHour: string; short?: boolean; cadence?: string; history?: boolean;
+};
+
 /**
  * Nội dung bình luận: lời kêu gọi + link trọn bộ + link đăng ký. Thiếu playlist thì bỏ hẳn dòng đó.
  * `short`: bản gọn cho Short — người lướt Shorts không đọc đoạn dài.
+ * `cadence`: có = kênh truyện độc lập (chuyện đời/lịch sử) — nhịp đăng lấy từ hồ sơ kênh.
+ * `history`: true = kênh lịch sử — câu chữ "phim tài liệu" (hỏi sự kiện/nhân vật muốn xem tiếp), KHÔNG dùng
+ * câu "câu chuyện"/"chạm lòng" của kênh chuyện đời (phim tài liệu không phải chuyện kể đời tư).
  */
-/** `cadence`: có = kênh truyện độc lập (chuyện đời) — câu chữ theo "câu chuyện", nhịp đăng lấy từ hồ sơ kênh. */
-export function ctaComment(o: { seriesTitle: string; episodeNo?: number; playlistUrl: string | null; channelUrl: string; publishHour: string; short?: boolean; cadence?: string }): string {
+export function ctaComment(o: CtaCommentInput): string {
+  if (o.history) {
+    const lines = o.short
+      ? [`Thấy hay thì THÍCH · CHIA SẺ giúp kênh nhé 🙏`, ...(o.playlistUrl ? [`📜 Xem thêm video lịch sử khác: ${o.playlistUrl}`] : []), `🔔 ĐĂNG KÝ — ${o.cadence}: ${o.channelUrl}?sub_confirmation=1`]
+      : [
+          `Nếu video này hay, để lại một lượt THÍCH và CHIA SẺ giúp kênh nhé 🙏`,
+          `Bạn muốn xem tiếp sự kiện hay nhân vật lịch sử nào? Để lại dưới bình luận nhé.`,
+          ...(o.playlistUrl ? [`📜 Xem thêm video lịch sử khác: ${o.playlistUrl}`] : []),
+          `🔔 ĐĂNG KÝ kênh để không lỡ ${o.cadence}: ${o.channelUrl}?sub_confirmation=1`,
+        ];
+    return noAngle(lines.join("\n")).slice(0, COMMENT_MAX);
+  }
   if (o.cadence) {
     const lines = o.short
       ? [`Thấy chạm lòng thì THÍCH · CHIA SẺ giúp kênh nhé 🙏`, ...(o.playlistUrl ? [`📜 Nghe trọn câu chuyện: ${o.playlistUrl}`] : []), `🔔 ĐĂNG KÝ — ${o.cadence}: ${o.channelUrl}?sub_confirmation=1`]
@@ -126,7 +143,7 @@ export async function commentOnPublished(now = new Date()): Promise<void> {
         playlistUrl: pl ? playlistUrl(pl) : null,
         channelUrl: acc.url,
         publishHour: `${PUBLISH_HOUR_UTC + 7}h`,
-        ...(r.channel !== "main" ? { cadence: channelProfile(r.channel).cadence } : {}),
+        ...(r.channel !== "main" ? { cadence: channelProfile(r.channel).cadence, history: r.channel === "lich-su" } : {}),
         short: t.kind === "short",
       });
       const err = await postComment(token, t.youtubeId, text);
@@ -145,5 +162,111 @@ export async function commentOnPublished(now = new Date()): Promise<void> {
   // YouTube Data API không ghim được bình luận → gom một tin nhắn kèm link, ghim 1 chạm trong app/Studio.
   if (pinLinks.length) {
     await notify(`💬 <b>Đã đăng ${pinLinks.length} bình luận</b> — bấm vào GHIM giúp mình (API không ghim được):\n${pinLinks.join("\n")}`).catch(() => {});
+  }
+}
+
+export type CreditCommentRow = { id: number; youtubeVideoId: string | null; publishAt: Date | null; meta: { overflowCredits?: string[]; creditsCommentedAt?: string; creditsCommentAttempts?: number } | null };
+
+/**
+ * Video đã công khai (publishAt <= now), có id YouTube, còn ghi công ảnh dư (lịch sử: `meta.overflowCredits` —
+ * ảnh không vừa mô tả) chưa đăng bình luận (`meta.creditsCommentedAt`). Lúc hoàn tất (`historyAuto`) video còn
+ * riêng tư tới đúng giờ phát nên không đăng được ngay — phải đợi tới đây.
+ */
+/** Lỗi vĩnh viễn (video tắt bình luận / bị xoá / về riêng tư) không được gọi API mãi — mỗi lượt thử tốn 50 unit quota YouTube. */
+export const MAX_CREDIT_COMMENT_ATTEMPTS = 3;
+
+export function creditCommentTargets<T extends CreditCommentRow>(rows: T[], now: Date): T[] {
+  return rows.filter(
+    (r) =>
+      r.youtubeVideoId && r.publishAt && r.publishAt.getTime() <= now.getTime() && (r.meta?.overflowCredits?.length ?? 0) > 0 && !r.meta?.creditsCommentedAt &&
+      (r.meta?.creditsCommentAttempts ?? 0) < MAX_CREDIT_COMMENT_ATTEMPTS,
+  );
+}
+
+/** Chia các dòng ghi công thành nhiều đoạn, mỗi đoạn không vượt `maxBytes` — dùng cho cả bình luận YouTube (`COMMENT_MAX`) và tin Telegram báo lỗi. */
+export function chunkCreditLines(lines: string[], maxBytes: number): string[][] {
+  const chunks: string[][] = [];
+  let current: string[] = [];
+  let currentBytes = 0;
+  for (const line of lines) {
+    const lineBytes = Buffer.byteLength(line, "utf8") + 1;
+    if (current.length && currentBytes + lineBytes > maxBytes) {
+      chunks.push(current);
+      current = [];
+      currentBytes = 0;
+    }
+    current.push(line);
+    currentBytes += lineBytes;
+  }
+  if (current.length) chunks.push(current);
+  return chunks;
+}
+
+const OVERFLOW_CREDIT_HEADER = "Ghi công ảnh tư liệu (không đủ chỗ trong mô tả):";
+/** Chừa chỗ cho header + số thứ tự đoạn khi chia bình luận ghi công dài. */
+const OVERFLOW_CREDIT_HEADER_MARGIN = 50;
+/** Ngân sách mỗi tin Telegram báo ghi công lỗi — chừa chỗ cho tiêu đề + escape HTML giãn chuỗi (&,<,>). */
+const TELEGRAM_CREDIT_CHUNK_BYTES = 3000;
+
+/** Đăng đủ các dòng ghi công (không chia nhỏ mất nội dung) thành 1+ bình luận; đoạn nào lỗi thì trả lỗi đó luôn, không thử các đoạn còn lại (thử lại từ đầu ở lượt sau). */
+async function postCreditLines(token: string, youtubeId: string, lines: string[]): Promise<string | null> {
+  const chunks = chunkCreditLines(lines, COMMENT_MAX - Buffer.byteLength(OVERFLOW_CREDIT_HEADER, "utf8") - OVERFLOW_CREDIT_HEADER_MARGIN);
+  for (const [i, chunk] of chunks.entries()) {
+    const text = `${OVERFLOW_CREDIT_HEADER}${chunks.length > 1 ? ` (${i + 1}/${chunks.length})` : ""}\n${chunk.join("\n")}`;
+    const err = await postComment(token, youtubeId, text);
+    if (err) return err;
+  }
+  return null;
+}
+
+/**
+ * Báo Telegram đủ nội dung ghi công chưa đăng được — CẮT chuỗi TRƯỚC rồi mới escape HTML (escape trước rồi cắt
+ * dễ cắt giữa một thực thể `&amp;`/`&lt;`, lộ ký tự thô); chia nhiều tin nếu dài thay vì bớt nội dung.
+ */
+async function notifyCreditLinesFailed(videoId: number, reason: string, lines: string[]) {
+  const chunks = chunkCreditLines(lines, TELEGRAM_CREDIT_CHUNK_BYTES);
+  for (const [i, chunk] of chunks.entries()) {
+    const part = chunks.length > 1 ? ` (phần ${i + 1}/${chunks.length})` : "";
+    await notify(`⚠️ Video lịch sử #${videoId}: đăng bình luận ghi công ảnh lỗi (${escapeHtml(reason)})${part} — ghi công tay giúp:\n${escapeHtml(chunk.join("\n"))}`);
+  }
+}
+
+/**
+ * Đăng bù bình luận ghi công ảnh dư (lịch sử, `meta.overflowCredits`) cho video ĐÃ công khai — lúc hoàn tất
+ * (`historyAuto`, pipeline/history-script.ts) video còn riêng tư tới đúng giờ phát nên YouTube không nhận bình
+ * luận; gọi hàm này trong lượt daily, ngay sau `commentOnPublished`. Lỗi chỉ báo Telegram ở LẦN ĐẦU (đóng dấu
+ * `meta.creditsCommentAttempts`) để không spam mỗi lượt daily (~3 giờ/lần).
+ */
+/** Đăng các dòng ghi công; trả chuỗi lỗi (null = thành công) — mọi lỗi ném ra cũng quy về chuỗi lỗi. */
+async function creditCommentError(channel: string, youtubeVideoId: string, lines: string[]): Promise<string | null> {
+  try {
+    const auth = await getYoutubeAuth(channel).catch(() => null);
+    if (!auth) return "Chưa kết nối YouTube";
+    return await postCreditLines(await accessToken(auth.refreshToken), youtubeVideoId, lines);
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e);
+  }
+}
+
+export async function postPendingCreditComments(now = new Date()): Promise<void> {
+  const rows = await db()
+    .select({ id: videos.id, youtubeVideoId: videos.youtubeVideoId, publishAt: videos.publishAt, meta: videos.meta, channel: series.channel })
+    .from(videos)
+    .innerJoin(chapters, eq(chapters.id, videos.chapterId))
+    .innerJoin(series, eq(series.id, chapters.seriesId))
+    .where(and(isNotNull(videos.youtubeVideoId), isNotNull(videos.publishAt), lte(videos.publishAt, now)));
+  for (const r of creditCommentTargets(rows, now)) {
+    const lines = r.meta!.overflowCredits!;
+    // Lỗi ném ra (refresh token bị thu hồi, mạng) tính như một lần thử hỏng của video này — không bỏ dở các video sau.
+    const err = await creditCommentError(r.channel, r.youtubeVideoId!, lines);
+    if (!err) {
+      await db().update(videos).set({ meta: { ...r.meta!, creditsCommentedAt: new Date().toISOString() } }).where(eq(videos.id, r.id));
+      console.log(`  Đã đăng bình luận ghi công ảnh dư cho video #${r.id}`);
+      continue;
+    }
+    const attempts = (r.meta!.creditsCommentAttempts ?? 0) + 1;
+    await db().update(videos).set({ meta: { ...r.meta!, creditsCommentAttempts: attempts } }).where(eq(videos.id, r.id));
+    console.warn(`  ⚠ Không đăng được bình luận ghi công ảnh dư cho video #${r.id}: ${err}`);
+    if (attempts === 1) await notifyCreditLinesFailed(r.id, err, lines);
   }
 }

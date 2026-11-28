@@ -91,6 +91,22 @@ export type VideoMeta = {
   commentedAt?: string;
   /** Như trên nhưng cho Short của row này (Short phát sau video dài 2 tiếng nên bình luận cũng muộn hơn). */
   shortCommentedAt?: string;
+  /**
+   * Lịch sử: ghi công ảnh/nhạc đã dùng lúc dựng (không kèm đường file — chỉ nằm trên máy chạy job dựng, mất khi
+   * job đó xong). historyAuto đọc lại trường này để hoàn tất (meta + thumbnail + đăng) một video đã dựng xong
+   * ở lượt job trước mà chưa đăng được (vd hết quota AI lúc tạo tiêu đề/mô tả) — không phải dựng lại từ đầu.
+   */
+  historyCredits?: { images: { title: string; url: string; license: string; artist: string; synthetic: boolean }[]; musicFiles: string[] };
+  /**
+   * Lịch sử: dòng ghi công ảnh KHÔNG vừa mô tả (vượt trần 5000 byte của YouTube) — video lúc hoàn tất (meta/
+   * thumbnail/đăng) còn ở chế độ riêng tư tới đúng giờ phát nên chưa đăng bình luận được ngay; daily.ts
+   * (`postPendingCreditComments`) đăng bù khi video đã công khai rồi đóng dấu `creditsCommentedAt`.
+   */
+  overflowCredits?: string[];
+  /** Đã đăng xong bình luận ghi công ảnh dư — có rồi thì không đăng lại. */
+  creditsCommentedAt?: string;
+  /** Số lần thử đăng bình luận ghi công ảnh dư thất bại — chỉ báo Telegram ở lần đầu, tránh spam mỗi lượt daily. */
+  creditsCommentAttempts?: number;
 };
 
 /** Một lần render cho một chương: video dài + 1 Short + thumbnail, lưu ở GitHub Release `video-<id>`. */
