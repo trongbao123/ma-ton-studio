@@ -22,11 +22,11 @@ async function seedNeon(sql: postgres.Sql) {
   await sql`insert into chapters (id, series_id, number, title, outline, status) values
     (1, 1, 1, 'Mẹ Ký Giấy Vay Nặng Lãi', 'o', 'approved'), (2, 1, 2, 'Truyện Cũ Riêng', 'o', 'approved'), (3, 2, 1, 'Chương 1', 'o', 'approved')`;
   await sql`insert into videos (id, chapter_id, status, youtube_video_id, meta) values
-    (1, 1, 'published', 'YT_OLD_1', ${sql.json({ title: "a" })}),
+    (1, 1, 'published', 'YT_OLD_1', ${JSON.stringify({ title: "a" })}::text::jsonb),
     (2, 2, 'queued', null, null),
-    (3, 3, 'published', 'YT_OLD_3', ${sql.json({ title: "gộp", compilation: { seriesId: 2, from: 1, to: 1, videoIds: [3] } })})`;
+    (3, 3, 'published', 'YT_OLD_3', ${JSON.stringify({ title: "gộp", compilation: { seriesId: 2, from: 1, to: 1, videoIds: [3] } })}::text::jsonb)`;
   await sql`insert into app_settings (key, value) values
-    ('hero_ref_2', ${sql.json({ jpg: "hero" })}), ('youtube:chuyen-doi', ${sql.json({ token: "OLD" })}), ('yt_playlists', ${sql.json({ "1": "PL_OLD1", "2": "PL_OLD2" })})`;
+    ('hero_ref_2', ${JSON.stringify({ jpg: "hero" })}::text::jsonb), ('youtube:chuyen-doi', ${JSON.stringify({ token: "OLD" })}::text::jsonb), ('yt_playlists', ${JSON.stringify({ "1": "PL_OLD1", "2": "PL_OLD2" })}::text::jsonb)`;
   await sql`insert into ai_usage (day, model, calls) values ('2026-11-20', 'm', 5)`;
 }
 
@@ -35,7 +35,7 @@ async function seedSupabase(sql: postgres.Sql) {
   await sql`insert into series (id, title, genre, premise, bible, channel, autopilot) values (1, 'Chuyện Đời Lắng Đọng', 'Chuyện đời', 'p', 'b', 'chuyen-doi', true)`;
   await sql`insert into chapters (id, series_id, number, title, outline) values (1, 1, 1, 'Mẹ ký giấy vay nặng lãi', 'o'), (2, 1, 2, 'Truyện Mới', 'o')`;
   await sql`insert into videos (id, chapter_id, status) values (1, 2, 'queued')`;
-  await sql`insert into app_settings (key, value) values ('youtube:chuyen-doi', ${sql.json({ token: "NEW" })}), ('yt_playlists', ${sql.json({ "1": "PL_NEW1" })})`;
+  await sql`insert into app_settings (key, value) values ('youtube:chuyen-doi', ${JSON.stringify({ token: "NEW" })}::text::jsonb), ('yt_playlists', ${JSON.stringify({ "1": "PL_NEW1" })}::text::jsonb)`;
   await sql`select setval(pg_get_serial_sequence('series','id'), 10000, false), setval(pg_get_serial_sequence('chapters','id'), 10000, false), setval(pg_get_serial_sequence('videos','id'), 10000, false)`;
 }
 
