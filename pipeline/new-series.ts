@@ -125,7 +125,7 @@ export function seriesCommand(arg: string): Promise<unknown> | null {
   if (arg.startsWith("historyscript:")) return import("./history-script").then((x) => x.writeHistoryScript(Number(arg.slice(14))));
   // Soát lại kịch bản lịch sử (sau khi chủ kênh sửa tay đoạn sai) rồi chốt — đạt thì gỡ cờ "chờ sửa".
   if (arg.startsWith("historyvideo:")) return import("./history-script").then((x) => x.buildHistoryVideo(Number(arg.slice(13))));
-  if (arg.startsWith("factcheck:")) return import("./history-script").then((x) => x.recheckHistoryScript(Number(arg.slice(10))));
+  if (arg.startsWith("factcheck:")) return import("./history-script").then((x) => x.recheckHistoryScript(arg.slice(10)));
   // Trọn vòng tự chạy kênh lịch sử: dựng lại video cũ chưa lên YouTube, hết thì viết đề tài mới rồi dựng — daily.ts dispatch lệnh này.
   if (arg.startsWith("historyauto:")) return import("./history-script").then((x) => x.historyAuto(Number(arg.slice(12))));
   if (arg.startsWith("pov:")) return firstPerson(arg.slice(4).split(",").map(Number));

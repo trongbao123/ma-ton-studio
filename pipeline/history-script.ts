@@ -72,9 +72,26 @@ export async function buildHistoryVideo(videoId: number) {
   }
 }
 
-/** Soát lại + chốt một kịch bản lịch sử đã viết (vd sau khi sửa tay); còn lỗi → null (đã báo Telegram). */
-export async function recheckHistoryScript(chapterId: number): Promise<{ chapterId: number; words: number } | null> {
+/** `factcheck:` nhận id chương ("123") hoặc "<id bộ>/<số đề tài>" ("2/1") — không cần tra id chương trong DB. */
+export function parseChapterRef(ref: string): { chapterId: number } | { seriesId: number; number: number } | null {
+  const pair = /^(\d+)\/(\d+)$/.exec(ref.trim());
+  if (pair) return { seriesId: Number(pair[1]), number: Number(pair[2]) };
+  return /^\d+$/.test(ref.trim()) ? { chapterId: Number(ref) } : null;
+}
+
+async function resolveChapterId(ref: string): Promise<number> {
+  const parsed = parseChapterRef(ref);
+  if (!parsed) throw new Error(`factcheck: không hiểu "${ref}" — dùng id chương hoặc <id bộ>/<số đề tài>`);
+  if ("chapterId" in parsed) return parsed.chapterId;
+  const [row] = await db().select({ id: chapters.id }).from(chapters).where(and(eq(chapters.seriesId, parsed.seriesId), eq(chapters.number, parsed.number)));
+  if (!row) throw new Error(`factcheck: bộ #${parsed.seriesId} không có đề tài số ${parsed.number}`);
+  return row.id;
+}
+
+/** Soát lại + chốt một kịch bản lịch sử (CLI `factcheck:<id chương | bộ/số>`); đạt → chương `draft` (historyauto xếp hàng dựng), còn lỗi → null (đã báo Telegram). */
+export async function recheckHistoryScript(ref: string): Promise<{ chapterId: number; words: number } | null> {
   await loadSecrets(true);
+  const chapterId = await resolveChapterId(ref);
   const chapter = await getChapter(chapterId);
   const s = await getSeries(chapter.seriesId);
   const skip = recheckSkipReason(isHistoryStory(s), chapter);
@@ -172,6 +189,28 @@ async function claimHistoryVideo(videoId: number): Promise<boolean> {
     .where(and(eq(videos.id, videoId), eq(videos.status, "queued")))
     .returning({ id: videos.id });
   return claimed.length > 0;
+}
+
+/**
+ * Kịch bản đã soát đạt (status `draft`, không còn lỗi sự thật, có nội dung) mà CHƯA có video — vd sau `factcheck:` soát lại
+ * hoặc sửa tay — được xếp hàng dựng trước khi viết đề tài mới (không tốn lượt AI, không bỏ phí kịch bản đã viết).
+ */
+export function pickReadyScript<T extends { id: number; status: string; content: string; factIssues: unknown }>(list: T[], withVideo: Set<number>): T | undefined {
+  return list.find((c) => c.status === "draft" && c.factIssues == null && c.content.trim().length > 0 && !withVideo.has(c.id));
+}
+
+/** Duyệt + xếp hàng video cho kịch bản đã sẵn sàng; không có → null. */
+async function queueReadyScript(seriesId: number): Promise<number | null> {
+  const topics = await db().select().from(chapters).where(eq(chapters.seriesId, seriesId)).orderBy(asc(chapters.number));
+  const withVideo = new Set(
+    (await db().select({ chapterId: videos.chapterId }).from(videos).innerJoin(chapters, eq(chapters.id, videos.chapterId)).where(eq(chapters.seriesId, seriesId))).map((v) => v.chapterId),
+  );
+  const ready = pickReadyScript(topics, withVideo);
+  if (!ready) return null;
+  await db().update(chapters).set({ status: "approved", updatedAt: new Date() }).where(eq(chapters.id, ready.id));
+  const [row] = await db().insert(videos).values({ chapterId: ready.id }).returning({ id: videos.id });
+  console.log(`✔ Kịch bản đã soát đạt "${ready.title}" → xếp hàng video #${row.id}`);
+  return row.id;
 }
 
 /** Hết video chờ dựng lại: viết đề tài kế tiếp, duyệt rồi xếp hàng (status `queued` mặc định); không còn đề tài → null. */
@@ -373,9 +412,16 @@ async function historyAutoStep(seriesId: number, s: Series): Promise<void> {
     return;
   }
 
+  const queued = await queueReadyScript(seriesId);
+  if (queued) {
+    console.log(`✔ ${s.title}: video #${queued} xếp hàng từ kịch bản có sẵn — để lượt daily kế tiếp dựng`);
+    return;
+  }
+
   const videoId = await startNextHistoryVideo(seriesId);
   if (!videoId) {
-    console.log(`• ${s.title}: không còn đề tài nào để viết`);
+    // writeHistoryScript trả null cả khi hết đề tài lẫn khi kịch bản còn lỗi sự thật (đã in chi tiết + báo Telegram ở trên).
+    console.log(`• ${s.title}: lượt này chưa có video mới (hết đề tài hoặc kịch bản còn lỗi sự thật — xem dòng trên); lượt sau viết đề tài kế`);
     return;
   }
   console.log(`✔ ${s.title}: đã viết + duyệt video #${videoId} — để lượt daily kế tiếp dựng`);

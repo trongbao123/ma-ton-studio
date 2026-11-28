@@ -93,9 +93,15 @@ export async function factCheckScript(ai: TextProvider, script: string, dossierT
       maxOutputTokens: FACT_CHECK_MAX_OUTPUT_TOKENS,
     });
     if (!issues.length || round >= FACT_FIX_ROUNDS) {
+      // Vòng cuối: lỗi nào tìm thấy đúng câu trong kịch bản thì áp luôn câu sửa của chính lượt soát (rỗng = xoá câu) — câu sửa bám
+      // hồ sơ nên vẫn đúng sự thật. Chỉ lỗi KHÔNG định vị được mới giữ lại (28/11/2026: kịch bản Quang Trung 6.080 từ bị gác vì 3 câu
+      // sai nhỏ dù đã có sẵn câu sửa).
+      const located = issues.filter((i) => i.quote && current.includes(i.quote));
+      current = applyFactFixes(current, located);
+      const unresolved = issues.filter((i) => !located.includes(i));
       // AI có thể bỏ sót câu nêu tên Wikipedia/hồ sơ — còn sót thì giữ thành lỗi (đề tài "chờ sửa", không render).
-      const leftover = referenceMentionIssues(current).filter((m) => !issues.some((i) => i.quote.includes(m.quote) || m.quote.includes(i.quote)));
-      return { script: current, issues: [...issues, ...leftover] };
+      const leftover = referenceMentionIssues(current).filter((m) => !unresolved.some((i) => i.quote.includes(m.quote) || m.quote.includes(i.quote)));
+      return { script: current, issues: [...unresolved, ...leftover] };
     }
     current = applyFactFixes(current, issues);
   }
