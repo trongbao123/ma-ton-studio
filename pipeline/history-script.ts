@@ -1,15 +1,15 @@
 // Viết một kịch bản lịch sử (CLI: render.ts "historyscript:<seriesId>"): đề tài kế tiếp → gom hồ sơ → viết nhiều lượt → soát sự thật.
 // historyAuto (CLI: "historyauto:<seriesId>") là trọn vòng tự chạy, MỖI LƯỢT CHỈ LÀM MỘT VIỆC NẶNG theo thứ tự ưu
-// tiên (daily.ts dispatch job riêng ~3 giờ/lần vì dựng tới 4,5 giờ): (a) có video đã dựng xong (ready) nhưng chưa
-// đăng → chỉ hoàn tất (meta/thumbnail/đăng); (b) có video đang xếp hàng (queued) → claim + dựng (+ hoàn tất nếu đạt);
-// (c) kho chờ đăng đã đủ → thôi; (d) hết thì viết đề tài mới rồi xếp hàng, để lượt daily kế tiếp dựng.
+// tiên (daily.ts dispatch job riêng ~3 giờ/lần vì dựng tới 4,5 giờ): (a) có video đã dựng xong (ready), chưa đăng,
+// VÀ đăng được ngay → chỉ hoàn tất (meta/thumbnail/đăng); (b) có video đang xếp hàng (queued) → claim + dựng (+
+// hoàn tất nếu đạt); (c) kho chờ đăng đã đủ → thôi; (d) hết thì viết đề tài mới rồi xếp hàng, để lượt daily kế tiếp dựng.
 import path from "node:path";
 import { execFile } from "node:child_process";
-import { mkdir, stat } from "node:fs/promises";
+import { mkdir, stat, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { chapters, videos, type Series, type VideoMeta } from "@/db/schema";
+import { chapters, videos, type Chapter, type Series, type VideoMeta } from "@/db/schema";
 import { QuotaExhaustedError } from "@/lib/ai";
 import { loadSecrets } from "@/lib/secrets";
 import { escapeHtml, notify, WEB_URL } from "@/lib/notify";
@@ -17,6 +17,9 @@ import { FactCheckFailedError } from "@/lib/story/fact-check";
 import { isHistoryStory, pickChapterToWrite } from "@/lib/story/history";
 import { maxContinues } from "@/lib/story/prompts";
 import { getChapter, getSeries, writeChapterStep } from "@/lib/story/service";
+import { WIKI_USER_AGENT } from "@/lib/story/wiki-api";
+import { accessToken, getYoutubeAuth } from "@/lib/youtube";
+import { COMMENT_MAX, postComment } from "./comment";
 import { historyVideoMeta, pickThumbnailImage } from "./history-meta";
 import { ensureRelease, uploadAsset } from "./release";
 import { thumbnail } from "./render";
@@ -122,14 +125,21 @@ export async function writeHistoryScript(seriesId: number): Promise<{ chapterId:
 }
 
 /** Video lịch sử của bộ xét tới (trường tối thiểu dùng để chọn việc — lấy đủ hơn ở `historyAuto`). */
-export type HistoryQueueRow = { id: number; status: string; youtubeVideoId: string | null; publishAt: Date | null; meta: VideoMeta | null };
+export type HistoryQueueRow = {
+  id: number; status: string; youtubeVideoId: string | null; publishAt: Date | null; meta: VideoMeta | null;
+  uploadStatus: "none" | "uploading" | "scheduled" | "failed";
+};
 
 /**
  * Video đã dựng xong, QC đạt (status `ready`), chưa có trên YouTube — cũ nhất trước, không có → undefined.
- * Ưu tiên cao nhất: hoàn tất (meta/thumbnail/đăng) một video đã xong trước khi dựng thêm video mới.
+ * Ưu tiên cao nhất: hoàn tất (meta/thumbnail/đăng) một video đã xong trước khi dựng thêm video mới. Bỏ qua
+ * video `uploadStatus` `failed` (lượt trước đăng lỗi hoặc thiếu ghi công, đã báo Telegram — chờ chủ kênh xử lý
+ * tay) hoặc `scheduled` (đã đăng xong, chỉ chưa kịp đồng bộ `youtubeVideoId`).
  */
-export function pickHistoryVideoToFinish(rows: Pick<HistoryQueueRow, "id" | "status" | "youtubeVideoId">[]): HistoryQueueRow["id"] | undefined {
-  return rows.filter((v) => v.status === "ready" && !v.youtubeVideoId).sort((a, b) => a.id - b.id)[0]?.id;
+export function pickHistoryVideoToFinish(rows: Pick<HistoryQueueRow, "id" | "status" | "youtubeVideoId" | "uploadStatus">[]): HistoryQueueRow["id"] | undefined {
+  return rows
+    .filter((v) => v.status === "ready" && !v.youtubeVideoId && v.uploadStatus !== "failed" && v.uploadStatus !== "scheduled")
+    .sort((a, b) => a.id - b.id)[0]?.id;
 }
 
 /**
@@ -175,7 +185,7 @@ async function startNextHistoryVideo(seriesId: number): Promise<number | null> {
   return row.id;
 }
 
-/** Ảnh tư liệu không có sẵn (hoặc không còn file cục bộ — job hoàn tất chạy trên máy khác máy đã dựng) thì AI vẽ tạm cho thumbnail. */
+/** Ảnh tư liệu không có sẵn (và không tải lại được từ Commons) thì AI vẽ tạm cho thumbnail. */
 const thumbnailFallbackPrompt = (chapterTitle: string) =>
   `Historical documentary illustration, ${chapterTitle}, old woodblock print / engraving style, aged paper, muted sepia, period-correct, no text`;
 
@@ -184,11 +194,53 @@ function creditsFromStoredMeta(stored: NonNullable<VideoMeta["historyCredits"]>)
   return { images: stored.images.map((image) => ({ ...image, file: "" })), musicFiles: stored.musicFiles };
 }
 
-/** Ảnh ghi công có file cục bộ dùng được cho thumbnail không (file tồn tại trên đĩa máy đang chạy) — không có ảnh/file → null. */
-async function usableThumbnailSource(images: ArtImage[]): Promise<string | null> {
+/**
+ * Có đủ dữ liệu ghi công để đăng không — video lịch sử nào dựng đạt QC cũng luôn có nhạc (musicPlan không bao
+ * giờ rỗng khi còn cảnh, và QC đòi `shots.length` > 0). Rỗng nghĩa là mất dữ liệu ghi công (resume thiếu
+ * `videos.meta.historyCredits`, hoặc video dựng tay bằng `historyvideo:` từ trước khi có trường này) — KHÔNG
+ * được đăng vì sẽ thiếu ghi công bắt buộc của giấy phép CC BY (nhạc) / CC BY-SA (ảnh).
+ */
+export function hasRequiredCredits(credits: HistoryCredits): boolean {
+  return credits.musicFiles.length > 0;
+}
+
+const COMMONS_THUMB_WIDTH = 1920;
+
+type CommonsImageInfoResponse = { query?: { pages?: Record<string, { imageinfo?: { thumburl?: string }[] }> } };
+
+/** Đường dẫn ảnh gốc trên Commons theo đúng tên file đã ghi công — không có → null (API lỗi, ảnh bị xoá…). */
+async function resolveCommonsImageUrl(title: string): Promise<string | null> {
+  const params = new URLSearchParams({ action: "query", format: "json", titles: title, prop: "imageinfo", iiprop: "url", iiurlwidth: String(COMMONS_THUMB_WIDTH) });
+  const data = await fetch(`https://commons.wikimedia.org/w/api.php?${params}`, { headers: { "User-Agent": WIKI_USER_AGENT } })
+    .then((res) => (res.ok ? (res.json() as Promise<CommonsImageInfoResponse>) : null))
+    .catch(() => null);
+  const page = Object.values(data?.query?.pages ?? {})[0];
+  return page?.imageinfo?.[0]?.thumburl ?? null;
+}
+
+/** Tải lại ảnh tư liệu Commons về `dir` theo tên file đã ghi công (job hoàn tất không phải job đã dựng, không còn file cục bộ); lỗi → null (lùi về AI vẽ). */
+async function downloadCommonsThumbnailSource(image: ArtImage, dir: string): Promise<string | null> {
+  const direct = await resolveCommonsImageUrl(image.title);
+  if (!direct) return null;
+  const imageBytes = await fetch(direct, { headers: { "User-Agent": WIKI_USER_AGENT } })
+    .then((res) => (res.ok ? res.arrayBuffer() : null))
+    .catch(() => null);
+  if (!imageBytes) return null;
+  const file = path.join(dir, "thumb-src.jpg");
+  await writeFile(file, Buffer.from(imageBytes));
+  return file;
+}
+
+/**
+ * Ảnh dùng cho thumbnail: file cục bộ có sẵn (vừa dựng trong lượt này) thì dùng ngay; đã resume từ DB (không
+ * còn file) thì tải lại từ Commons theo tên file đã ghi công — chủ kênh ghét ảnh AI (FLUX), chỉ lùi về AI vẽ khi
+ * không còn ảnh tư liệu thật nào dùng được.
+ */
+async function resolveThumbnailSource(images: ArtImage[], dir: string): Promise<string | null> {
   const picked = pickThumbnailImage(images);
-  if (!picked) return null;
-  return (await stat(picked).then(() => true, () => false)) ? picked : null;
+  if (!picked || picked.synthetic) return null;
+  if (picked.file && (await stat(picked.file).then(() => true, () => false))) return picked.file;
+  return downloadCommonsThumbnailSource(picked, dir);
 }
 
 /**
@@ -205,23 +257,95 @@ async function ensureLocalLongVideo(videoId: number, dir: string): Promise<strin
   return file;
 }
 
+/** Meta để đăng + dòng ghi công ảnh không vừa mô tả (đăng bình luận riêng — xem `postOverflowCredits`). */
+type HistoryFinishMeta = { meta: VideoMeta; overflowCredits: string[] };
+
+/** Đầu vào của `resolveHistoryMeta`: video + bộ truyện + ghi công đã dựng + meta hiện có (null = chưa có). */
+type ResolveHistoryMetaInput = { series: Series; chapter: Chapter; credits: HistoryCredits; existing: VideoMeta | null };
+
+/**
+ * Tiêu đề/mô tả/thumbnail: chủ kênh đã có (sửa tay hoặc lượt trước đã sinh) thì GIỮ NGUYÊN, không gọi AI viết
+ * lại tốn quota lẫn mất bản chủ kênh sửa; chưa có thì sinh mới.
+ */
+async function resolveHistoryMeta(video: ResolveHistoryMetaInput): Promise<HistoryFinishMeta> {
+  if (video.existing?.title) return { meta: video.existing, overflowCredits: [] };
+  return historyVideoMeta({ series: video.series, chapter: video.chapter, images: video.credits.images, musicFiles: video.credits.musicFiles });
+}
+
+/** Chia các dòng ghi công thành nhiều đoạn, mỗi đoạn không vượt `maxBytes` — một bình luận YouTube tối đa `COMMENT_MAX` ký tự. */
+export function chunkCreditLines(lines: string[], maxBytes: number): string[][] {
+  const chunks: string[][] = [];
+  let current: string[] = [];
+  let currentBytes = 0;
+  for (const line of lines) {
+    const lineBytes = Buffer.byteLength(line, "utf8") + 1;
+    if (current.length && currentBytes + lineBytes > maxBytes) {
+      chunks.push(current);
+      current = [];
+      currentBytes = 0;
+    }
+    current.push(line);
+    currentBytes += lineBytes;
+  }
+  if (current.length) chunks.push(current);
+  return chunks;
+}
+
+const OVERFLOW_CREDIT_HEADER = "Ghi công ảnh tư liệu (không đủ chỗ trong mô tả):";
+/** Chừa chỗ cho header + số thứ tự đoạn khi chia bình luận ghi công dài. */
+const OVERFLOW_CREDIT_HEADER_MARGIN = 50;
+
+/** Đầu vào của `postOverflowCredits`: video + id YouTube vừa đăng + kênh (để lấy đúng tài khoản) + dòng ghi công còn thiếu. */
+type PostOverflowCreditsInput = { videoId: number; youtubeId: string; channel: string; lines: string[] };
+
+/**
+ * Ghi công ảnh không vừa mô tả (vượt ngân sách byte) đăng thành bình luận của video — KHÔNG bỏ bớt ghi công,
+ * giấy phép CC BY-SA bắt buộc ghi công đủ từng ảnh. Chia nhiều bình luận nếu dài; đăng lỗi hay chưa kết nối
+ * YouTube thì báo Telegram kèm nguyên nội dung để chủ kênh dán tay.
+ */
+async function postOverflowCredits(o: PostOverflowCreditsInput) {
+  const { videoId, youtubeId, channel, lines } = o;
+  if (!lines.length) return;
+  const auth = await getYoutubeAuth(channel).catch(() => null);
+  if (!auth) {
+    await notify(`⚠️ Video lịch sử #${videoId}: còn ${lines.length} ảnh chưa ghi công trong mô tả (hết chỗ), chưa kết nối YouTube để đăng bình luận — ghi công tay giúp:\n${escapeHtml(lines.join("\n")).slice(0, 1500)}`);
+    return;
+  }
+  const token = await accessToken(auth.refreshToken);
+  const chunks = chunkCreditLines(lines, COMMENT_MAX - Buffer.byteLength(OVERFLOW_CREDIT_HEADER, "utf8") - OVERFLOW_CREDIT_HEADER_MARGIN);
+  for (const [i, chunk] of chunks.entries()) {
+    const text = `${OVERFLOW_CREDIT_HEADER}${chunks.length > 1 ? ` (${i + 1}/${chunks.length})` : ""}\n${chunk.join("\n")}`;
+    const err = await postComment(token, youtubeId, text);
+    if (err) await notify(`⚠️ Video lịch sử #${videoId}: đăng bình luận ghi công ảnh lỗi (${escapeHtml(err)}) — ghi công tay giúp:\n${escapeHtml(chunk.join("\n")).slice(0, 1500)}`);
+  }
+}
+
 /** Đầu vào của `finishHistoryVideo`: video đã dựng xong (QC đạt) + bộ truyện của nó (để biết kênh, lấy lịch đăng). */
 type FinishHistoryVideoInput = { videoId: number; series: Series; credits: HistoryCredits };
 
 /**
  * Tạo tiêu đề/mô tả/thumbnail rồi đăng YouTube cho một video lịch sử đã dựng xong, QC đạt (status `ready`).
  * Gọi ngay sau khi `buildHistoryVideo` vừa dựng xong (còn `images`/`musicFiles` trong tay), hoặc để hoàn tất
- * một video đã dựng từ lượt trước mà chưa đăng được (đọc lại `videos.meta.historyCredits`).
+ * một video đã dựng từ lượt trước mà chưa đăng được (đọc lại `videos.meta.historyCredits`). Thiếu ghi công
+ * (nhạc/ảnh) thì KHÔNG đăng — đánh dấu `uploadStatus: failed` để lượt sau không chọn lại, báo Telegram.
  */
 async function finishHistoryVideo(o: FinishHistoryVideoInput) {
   const { videoId, series: s, credits } = o;
-  const [v] = await db().select({ chapterId: videos.chapterId, publishAt: videos.publishAt }).from(videos).where(eq(videos.id, videoId));
+  if (!hasRequiredCredits(credits)) {
+    const reason = "Thiếu dữ liệu ghi công nhạc/ảnh (historyCredits) — không đăng để tránh vi phạm giấy phép CC BY/CC BY-SA.";
+    await db().update(videos).set({ uploadStatus: "failed", uploadError: reason, updatedAt: new Date() }).where(eq(videos.id, videoId));
+    await notify(`⚠️ Video lịch sử #${videoId} dựng xong nhưng thiếu dữ liệu ghi công nhạc/ảnh — KHÔNG đăng, cần xem/ghi công tay.\n👉 ${WEB_URL}/videos/${videoId}`);
+    return;
+  }
+  const [v] = await db().select({ chapterId: videos.chapterId, publishAt: videos.publishAt, meta: videos.meta }).from(videos).where(eq(videos.id, videoId));
   const chapter = await getChapter(v.chapterId);
   const dir = path.resolve(".render", `history-${videoId}`);
   await mkdir(dir, { recursive: true });
-  const meta = await historyVideoMeta({ series: s, chapter, images: credits.images, musicFiles: credits.musicFiles });
-  const src = await usableThumbnailSource(credits.images);
-  const thumb = await thumbnail(dir, thumbnailFallbackPrompt(chapter.title), meta.thumbnailText ?? "", src ? { src } : {});
+  const { meta, overflowCredits } = await resolveHistoryMeta({ series: s, chapter, credits, existing: v.meta });
+  // Gộp vào meta hiện có (không ghi đè cả cột) — chủ kênh sửa tay, hoặc chính `historyCredits` vừa lưu, không được mất.
+  const finalMeta: VideoMeta = { ...(v.meta ?? {}), ...meta };
+  const src = await resolveThumbnailSource(credits.images, dir);
+  const thumb = await thumbnail(dir, thumbnailFallbackPrompt(chapter.title), finalMeta.thumbnailText ?? "", src ? { src } : {});
   const releaseId = await ensureRelease(videoId, false);
   await uploadAsset(videoId, releaseId, thumb);
   const file = await ensureLocalLongVideo(videoId, dir);
@@ -230,22 +354,35 @@ async function finishHistoryVideo(o: FinishHistoryVideoInput) {
   const publish = await autoPublishEligible(videoId);
   await db()
     .update(videos)
-    .set({ meta, publishAt, updatedAt: new Date(), ...(publish ? { uploadStatus: "uploading" as const, uploadError: null } : {}) })
+    .set({ meta: finalMeta, publishAt, updatedAt: new Date(), ...(publish ? { uploadStatus: "uploading" as const, uploadError: null } : {}) })
     .where(eq(videos.id, videoId));
-  if (publish) await publishToYoutube(videoId, { long: file, thumb });
+  if (!publish) return;
+  await publishToYoutube(videoId, { long: file, thumb });
+  const [after] = await db().select({ youtubeVideoId: videos.youtubeVideoId }).from(videos).where(eq(videos.id, videoId));
+  if (!after?.youtubeVideoId) {
+    // publishToYoutube tự báo Telegram khi đăng lỗi và đặt uploadStatus "failed" — lượt sau không chọn lại video này.
+    console.warn(`⚠ Video #${videoId}: đăng YouTube không thành công, xem thông báo lỗi riêng.`);
+    return;
+  }
+  await postOverflowCredits({ videoId, youtubeId: after.youtubeVideoId, channel: s.channel, lines: overflowCredits });
 }
 
 /** Một lượt `historyAuto`: đúng MỘT nhánh ưu tiên (a/b/c/d) rồi thoát — không gộp nhiều việc nặng vào một job. */
 async function historyAutoStep(seriesId: number, s: Series): Promise<void> {
   const rows = await db()
-    .select({ id: videos.id, status: videos.status, youtubeVideoId: videos.youtubeVideoId, publishAt: videos.publishAt, meta: videos.meta })
+    .select({
+      id: videos.id, status: videos.status, youtubeVideoId: videos.youtubeVideoId, publishAt: videos.publishAt, meta: videos.meta,
+      uploadStatus: videos.uploadStatus,
+    })
     .from(videos)
     .innerJoin(chapters, eq(chapters.id, videos.chapterId))
     .where(eq(chapters.seriesId, seriesId))
     .orderBy(asc(videos.id));
 
+  // Kiểm đăng được không TRƯỚC khi làm bất cứ việc gì (tải long.mp4, gọi AI viết meta, vẽ thumbnail) — chưa
+  // kết nối YouTube / autoPublish tắt thì làm trước cũng vô nghĩa, để chủ kênh xử lý tay từ Studio.
   const toFinish = pickHistoryVideoToFinish(rows);
-  if (toFinish) {
+  if (toFinish && (await autoPublishEligible(toFinish))) {
     const stored = rows.find((v) => v.id === toFinish)!.meta?.historyCredits;
     console.log(`▶ ${s.title}: video #${toFinish} đã dựng xong, chưa đăng — hoàn tất (meta/thumbnail/đăng)`);
     await finishHistoryVideo({ videoId: toFinish, series: s, credits: stored ? creditsFromStoredMeta(stored) : { images: [], musicFiles: [] } });
