@@ -1,6 +1,6 @@
 name: neon-watch
 # Neon free hết hạn mức 23/11/2026 (khoá cả đọc). Mỗi ngày thử đọc; mở lại thì báo Telegram để chép dữ liệu cũ sang Supabase
-# (KHÔNG tự chép: Supabase đã có dữ liệu mới từ 23/11, cần gộp). Chép xong thì xoá workflow này.
+# (KHÔNG tự chép — gộp bằng workflow neon-merge, chạy dry trước). Gộp xong thì xoá workflow này.
 on:
   schedule:
     - cron: "7 1 * * *"
@@ -23,7 +23,7 @@ jobs:
           if echo "$res" | grep -q '"rows"'; then
             echo "Neon đã mở lại: $res"
             curl -s "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" -d chat_id="$TELEGRAM_CHAT_ID" \
-              --data-urlencode text="✅ Neon đã mở lại — đọc được dữ liệu cũ. Báo Claude chạy chép dữ liệu cũ sang Supabase (pnpm db:migrate-neon, có gộp dữ liệu mới)." >/dev/null
+              --data-urlencode text="✅ Neon đã mở lại — đọc được dữ liệu cũ. Vào Actions chạy workflow neon-merge: dry trước, ổn thì run (gộp, không xoá dữ liệu mới)." >/dev/null
           else
             echo "Neon vẫn khoá: $(echo "$res" | head -c 150)"
           fi
