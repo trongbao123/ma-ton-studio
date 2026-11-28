@@ -1,3 +1,28 @@
+# HANDOFF — 2026-11-28 (đổi IDE)
+
+Resume: `git pull` trên `main`. Mọi nhánh dưới đây đã merge (trừ khi ghi "chưa").
+
+## Hôm nay đã lên `main`
+| Việc | Ghi chú |
+|---|---|
+| Id mới từ 10000 (`drizzle/0010_id_floor.sql`) + nhãn chủ thư mục cache `owner.tag` (`pipeline/render-dir.ts`) | Từ 23/11 Supabase đếm id lại từ 1 → video chuyện đời #11, #12, #15–#21 dùng nhầm ẢNH của video Neon cùng số. Video đã đăng trong nhóm này cần chủ kênh tua kiểm, lệch thì `replace:<id>` |
+| Chuyện đời: mở đầu giữ chân | Bỏ kiểu "Tôi năm nay … tuổi", `LIFE_OPENING_RULES` + biên tập viên AI chấm 300 từ đầu (editor.ts nhận bộ luật theo thể loại), 1 lời mời đăng ký cuối hồi 2. Giữ chân cũ 12,8% (rơi ~60% trong 1–2 phút) — đo lại 7 ngày đầu truyện viết sau 28/11 |
+| Lịch sử: mở đầu giữ chân | `HISTORY_OPENING_RULES` + biên tập viên, 1 lời mời đăng ký cuối hồi 1; viết lại phần mở vẫn dùng hồ sơ tư liệu, soát sự thật lượt cuối vẫn chạy |
+| Kênh lịch sử tự chạy trọn vòng (`historyauto:<seriesId>`) | Thiết kế: `docs/superpowers/specs/2026-11-28-lich-su-tu-chay-design.md`. Ngày lẻ daily dispatch render.yml; mỗi job MỘT việc nặng: hoàn tất+đăng video ready → dựng video queued → (đủ kho thì thôi) → viết kịch bản mới. Meta + mô tả (nguồn Wikipedia, ghi công nhạc/ảnh Commons ≤4900 byte, phần dư đăng bình luận khi video đã public), thumbnail tranh Commons thật. Bật autopilot bộ #2 bằng `drizzle/0011`. Review đối kháng: `.devkit/reviews/lich-su-auto.md` |
+| Giọng VieNeu-TTS miễn phí (CPU) | Chuyện đời nam Đức Trí / nữ Thục Đoan (thoại nữ Ngọc Linh, Mỹ Duyên); lịch sử Thanh Bình. VieNeu → ivoi → Gemini; `TTS_ENGINE=ivoi|gemini` để quay về. Action `.github/actions/setup-vieneu` |
+
+## Cần chủ kênh làm
+- Kết nối YouTube cho kênh **Sử Ký Kể Chuyện** trong Studio (chưa kết nối thì video lịch sử dựng xong nằm chờ, không tự đăng).
+- (Tuỳ) thêm `DB_URL` Supabase vào `.env.local` để chạy script/đọc DB từ máy nhà.
+
+## Còn dở / theo dõi
+- Neon vẫn khoá (vượt hạn mức). `neon-watch` báo Telegram khi mở; script `scripts/migrate-neon.mjs` hiện XOÁ SẠCH đích → phải sửa sang kiểu GỘP trước khi chạy (id Neon 1–21 trùng id Supabase 1–21 → đổi số các dòng cũ).
+- Lượt dựng thử VieNeu: run 46137108282 (video #21) — xem giọng/phụ đề có khớp.
+- Video lịch sử đầu tiên chạy thật: xem log job `historyauto:2`, kiểm mô tả + ghi công + thumbnail trên YouTube.
+- Dữ liệu mẫu giọng ở `C:\Users\admin\voice-test` (máy nhà, không trong repo).
+
+---
+
 # HANDOFF — 2026-11-12 đêm (Windows) — "bấm vào là cuốn"
 
 Resume: `git pull` trên `main`. Spec: `docs/superpowers/specs/2026-11-12-hook-he-thong-design.md`, plan: `docs/superpowers/plans/2026-11-12-hook-he-thong.md`.
