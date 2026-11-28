@@ -1,7 +1,8 @@
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-const OWNER_FILE = ".owner";
+/** Đuôi `.tag`: bước "Truyện đã sửa" trong render.ts giữ lại file `*.tag` khi dọn thư mục (tên `.owner` cũ bị xoá → lượt sau tưởng video lạ, xoá sạch ảnh). */
+const OWNER_FILE = "owner.tag";
 
 /**
  * Nhãn chủ của thư mục render: id + thời điểm tạo row. Id lặp lại được (23/11/2026 chuyển Neon → Supabase, id đếm lại từ 1)
