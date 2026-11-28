@@ -1,5 +1,6 @@
 // Thể loại "Lịch sử" (kênh Sử Ký Kể Chuyện, khoá lich-su): mỗi chương là MỘT video tài liệu ~45 phút về một sự kiện/nhân vật,
 // viết CHỈ từ hồ sơ tư liệu (Wikipedia vi + en) — không hư cấu. Mọi nhánh "nếu là lịch sử" trong luồng viết đọc từ file này.
+import type { OpeningCheck } from "./editor";
 import type { Chapter, Series } from "@/db/schema";
 
 export const HISTORY_GENRE = "Lịch sử";
@@ -109,6 +110,24 @@ Uy tín là tất cả: mọi chi tiết có nguồn; sai sử là mất kênh. 
 const HISTORY_EXEMPLAR = `Ông chưa bước vào, người ta đã nghe thấy tiếng. Giọng nói sang sảng, vang như chuông. Đôi mắt sáng quắc. Tướng sĩ dưới trướng vừa nể, vừa sợ.
 Và điều lạ nhất: người tả ông như thế lại chính là kẻ thù. Sử quan nhà Nguyễn, những người viết sử cho đối thủ không đội trời chung của Tây Sơn, cũng phải chép rằng: đây là một kẻ lắm mưu nhiều kế, cầm quân giỏi, ai gặp cũng phải nể sợ.`;
 
+/**
+ * Luật 300 từ đầu kịch bản lịch sử — biên tập viên AI (editor.ts) chấm sau lượt viết đầu. Viết lại phần mở vẫn dùng prompt có
+ * hồ sơ tư liệu, và soát sự thật lượt cuối vẫn chạy sau đó → không lọt chi tiết bịa (28/11/2026, giữ chân như chuyện đời).
+ */
+export const HISTORY_OPENING_RULES = [
+  "Câu đầu dưới 20 từ, đặt người nghe vào giữa một khoảnh khắc căng nhất hoặc một sự thật gây sốc của sự kiện (thời gian, nơi chốn, việc đang xảy ra). KHÔNG mở bằng năm sinh, tiểu sử, định nghĩa, 'vào năm…, tại…' kiểu sách giáo khoa, hay câu chào.",
+  "Trong 150 từ đầu có một đối lập hoặc con số gây sốc lấy từ hồ sơ (ít đánh nhiều, kẻ thù phải thừa nhận, khoảng cách/thời gian không tưởng).",
+  "Trong 300 từ đầu có một câu hỏi lớn nói thành lời mà người nghe muốn biết đáp án (làm sao, vì sao, rồi ra sao) — chưa trả lời ngay.",
+  "Câu ngắn, thì hiện tại, cận cảnh; không quá 2 câu bối cảnh/giải thích liền nhau; không bình luận sử học, không 'theo sử sách ghi lại'.",
+  "Không có lời thoại hay suy nghĩ bịa cho nhân vật cụ thể; mọi chi tiết phải có trong hồ sơ tư liệu.",
+];
+
+/** Biên tập viên AI cho lịch sử: chấm 300 từ đầu theo HISTORY_OPENING_RULES. */
+export const HISTORY_OPENING_CHECK: OpeningCheck = {
+  rules: HISTORY_OPENING_RULES,
+  editor: "Bạn là biên tập viên khó tính của kênh phim tài liệu lịch sử Việt Nam trên YouTube. Người xem bấm vào rồi thoát ngay nếu 20 giây đầu đọc như sách giáo khoa. Bạn chấm xem đoạn mở đầu có kéo họ vào như phim không, và có giữ đúng sự thật không.",
+};
+
 /** Ba hồi của kịch bản ~45 phút (mỗi hồi ≈ một lượt viết). */
 export const HISTORY_ACTS = [
   "HỒI 1 — mở in medias res: thả người nghe vào khoảnh khắc căng nhất của sự kiện (chi tiết có trong hồ sơ), 4–6 câu, dừng ở một câu hỏi lớn; rồi lùi lại: bối cảnh thời đại, các phe, con người chính, vì sao mọi thứ dẫn tới đây.",
@@ -130,6 +149,7 @@ CÁCH VIẾT CHO TAI NGHE:
 - Tên nước ngoài: dùng tên Việt quen dùng nếu có (Nã Phá Luân → dùng "Napoleon", Thành Cát Tư Hãn), lần đầu có thể kèm tên gốc.
 - Kịch tính bằng cấu trúc: câu hỏi treo, mốc thời gian, đối lập lực lượng — không bằng tính từ sáo ('hào hùng', 'oai hùng' tối đa 1 lần).
 - Không chào hỏi, không giới thiệu kênh, không markdown, không tiêu đề phụ, không ghi "Hồi 1".
+- Đúng MỘT lần, ở cuối HỒI 1 ngay sau câu treo, người dẫn nói 1 câu ngắn tự nhiên mời ở lại và đăng ký kênh, gắn với điều sắp kể (vd "Điều gì đã xảy ra ở bờ sông ấy? Hãy ở lại cùng Sử Ký Kể Chuyện, và đăng ký kênh để không bỏ lỡ những trang sử như thế này."). Không lặp lời mời ở chỗ khác, không xin like, không nói "bấm chuông".
 GIỌNG MẪU (chủ kênh duyệt — học nhịp và cách biến sự thật thành cảnh; KHÔNG chép nội dung):
 ${HISTORY_EXEMPLAR}`;
 
