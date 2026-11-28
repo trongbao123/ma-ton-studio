@@ -2,6 +2,7 @@
 // trung niên — gia đình, hôn nhân, tình cha mẹ, nhân quả. Khác hẳn tiên hiệp: không bàn tay vàng, không cảnh giới, không cliffhanger.
 // Mọi nhánh "nếu là chuyện đời" trong prompt viết/meta/ảnh đọc từ file này.
 import type { Chapter, Series } from "@/db/schema";
+import type { OpeningCheck } from "./editor";
 
 export const LIFE_GENRE = "Chuyện đời";
 export const isLifeStory = (s: Pick<Series, "genre"> | null | undefined) => s?.genre === LIFE_GENRE;
@@ -33,7 +34,8 @@ export const LIFE_ACTS = [
  * trong ~80 từ người nghe biết tôi là ai, đang đau chuyện gì, và có một câu úp mở (KHÔNG nói lời giải).
  */
 export const LIFE_OPENINGS = [
-  "TỰ GIỚI THIỆU: 'Tôi năm nay … tuổi', tôi đã đánh đổi gì (có con số) → vậy mà giờ gặp chuyện đau nhất (một hình ảnh cụ thể) → câu úp mở.",
+  // 28/11/2026: bỏ kiểu "TỰ GIỚI THIỆU: 'Tôi năm nay … tuổi'" — video mở như vậy rơi ~60% người xem trong 1–2 phút đầu (giữ chân 12,8%).
+  "KẾT CỤC TRƯỚC: câu đầu nói thẳng kết cục đau nhất hoặc lạ nhất của truyện mà chưa nói vì sao ('Ngày chôn chồng xong, tôi mới biết ông ấy còn một đứa con trai ba mươi tuổi') → câu sau là chi tiết khiến người nghe phải hỏi 'tại sao' → rồi mới lùi về đầu chuyện.",
   "CÂU NÓI TÀN NHẪN: mở bằng nguyên văn một câu nói đau nhất tôi từng nghe trong truyện (trong ngoặc kép, rõ ai nói), rồi ngay câu sau: ai nói, nói với tôi lúc nào, và tôi đã làm gì cho người đó.",
   "GIỮA KHOẢNH KHẮC: thả người nghe vào ngay giây phút căng nhất (giờ giấc, nơi chốn, đồ vật trong tay — 'Ba giờ sáng, tôi ngồi dưới bếp, tay cầm điện thoại của chồng…'), rồi lùi lại: 'Để kể vì sao tôi ở đó, phải quay về …'.",
   "ĐỒ VẬT / BÍ MẬT: mở bằng một đồ vật cụ thể chứa bí mật (chiếc hộp thiếc, cuốn sổ tiết kiệm, lá thư chưa bóc, tấm ảnh bị cắt đôi) và một con số lạ gắn với nó; tôi kể mình tìm thấy nó thế nào.",
@@ -56,10 +58,29 @@ export const lifeEnding = (n: number) => LIFE_ENDINGS[(((n + 1) % LIFE_ENDINGS.l
 /** Lượt viết tiếp này là lượt CUỐI (viết nốt tới KẾT) khi phần còn thiếu vừa một lượt dài — viết xong là truyện đã kết. */
 export const lifeIsFinalPart = (written: number, target = LIFE_TARGET_WORDS) => target - written <= LIFE_PART_WORDS * 1.4;
 
+/**
+ * Luật 300 từ đầu của chuyện đời — biên tập viên AI (editor.ts) chấm sau lượt viết đầu, không đạt thì viết lại phần mở.
+ * 28/11/2026: video mở "Tôi năm nay năm mươi tám tuổi" mất ~60% người xem trong 1–2 phút đầu.
+ */
+export const LIFE_OPENING_RULES = [
+  "Câu đầu tiên dưới 25 từ, tự hiểu được khi nghe riêng, và là một cú sốc: phản bội, mất mát, bí mật, câu nói tàn nhẫn hoặc kết cục bất ngờ. KHÔNG mở bằng tuổi, tên, quê, nghề, hoàn cảnh gia đình, thời tiết hay tả cảnh.",
+  "Tuổi, nghề, hoàn cảnh của người kể (nếu có) chỉ được nói SAU câu sốc, và không quá 2 câu liền nhau.",
+  "Trong 150 từ đầu người nghe biết: ai làm tôi đau (hoặc chuyện gì xảy ra với tôi) và tôi sắp mất / đã mất điều gì.",
+  "Trong 300 từ đầu có một câu úp mở chưa giải đáp khiến người nghe muốn biết tiếp (bí mật là gì, vì sao, rồi sẽ ra sao).",
+  "Trong 300 từ đầu có ít nhất 2 câu thoại ngắn, rõ ai nói với ai.",
+  "Không quá 2 câu tả cảnh / kể nền liền nhau; không chào hỏi, không nhắc tên kênh, không 'hôm nay tôi kể các bạn nghe'.",
+];
+
+/** Biên tập viên AI cho chuyện đời: chấm 300 từ đầu theo LIFE_OPENING_RULES. */
+export const LIFE_OPENING_CHECK: OpeningCheck = {
+  rules: LIFE_OPENING_RULES,
+  editor: "Bạn là biên tập viên khó tính của kênh truyện audio chuyện đời cho khán giả 35–60 tuổi trên YouTube. Người nghe bấm vào rồi thoát ngay nếu 20 giây đầu không có cú sốc. Bạn chấm xem đoạn mở đầu có giữ được họ không.",
+};
+
 /** Nhịp dựng của kênh (kế hoạch thử 4 tuần, 11/2026) — dùng cho cả người viết lẫn biên tập. */
 export const LIFE_PACING = [
   // Chủ kênh 17/11/2026: mở bằng câu thoại trơ trọi nghe cụt; kể ngôi thứ ba kiểu tóm tắt thì "đéo có cảm xúc" → kể ngôi "tôi".
-  "0–20 giây đầu (≈ 70–90 từ): mở theo đúng KIỂU MỞ ĐẦU được giao cho truyện này (mỗi truyện một kiểu khác nhau — KHÔNG mặc định 'Tôi năm nay … tuổi'). Câu đầu tự hiểu được khi nghe riêng; trong 20 giây người nghe biết tôi là ai, đang đau chuyện gì, và có một câu úp mở (KHÔNG nói lời giải). Không chào hỏi, không giới thiệu kênh, không tả thời tiết.",
+  "0–20 giây đầu (≈ 70–90 từ): mở theo đúng KIỂU MỞ ĐẦU được giao cho truyện này (mỗi truyện một kiểu khác nhau). CẤM câu đầu là tuổi/tên/quê/nghề ('Tôi năm nay … tuổi', 'Tôi tên là…') — tự giới thiệu chỉ đến SAU cú sốc. Câu đầu tự hiểu được khi nghe riêng; trong 20 giây người nghe biết tôi là ai, đang đau chuyện gì, và có một câu úp mở (KHÔNG nói lời giải). Không chào hỏi, không giới thiệu kênh, không tả thời tiết.",
   "Ngay sau đó vào cảnh biến cố đầu tiên (tự tìm câu chuyển của riêng truyện này, đừng dùng mãi 'Chuyện bắt đầu từ…'); câu thoại nào cũng rõ ai nói với ai. Trong ~200 từ tiếp người nghe biết tôi quý/đã đánh đổi gì và tôi CÓ NGUY CƠ MẤT gì.",
   "ĐỘNG CƠ CẢM XÚC chính: mỗi lần bị đối xử tệ, đặt NGAY cạnh một KÝ ỨC HY SINH cụ thể gắn với một đồ vật/khoảnh khắc (bán nhẫn cưới mua xe cho con, cõng con sốt đi trạm xá giữa đêm, nhịn bữa để con có quả trứng, lời hứa của con ngày xưa) — người nghe đau vì sự tương phản 'ngày ấy – bây giờ'.",
   "Bậc thang tổn thương: ít nhất 5 lần bị làm đau trải suốt truyện, lần sau đau hơn lần trước; mỗi lần có một CÂU NÓI tàn nhẫn cụ thể nhân vật chính nghe tận tai ('Bà ở đâu chẳng được, miễn đừng ở đây', 'đến lượt thằng Dũng'), và một khoảnh khắc chờ đợi bị dập tắt (chờ con bênh một câu mà nó im lặng). Xen một chút tử tế nhỏ của người dưng/đứa trẻ để làm nổi nỗi đau.",
@@ -70,11 +91,13 @@ export const LIFE_PACING = [
   // Chủ kênh 20/11/2026: "cảm động vô như các tình huống xảy ra ngoài đời, cảm động tới nỗi vừa nghe đã khóc".
   "CHÂN THẬT NHƯ NGOÀI ĐỜI: xung đột phải là chuyện người nghe từng gặp hoặc nghe hàng xóm kể — tiền viện phí, con đi làm xa Tết không về, cha mẹ già ở quê một mình, cuộc gọi video không ai bắt, mâm giỗ không ai về, chia đất, nợ nần, bệnh nặng giấu con, đứa con đi xuất khẩu lao động… Người có lỗi hành xử như người thật, có lý do của họ (áp lực tiền, vợ/chồng ép, sĩ diện), KHÔNG ác kiểu phim. Chi tiết tiền bạc, giờ giấc, địa điểm cụ thể và hợp lý.",
   "KHOẢNH KHẮC VỠ ÒA (ít nhất 3 lần trong truyện, lần lớn nhất ở HỒI 5): dồn nén thật lâu rồi mới vỡ — điều không kịp nói khi người kia còn sống, lá thư/tin nhắn thoại/di vật nhỏ tìm thấy muộn, câu gọi 'Mẹ ơi' sau nhiều năm, người tưởng vô tâm hoá ra đã âm thầm hy sinh. Dựng bằng CHI TIẾT NHỎ cụ thể (đôi dép mòn, hộp cơm còn ấm, tờ giấy gấp tư trong túi áo) và hành động, KHÔNG tả 'tôi khóc nức nở'. Ngay sau khoảnh khắc ấy là một câu rất ngắn rồi ngừng — để người nghe tự khóc.",
+  // 28/11/2026: kéo đăng ký — một lời mời ngắn, đúng lúc người nghe đang tò mò nhất (không phải đầu video, không phải cuối khi họ đã thoát).
+  "Đúng MỘT lần, ở cuối HỒI 2 ngay sau câu móc úp mở, người kể nói 1–2 câu tự nhiên với người nghe mời ở lại và đăng ký kênh, gắn với chuyện đang kể (vd 'Nếu bạn cũng từng chờ một cuộc điện thoại không bao giờ đến, hãy ở lại với tôi, và đăng ký kênh để nghe tiếp những chuyện như thế này.'). Không lặp lời mời ở chỗ khác, không nói 'bấm chuông', không xin like.",
   "KHÔNG ĐƯỢC RẬP KHUÔN giữa các truyện: không dùng lại các câu chuyển quen ('Chuyện bắt đầu từ…', 'Các bạn biết không', 'Tôi đâu biết…') quá 1 lần mỗi truyện; mỗi truyện tự tìm hình ảnh, đồ vật, câu nói riêng của nó; nhân vật chính không phải lúc nào cũng là người mẹ hy sinh — đúng vai trong tiêu đề/cốt truyện.",
 ];
 
 /** Trích bản mẫu chủ kênh đã duyệt (truyện 1, viết lại 17/11/2026) — cho AI thấy giọng, không chép nội dung. */
-export const LIFE_EXEMPLAR = `Tôi năm nay năm mươi lăm tuổi. Tôi có ba đứa con, đứa nào cũng học hành đến nơi đến chốn, đứa nào cũng có nhà cửa đàng hoàng. Vậy mà có một đêm mưa tháng Mười, tôi ngồi co ro ở bến xe với chiếc vali cũ, lục túi chỉ còn ba trăm nghìn, và tôi không biết mình nên về đâu. Ba đứa con, ba cánh cửa, không cánh cửa nào mở cho mẹ nó. Tôi chỉ không ngờ, ở cái nơi tôi tưởng đã mất từ lâu, lại có một người đứng mở cổng chờ tôi suốt ba năm.
+export const LIFE_EXEMPLAR = `Ba đứa con, ba cánh cửa, không cánh cửa nào mở cho mẹ nó. Có một đêm mưa tháng Mười, tôi ngồi co ro ở bến xe với chiếc vali cũ, lục túi chỉ còn ba trăm nghìn, và tôi không biết mình nên về đâu. Tôi năm nay năm mươi lăm tuổi, đứa con nào cũng học hành đến nơi đến chốn, đứa nào cũng có nhà cửa đàng hoàng. Tôi chỉ không ngờ, ở cái nơi tôi tưởng đã mất từ lâu, lại có một người đứng mở cổng chờ tôi suốt ba năm.
 […]
 Các bạn biết không, lúc ấy tôi không thấy giận. Tôi chỉ thấy lạ. Tôi nhìn thằng con trai mình, cái thằng hồi bé sốt bốn mươi độ, tôi cõng nó đi bộ năm cây số ra trạm xá giữa đêm, vừa đi vừa khóc vì sợ nó chết. Giờ nó đứng đó, cao hơn tôi cả cái đầu, và nó không nhìn mẹ nó lấy một lần.
 […]
