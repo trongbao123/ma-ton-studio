@@ -13,7 +13,7 @@ type Prompt = { system: string; prompt: string };
 /** Bộ luật chấm mở đầu theo thể loại: luật đánh số + vai biên tập viên. */
 export type OpeningCheck = { rules: readonly string[]; editor: string };
 
-/** Mặc định: kênh tu tiên (OPENING_RULES). Chuyện đời dùng LIFE_OPENING_CHECK. */
+/** Mặc định: kênh tu tiên (OPENING_RULES). Chuyện đời dùng LIFE_OPENING_CHECK, lịch sử HISTORY_OPENING_CHECK. */
 export const XIANXIA_OPENING_CHECK: OpeningCheck = {
   rules: OPENING_RULES,
   editor: "Bạn là biên tập viên khó tính của kênh truyện audio tu tiên trên YouTube. Bạn chấm xem đoạn mở đầu có giữ được người nghe trong 20 giây đầu không.",

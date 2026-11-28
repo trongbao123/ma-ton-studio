@@ -2,9 +2,9 @@ import { and, asc, eq, lt } from "drizzle-orm";
 import { db } from "@/db";
 import { chapters, series, type Chapter, type Series } from "@/db/schema";
 import { textProvider } from "@/lib/ai";
-import { polishOpening, shouldPolishOpening, XIANXIA_OPENING_CHECK } from "./editor";
+import { polishOpening, shouldPolishOpening, XIANXIA_OPENING_CHECK, type OpeningCheck } from "./editor";
 import { isLifeStory, LIFE_OPENING_CHECK, lifeIsFinalPart } from "./life";
-import { historyIsFinalPart, historyScriptComplete, isHistoryStory, isSensitiveTopic, wikiTitleOf } from "./history";
+import { HISTORY_OPENING_CHECK, historyIsFinalPart, historyScriptComplete, isHistoryStory, isSensitiveTopic, wikiTitleOf } from "./history";
 import { buildDossier, dossierText } from "./dossier";
 import { factCheckScript, FactCheckFailedError } from "./fact-check";
 import type { Dossier } from "./history-types";
@@ -25,6 +25,12 @@ import {
   wordCount,
 } from "./prompts";
 
+
+/** Bộ luật chấm mở đầu theo thể loại của bộ truyện. */
+export function openingCheckFor(s: Pick<Series, "genre">, history: boolean): OpeningCheck {
+  if (history) return HISTORY_OPENING_CHECK;
+  return isLifeStory(s) ? LIFE_OPENING_CHECK : XIANXIA_OPENING_CHECK;
+}
 export async function draftBible(idea: string, genre: string) {
   return textProvider().generateJson({ ...biblePrompt(idea, genre), schema: bibleSchema, temperature: 1, task: "story" });
 }
@@ -97,9 +103,10 @@ export async function writeChapterStep(chapterId: number, mode: WriteMode) {
     // Lưu ngay bản vừa viết: bước chấm phía sau lỗi/bị cắt cũng không mất lượt viết 16k token.
     await save(content);
     // Biên tập viên AI chấm 300 từ đầu ngay lượt đầu — viết lại lúc này rẻ nhất, trước khi tốn các lượt viết tiếp và giọng đọc.
-    // Chuyện đời chấm theo luật riêng (28/11/2026: mở bằng tuổi mất ~60% người xem); lịch sử có soát sự thật riêng nên bỏ qua.
-    if (mode === "start" && shouldPolishOpening() && !history) {
-      const polished = await polishOpening(content, base, ai, isLifeStory(s) ? LIFE_OPENING_CHECK : XIANXIA_OPENING_CHECK);
+    // Mỗi thể loại một bộ luật (28/11/2026: chuyện đời mở bằng tuổi mất ~60% người xem). Lịch sử: viết lại dùng prompt có hồ sơ,
+    // soát sự thật lượt cuối vẫn chạy sau → không lọt chi tiết bịa.
+    if (mode === "start" && shouldPolishOpening()) {
+      const polished = await polishOpening(content, base, ai, openingCheckFor(s, history));
       warning = polished.warning;
       if (polished.content !== content) await save((content = polished.content));
     }
