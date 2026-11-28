@@ -1,6 +1,6 @@
-import { and, asc, eq, lt, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { chapters, series, videos } from "@/db/schema";
+import { chapters, series, videos, type Series } from "@/db/schema";
 import { QuotaExhaustedError } from "@/lib/ai";
 import { escapeHtml, notify, WEB_URL } from "@/lib/notify";
 import { planChapters, writeChapterStep } from "@/lib/story/service";
@@ -8,19 +8,18 @@ import { maxContinues } from "@/lib/story/prompts";
 import { quotaDay } from "@/lib/ai/usage";
 import { aiUsage } from "@/db/schema";
 import { isLifeStory } from "@/lib/story/life";
-import { pickChapterToWrite } from "@/lib/story/history";
+import { HISTORY_GENRE, isHistoryStory, pickChapterToWrite } from "@/lib/story/history";
 import { FactCheckFailedError } from "@/lib/story/fact-check";
 import { loadSecrets } from "@/lib/secrets";
 import { ensureWebsub } from "@/lib/websub";
 import { commentOnPublished } from "./comment";
 import { compileSeries, compileState, seriesRows, withStaleAsFailed } from "./compile";
-import { chaptersToWrite, episodeBacklog, focusChannel, vnDay, writtenMarker } from "./episode-plan";
+import { chaptersToWrite, episodeBacklog, focusChannel, type FocusChannel, vnDay, writtenMarker } from "./episode-plan";
 import { renderVideo } from "./render";
 import { pool } from "./ffmpeg";
 
 /** Số chương chờ duyệt tối đa khi không tự duyệt — tránh viết dồn khi người dùng chưa kịp đọc. */
 const MAX_PENDING = 3;
-
 
 async function writeNext(seriesId: number, targetWords: number): Promise<{ id: number; number: number; title: string; words: number }> {
   const list = await db().select().from(chapters).where(eq(chapters.seriesId, seriesId)).orderBy(asc(chapters.number));
@@ -74,16 +73,35 @@ async function notifyQuotaOnce(message: string) {
   if (mark) await notify(`⏸ Hết lượt AI free hôm nay — tự chạy tiếp khi quota reset (~14–15h).\n${escapeHtml(message.slice(0, 200))}`);
 }
 
+const MINUTES_PER_HOUR = 60;
+const MS_PER_MINUTE = 60_000;
+/** Video kẹt "đang render" im lặng quá ngần này phút coi là chắc chắn kẹt (job bị huỷ/hết giờ giữa chừng). */
+const STUCK_MINUTES = 30;
+/** Video lịch sử dựng tới 4,5 giờ máy — ngưỡng kẹt phải dài hơn hẳn, không thì video đang dựng dở bị requeue giữa chừng. */
+const HISTORY_STUCK_HOURS = 7;
+const HISTORY_STUCK_MINUTES = HISTORY_STUCK_HOURS * MINUTES_PER_HOUR;
+
+/** Video "đang render" im lặng quá ngưỡng (thường/lịch sử) thì coi là kẹt, cần xếp lại hàng đợi. */
+export function isRenderStuck(history: boolean, updatedAt: Date, now = new Date()): boolean {
+  const minutes = (now.getTime() - updatedAt.getTime()) / MS_PER_MINUTE;
+  return minutes >= (history ? HISTORY_STUCK_MINUTES : STUCK_MINUTES);
+}
+
 /**
- * Video kẹt "đang render" (job bị huỷ/hết giờ giữa chừng): render đang chạy có nhịp tim mỗi phút,
- * nên 30 phút im lặng là chắc chắn kẹt → trả về hàng đợi để render lại (phần đã làm nằm trong cache .render).
+ * Video kẹt "đang render" (job bị huỷ/hết giờ giữa chừng): render đang chạy có nhịp tim mỗi phút, nên im lặng
+ * quá ngưỡng là chắc chắn kẹt → trả về hàng đợi để render lại (phần đã làm nằm trong cache .render). Video lịch
+ * sử dựng tới 4,5 giờ nên chờ lâu hơn hẳn trước khi coi là kẹt (xem `isRenderStuck`).
  */
 async function requeueStuck() {
-  const stuck = await db()
-    .update(videos)
-    .set({ status: "queued", updatedAt: new Date() })
-    .where(and(eq(videos.status, "rendering"), lt(videos.updatedAt, new Date(Date.now() - 30 * 60_000)), sql`${videos.meta}->'compilation' is null`))
-    .returning({ id: videos.id });
+  const rendering = await db()
+    .select({ id: videos.id, updatedAt: videos.updatedAt, genre: series.genre })
+    .from(videos)
+    .innerJoin(chapters, eq(chapters.id, videos.chapterId))
+    .innerJoin(series, eq(series.id, chapters.seriesId))
+    .where(and(eq(videos.status, "rendering"), sql`${videos.meta}->'compilation' is null`));
+  const ids = rendering.filter((v) => isRenderStuck(isHistoryStory(v), v.updatedAt)).map((v) => v.id);
+  if (!ids.length) return;
+  const stuck = await db().update(videos).set({ status: "queued", updatedAt: new Date() }).where(inArray(videos.id, ids)).returning({ id: videos.id });
   for (const v of stuck) console.log(`↻ Video #${v.id} kẹt "đang render" — xếp hàng render lại`);
 }
 
@@ -93,22 +111,34 @@ const RENDER_PARALLEL = Math.max(1, Number(process.env.RENDER_PARALLEL ?? 2));
 /** Tiến độ của lượt này: có làm được gì và có đụng trần quota không — quyết định có tự gọi lượt kế tiếp (chainNextRun). */
 const run = { rendered: 0, written: 0, quotaHit: false };
 
+/** Một video chờ render trong hàng đợi chung (không gồm lịch sử — `historyauto` lo trọn vòng riêng). */
+export type RenderQueueRow = { id: number; channel: string; genre: string };
+
+/**
+ * Thứ tự hàng đợi render: kênh phụ (đang ưu tiên) trước kênh gốc, cùng kênh theo thứ tự id; video lịch sử
+ * không vào đây (dựng bằng `renderVideo` chung là sai pipeline); ngày kênh lịch sử thì chuyện đời cũng
+ * nhường lượt vẽ ảnh, chỉ render tay mới chạy.
+ */
+export function renderQueueOrder(rows: RenderQueueRow[], focus: FocusChannel): RenderQueueRow[] {
+  return rows
+    .filter((v) => !isHistoryStory(v))
+    .filter((v) => v.channel !== "chuyen-doi" || focus === "chuyen-doi")
+    .sort((a, b) => Number(a.channel === "main") - Number(b.channel === "main") || a.id - b.id);
+}
+
 async function renderQueue(failures: string[]) {
   await requeueStuck();
-  // Video của kênh phụ (đang được ưu tiên) render trước, trong cùng kênh thì theo thứ tự id.
   // Bộ truyện tắt autopilot (kênh gốc tạm dừng 18/11/2026) không render tự động — dồn giọng/ảnh cho kênh đang chạy; render tay vẫn được.
-  const queue = (
+  const queue = renderQueueOrder(
     await db()
-      .select({ id: videos.id, channel: series.channel })
+      .select({ id: videos.id, channel: series.channel, genre: series.genre })
       .from(videos)
       .innerJoin(chapters, eq(chapters.id, videos.chapterId))
       .innerJoin(series, eq(series.id, chapters.seriesId))
       .where(and(eq(videos.status, "queued"), eq(series.autopilot, true)))
-      .orderBy(asc(videos.id))
-  )
-    .sort((a, b) => Number(a.channel === "main") - Number(b.channel === "main") || a.id - b.id)
-    // Ngày lịch sử: không render tự động video chuyện đời — dành lượt vẽ ảnh cho kênh lịch sử (render tay vẫn được).
-    .filter((v) => v.channel !== "chuyen-doi" || focusChannel() === "chuyen-doi");
+      .orderBy(asc(videos.id)),
+    focusChannel(),
+  );
   if (focusChannel() === "lich-su") console.log("  Hôm nay là ngày kênh lịch sử — tạm không render video chuyện đời");
   let quota: string | null = null;
   // Nhiều luồng: RENDER_PARALLEL chương cùng lúc; hết quota thì không bắt đầu chương mới (chương đang chạy tự dừng ở quota).
@@ -155,7 +185,8 @@ async function dispatchCompile(seriesId: number) {
 async function dispatchCompilations() {
   for (const s of await db().select().from(series).where(eq(series.autopilot, true))) {
     // Chuyện đời: mỗi truyện đăng riêng — gộp 5 truyện khác nhau thành 1 video là vô nghĩa.
-    if (isLifeStory(s)) continue;
+    // Lịch sử: mỗi video đã trọn một sự kiện, tự đăng qua historyAuto — gộp bằng renderVideo chung là sai pipeline.
+    if (isLifeStory(s) || isHistoryStory(s)) continue;
     const { active, recentFailed, batch } = await compileState(s);
     if (!batch) continue;
     if (active || recentFailed) {
@@ -177,6 +208,56 @@ async function dispatchCompilations() {
       const [mark] = await db().insert(aiUsage).values({ day: quotaDay(), model: `_notified_compile_${s.id}`, calls: 1 }).onConflictDoNothing().returning();
       if (mark) await notify(`⚠️ Đủ chương để gộp <b>${escapeHtml(s.title)}</b> (${range}) nhưng không tự kích hoạt được: ${escapeHtml(msg)}\nChạy tay: render.yml với video_id = compile:${s.id}`);
     }
+  }
+}
+
+/** Kho video lịch sử chờ đăng (status "ready") trước khi ngưng dispatch dựng thêm — mỗi lượt dựng tới 4,5 giờ, không cần tích nhiều. */
+const HISTORY_BUFFER = 2;
+
+/** Trạng thái hàng chờ dựng của một bộ lịch sử: đang có video nào dựng không, và đã có bao nhiêu video chờ đăng. */
+export type HistoryQueueState = { hasRendering: boolean; readyCount: number };
+
+/** Có nên dispatch dựng video lịch sử kế tiếp không: không đang dựng VÀ kho chờ đăng chưa đủ. */
+export function shouldDispatchHistoryAuto(state: HistoryQueueState, buffer = HISTORY_BUFFER): boolean {
+  return !state.hasRendering && state.readyCount < buffer;
+}
+
+/** Dispatch render.yml "historyauto:<seriesId>" (job riêng — dựng tới 4,5 giờ, không chặn hàng đợi daily). Lỗi chỉ báo, không làm hỏng job. */
+async function dispatchHistoryAuto(seriesId: number) {
+  const token = process.env.GH_TOKEN;
+  const repo = process.env.GITHUB_REPOSITORY ?? process.env.GH_REPO;
+  if (!token || !repo) {
+    console.log(`  Bộ lịch sử #${seriesId}: thiếu quyền actions:write — bỏ qua, chạy tay "historyauto:${seriesId}"`);
+    return;
+  }
+  const res = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/render.yml/dispatches`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" },
+    body: JSON.stringify({ ref: "main", inputs: { video_id: `historyauto:${seriesId}` } }),
+  }).catch((e) => ({ ok: false, status: String(e) }) as const);
+  if (!res.ok) console.log(`  Bộ lịch sử #${seriesId}: dispatch lỗi ${res.status}`);
+}
+
+/**
+ * Ngày kênh lịch sử (focusChannel): mỗi bộ lịch sử đang tự chạy dispatch job riêng dựng video kế tiếp nếu chưa đủ
+ * kho chờ đăng và chưa có video nào đang dựng — dựng tới 4,5 giờ nên không chạy trong job daily (chặn hàng đợi,
+ * dễ chạm trần 355 phút). Lỗi dispatch chỉ báo, không làm hỏng job.
+ */
+async function dispatchHistoryJobs() {
+  for (const s of await db().select().from(series).where(and(eq(series.autopilot, true), eq(series.genre, HISTORY_GENRE)))) {
+    const rows = await db()
+      .select({ status: videos.status })
+      .from(videos)
+      .innerJoin(chapters, eq(chapters.id, videos.chapterId))
+      .where(eq(chapters.seriesId, s.id));
+    const hasRendering = rows.some((v) => v.status === "rendering");
+    const readyCount = rows.filter((v) => v.status === "ready").length;
+    if (!shouldDispatchHistoryAuto({ hasRendering, readyCount })) {
+      console.log(`  ${s.title}: ${hasRendering ? "đang có video dựng" : `đủ kho chờ đăng (${readyCount}/${HISTORY_BUFFER})`} — chưa dispatch thêm`);
+      continue;
+    }
+    console.log(`🎬 ${s.title}: dispatch dựng video lịch sử kế tiếp (historyauto:${s.id})`);
+    await dispatchHistoryAuto(s.id);
   }
 }
 
@@ -217,24 +298,11 @@ async function scanTrendsDaily() {
 /** Số video chương làm sẵn chờ đăng (mỗi ngày đăng 1 lúc 15h). */
 const BUFFER = 3;
 
-async function main() {
-  await loadSecrets(true);
-  // Webhook YouTube (đổi tiêu đề/mô tả → app kéo về ngay): gia hạn khi sắp hết hạn. Lỗi không chặn daily.
-  await ensureWebsub()
-    .then((r) => console.log(`WebSub: ${r}`))
-    .catch((e) => console.warn("⚠ WebSub:", e instanceof Error ? e.message : e));
-  const failures: string[] = [];
-  let quotaLeft = true;
-  const autopilot = (await db().select().from(series).where(eq(series.autopilot, true))).sort((a, b) => a.id - b.id);
-  // Kênh phụ (Chuyện Đời Lắng Đọng) đang được ưu tiên: viết chương của nó TRƯỚC khi render hàng đợi — hàng đợi kênh gốc
-  // có thể dài nhiều giờ (giọng đọc free) nên viết sau thì cả ngày kênh mới không có truyện.
-  await writeSeries(autopilot.filter((s) => s.channel !== "main"));
-  await renderQueue(failures);
-  // Bình luận kêu gọi thích/chia sẻ/đăng ký cho video ĐÃ tới giờ phát (video lên lịch còn private thì YouTube không nhận bình luận).
-  await commentOnPublished().catch((e) => console.warn("⚠ Bình luận kêu gọi:", e instanceof Error ? e.message : e));
-  await writeSeries(autopilot.filter((s) => s.channel === "main"));
-
-  async function writeSeries(list: typeof autopilot) {
+/**
+ * Viết chương cho từng bộ trong `list` tới khi đủ chỉ tiêu ngày; dừng sớm cả danh sách khi hết quota AI free.
+ * Trả `quotaLeft` mới (false = các lượt gọi `writeSeries` sau trong cùng lượt daily cũng nên dừng).
+ */
+async function writeSeries(list: Series[], failures: string[], quotaLeft: boolean): Promise<boolean> {
   for (const s of list) {
     if (!quotaLeft) break;
     console.log(`▶ ${s.title}`);
@@ -295,7 +363,28 @@ async function main() {
       if (await reportWriteError(e, s.title, failures)) quotaLeft = false;
     }
   }
-  }
+  return quotaLeft;
+}
+
+async function main() {
+  await loadSecrets(true);
+  // Webhook YouTube (đổi tiêu đề/mô tả → app kéo về ngay): gia hạn khi sắp hết hạn. Lỗi không chặn daily.
+  await ensureWebsub()
+    .then((r) => console.log(`WebSub: ${r}`))
+    .catch((e) => console.warn("⚠ WebSub:", e instanceof Error ? e.message : e));
+  const failures: string[] = [];
+  let quotaLeft = true;
+  // Lịch sử tự chạy trọn vòng riêng (historyAuto, dispatch job riêng ở dưới) — không viết/duyệt/render qua writeSeries/renderQueue.
+  const autopilot = (await db().select().from(series).where(eq(series.autopilot, true))).filter((s) => !isHistoryStory(s)).sort((a, b) => a.id - b.id);
+  // Kênh phụ (Chuyện Đời Lắng Đọng) đang được ưu tiên: viết chương của nó TRƯỚC khi render hàng đợi — hàng đợi kênh gốc
+  // có thể dài nhiều giờ (giọng đọc free) nên viết sau thì cả ngày kênh mới không có truyện.
+  quotaLeft = await writeSeries(autopilot.filter((s) => s.channel !== "main"), failures, quotaLeft);
+  await renderQueue(failures);
+  // Ngày kênh lịch sử: dispatch job riêng dựng tiếp (dựng tới 4,5 giờ, không chạy trong job này). Lỗi chỉ báo.
+  if (focusChannel() === "lich-su") await dispatchHistoryJobs().catch((e) => failures.push(`dispatch lịch sử: ${e instanceof Error ? e.message : e}`));
+  // Bình luận kêu gọi thích/chia sẻ/đăng ký cho video ĐÃ tới giờ phát (video lên lịch còn private thì YouTube không nhận bình luận).
+  await commentOnPublished().catch((e) => console.warn("⚠ Bình luận kêu gọi:", e instanceof Error ? e.message : e));
+  quotaLeft = await writeSeries(autopilot.filter((s) => s.channel === "main"), failures, quotaLeft);
 
   await renderQueue(failures);
   // Xu hướng YouTube: tối đa 1 lần/ngày; lỗi không làm hỏng job.
@@ -315,4 +404,5 @@ async function main() {
   }
 }
 
-main().then(() => process.exit(0));
+// CLI: tsx pipeline/daily.ts — chạy main() thật; import module này (test) không tự chạy job.
+if (process.argv[1]?.endsWith("daily.ts")) main().then(() => process.exit(0));

@@ -68,7 +68,7 @@ export async function newLifeSeries(channel = "chuyen-doi") {
 
 /**
  * Kênh lịch sử (CLI: render.ts "newhistory" hoặc "newhistory:<khoá kênh>"): 1 bộ = cả kênh, mỗi chương một video tài liệu độc lập,
- * nạp sẵn 20 đề tài. autopilot TẮT cho tới khi phần dựng hình (Kế hoạch 3) xong — viết kịch bản bằng "historyscript:<id>".
+ * nạp sẵn 20 đề tài, bật tự chạy ngay (daily.ts dispatch "historyauto:<id>" vào ngày kênh lịch sử — xem history-script.ts).
  */
 export async function newHistorySeries(channel = "lich-su") {
   if (!/^[a-z0-9-]{1,24}$/.test(channel)) throw new Error(`Khoá kênh không hợp lệ: ${channel}`);
@@ -82,7 +82,7 @@ export async function newHistorySeries(channel = "lich-su") {
     .insert(series)
     .values({
       title: "Sử Ký Kể Chuyện", genre: HISTORY_GENRE, premise: HISTORY_PREMISE, bible: HISTORY_BIBLE, style: HISTORY_STYLE, channel,
-      targetWords: HISTORY_TARGET_WORDS, autopilot: false, autoApprove: true, chaptersPerDay: 1, episodeChapters: 0,
+      targetWords: HISTORY_TARGET_WORDS, autopilot: true, autoApprove: true, chaptersPerDay: 1, episodeChapters: 0,
       makeShort: false, autoPublish: true,
     })
     .returning({ id: series.id });
@@ -90,7 +90,7 @@ export async function newHistorySeries(channel = "lich-su") {
     .insert(chapters)
     .values(HISTORY_PILOT.map((t, i) => ({ seriesId: row.id, number: i + 1, title: t.title, outline: topicOutline(t) })));
   console.log(`✔ #${row.id} Sử Ký Kể Chuyện (kênh ${channel}) + ${HISTORY_PILOT.length} đề tài`);
-  await notify(`🆕 Kênh <b>Sử Ký Kể Chuyện</b> — bộ #${row.id}, đã nạp ${HISTORY_PILOT.length} đề tài (chưa tự chạy, chờ phần dựng hình).`);
+  await notify(`🆕 Kênh <b>Sử Ký Kể Chuyện</b> — bộ #${row.id}, đã nạp ${HISTORY_PILOT.length} đề tài, bật tự chạy (daily tự viết/dựng/đăng vào ngày kênh lịch sử).`);
   await listSeries();
 }
 
@@ -126,6 +126,8 @@ export function seriesCommand(arg: string): Promise<unknown> | null {
   // Soát lại kịch bản lịch sử (sau khi chủ kênh sửa tay đoạn sai) rồi chốt — đạt thì gỡ cờ "chờ sửa".
   if (arg.startsWith("historyvideo:")) return import("./history-script").then((x) => x.buildHistoryVideo(Number(arg.slice(13))));
   if (arg.startsWith("factcheck:")) return import("./history-script").then((x) => x.recheckHistoryScript(Number(arg.slice(10))));
+  // Trọn vòng tự chạy kênh lịch sử: dựng lại video cũ chưa lên YouTube, hết thì viết đề tài mới rồi dựng — daily.ts dispatch lệnh này.
+  if (arg.startsWith("historyauto:")) return import("./history-script").then((x) => x.historyAuto(Number(arg.slice(12))));
   if (arg.startsWith("pov:")) return firstPerson(arg.slice(4).split(",").map(Number));
   if (arg === "series") return listSeries();
   return null;

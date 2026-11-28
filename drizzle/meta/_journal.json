@@ -78,6 +78,13 @@
       "when": 1795853631020,
       "tag": "0010_id_floor",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1795865035309,
+      "tag": "0011_history_autopilot",
+      "breakpoints": true
     }
   ]
 }

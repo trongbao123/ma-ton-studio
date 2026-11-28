@@ -13,7 +13,7 @@ import { HISTORY_IVOI_VOICE, HISTORY_TEMPO } from "@/lib/story/history";
 import { directScript, scenesToShots, type Shot } from "@/lib/story/storyboard";
 import { duration, ffmpeg, ffmpegLog, memoizeAsync, pool } from "./ffmpeg";
 import { ensureRelease, fitForRelease, uploadAsset } from "./release";
-import { historyAudioArgs } from "./history-audio";
+import { historyAudioArgs, musicPlan } from "./history-audio";
 import { coldOpenShots, renderColdOpen } from "./history-coldopen";
 import { narrate } from "./render";
 import { artCredits, pickArtwork, renderArtScene, type ArtImage } from "./scene-art";
@@ -212,9 +212,10 @@ async function keepVideo(videoId: number, file: string, seconds: number, problem
 /**
  * Dựng trọn video lịch sử cho `videoId`: giọng đọc → Claude đạo diễn → dựng từng cảnh (tự lùi cấp) →
  * mở đầu trailer → nối, đốt phụ đề, trộn tiếng → soát QC → cất vào release. Không đạt QC thì vẫn cất
- * file lại nhưng ném HistoryQcError (không đăng).
+ * file lại nhưng ném HistoryQcError (không đăng). `images`/`musicFiles`: để bên gọi (historyauto) ghi công
+ * và chọn ảnh thumbnail — không phải vẽ lại hay tính lại gì ở đây.
  */
-export async function renderHistoryVideo(videoId: number): Promise<{ file: string; credits: string; seconds: number }> {
+export async function renderHistoryVideo(videoId: number): Promise<{ file: string; credits: string; seconds: number; images: ArtImage[]; musicFiles: string[] }> {
   await loadSecrets(true);
   const [row] = await db()
     .select({ chapter: chapters })
@@ -285,5 +286,6 @@ export async function renderHistoryVideo(videoId: number): Promise<{ file: strin
   await keepVideo(videoId, file, measured, problems);
   if (problems.length) throw new HistoryQcError(problems);
   log(`Video xong: ${measured.toFixed(0)} giây`);
-  return { file, credits: artCredits(images), seconds: measured };
+  const musicFiles = [...new Set(musicPlan(shots).map((segment) => segment.file))];
+  return { file, credits: artCredits(images), seconds: measured, images, musicFiles };
 }
