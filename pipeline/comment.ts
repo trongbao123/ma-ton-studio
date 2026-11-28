@@ -22,12 +22,29 @@ export const COMMENT_MAX = 10_000;
 /** Short đăng sau video dài 2 tiếng (publishToYoutube) — bình luận cũng phải đợi tới lúc đó. */
 export const SHORT_DELAY_MS = 2 * 3600_000;
 
+export type CtaCommentInput = {
+  seriesTitle: string; episodeNo?: number; playlistUrl: string | null; channelUrl: string; publishHour: string; short?: boolean; cadence?: string; history?: boolean;
+};
+
 /**
  * Nội dung bình luận: lời kêu gọi + link trọn bộ + link đăng ký. Thiếu playlist thì bỏ hẳn dòng đó.
  * `short`: bản gọn cho Short — người lướt Shorts không đọc đoạn dài.
+ * `cadence`: có = kênh truyện độc lập (chuyện đời/lịch sử) — nhịp đăng lấy từ hồ sơ kênh.
+ * `history`: true = kênh lịch sử — câu chữ "phim tài liệu" (hỏi sự kiện/nhân vật muốn xem tiếp), KHÔNG dùng
+ * câu "câu chuyện"/"chạm lòng" của kênh chuyện đời (phim tài liệu không phải chuyện kể đời tư).
  */
-/** `cadence`: có = kênh truyện độc lập (chuyện đời) — câu chữ theo "câu chuyện", nhịp đăng lấy từ hồ sơ kênh. */
-export function ctaComment(o: { seriesTitle: string; episodeNo?: number; playlistUrl: string | null; channelUrl: string; publishHour: string; short?: boolean; cadence?: string }): string {
+export function ctaComment(o: CtaCommentInput): string {
+  if (o.history) {
+    const lines = o.short
+      ? [`Thấy hay thì THÍCH · CHIA SẺ giúp kênh nhé 🙏`, ...(o.playlistUrl ? [`📜 Xem thêm video lịch sử khác: ${o.playlistUrl}`] : []), `🔔 ĐĂNG KÝ — ${o.cadence}: ${o.channelUrl}?sub_confirmation=1`]
+      : [
+          `Nếu video này hay, để lại một lượt THÍCH và CHIA SẺ giúp kênh nhé 🙏`,
+          `Bạn muốn xem tiếp sự kiện hay nhân vật lịch sử nào? Để lại dưới bình luận nhé.`,
+          ...(o.playlistUrl ? [`📜 Xem thêm video lịch sử khác: ${o.playlistUrl}`] : []),
+          `🔔 ĐĂNG KÝ kênh để không lỡ ${o.cadence}: ${o.channelUrl}?sub_confirmation=1`,
+        ];
+    return noAngle(lines.join("\n")).slice(0, COMMENT_MAX);
+  }
   if (o.cadence) {
     const lines = o.short
       ? [`Thấy chạm lòng thì THÍCH · CHIA SẺ giúp kênh nhé 🙏`, ...(o.playlistUrl ? [`📜 Nghe trọn câu chuyện: ${o.playlistUrl}`] : []), `🔔 ĐĂNG KÝ — ${o.cadence}: ${o.channelUrl}?sub_confirmation=1`]
@@ -126,7 +143,7 @@ export async function commentOnPublished(now = new Date()): Promise<void> {
         playlistUrl: pl ? playlistUrl(pl) : null,
         channelUrl: acc.url,
         publishHour: `${PUBLISH_HOUR_UTC + 7}h`,
-        ...(r.channel !== "main" ? { cadence: channelProfile(r.channel).cadence } : {}),
+        ...(r.channel !== "main" ? { cadence: channelProfile(r.channel).cadence, history: r.channel === "lich-su" } : {}),
         short: t.kind === "short",
       });
       const err = await postComment(token, t.youtubeId, text);

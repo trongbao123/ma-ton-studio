@@ -15,6 +15,7 @@ import { ensureWebsub } from "@/lib/websub";
 import { commentOnPublished } from "./comment";
 import { compileSeries, compileState, seriesRows, withStaleAsFailed } from "./compile";
 import { chaptersToWrite, episodeBacklog, focusChannel, type FocusChannel, vnDay, writtenMarker } from "./episode-plan";
+import { countHistoryBacklog, HISTORY_BUFFER } from "./history-script";
 import { renderVideo } from "./render";
 import { pool } from "./ffmpeg";
 
@@ -101,7 +102,12 @@ async function requeueStuck() {
     .where(and(eq(videos.status, "rendering"), sql`${videos.meta}->'compilation' is null`));
   const ids = rendering.filter((v) => isRenderStuck(isHistoryStory(v), v.updatedAt)).map((v) => v.id);
   if (!ids.length) return;
-  const stuck = await db().update(videos).set({ status: "queued", updatedAt: new Date() }).where(inArray(videos.id, ids)).returning({ id: videos.id });
+  // Chốt lại điều kiện "còn đang render" trong chính câu UPDATE — giữa lúc SELECT và UPDATE, job kia có thể vừa xong.
+  const stuck = await db()
+    .update(videos)
+    .set({ status: "queued", updatedAt: new Date() })
+    .where(and(inArray(videos.id, ids), eq(videos.status, "rendering")))
+    .returning({ id: videos.id });
   for (const v of stuck) console.log(`↻ Video #${v.id} kẹt "đang render" — xếp hàng render lại`);
 }
 
@@ -211,15 +217,14 @@ async function dispatchCompilations() {
   }
 }
 
-/** Kho video lịch sử chờ đăng (status "ready") trước khi ngưng dispatch dựng thêm — mỗi lượt dựng tới 4,5 giờ, không cần tích nhiều. */
-const HISTORY_BUFFER = 2;
-
-/** Trạng thái hàng chờ dựng của một bộ lịch sử: đang có video nào dựng không, và đã có bao nhiêu video chờ đăng. */
-export type HistoryQueueState = { hasRendering: boolean; readyCount: number };
-
-/** Có nên dispatch dựng video lịch sử kế tiếp không: không đang dựng VÀ kho chờ đăng chưa đủ. */
-export function shouldDispatchHistoryAuto(state: HistoryQueueState, buffer = HISTORY_BUFFER): boolean {
-  return !state.hasRendering && state.readyCount < buffer;
+/**
+ * Có nên dispatch job lịch sử kế tiếp không — kho (đếm bằng `countHistoryBacklog`, mọi trạng thái chưa phát
+ * xong, KHÔNG phải riêng "ready") chưa đủ `HISTORY_BUFFER`. `historyAuto` tự quyết việc cụ thể (hoàn tất/dựng/
+ * viết đề tài mới) nên dispatch dư (vd lúc đang có video rendering) chỉ tốn nhiều nhất một lượt viết đề tài mới,
+ * không bao giờ dựng trùng.
+ */
+export function shouldDispatchHistoryAuto(backlogCount: number, buffer = HISTORY_BUFFER): boolean {
+  return backlogCount < buffer;
 }
 
 /** Dispatch render.yml "historyauto:<seriesId>" (job riêng — dựng tới 4,5 giờ, không chặn hàng đợi daily). Lỗi chỉ báo, không làm hỏng job. */
@@ -239,24 +244,22 @@ async function dispatchHistoryAuto(seriesId: number) {
 }
 
 /**
- * Ngày kênh lịch sử (focusChannel): mỗi bộ lịch sử đang tự chạy dispatch job riêng dựng video kế tiếp nếu chưa đủ
- * kho chờ đăng và chưa có video nào đang dựng — dựng tới 4,5 giờ nên không chạy trong job daily (chặn hàng đợi,
- * dễ chạm trần 355 phút). Lỗi dispatch chỉ báo, không làm hỏng job.
+ * Ngày kênh lịch sử (focusChannel): mỗi bộ lịch sử đang tự chạy dispatch job riêng nếu chưa đủ kho — dựng tới
+ * 4,5 giờ nên không chạy trong job daily (chặn hàng đợi, dễ chạm trần 355 phút). Lỗi dispatch chỉ báo, không làm hỏng job.
  */
 async function dispatchHistoryJobs() {
   for (const s of await db().select().from(series).where(and(eq(series.autopilot, true), eq(series.genre, HISTORY_GENRE)))) {
     const rows = await db()
-      .select({ status: videos.status })
+      .select({ status: videos.status, publishAt: videos.publishAt, meta: videos.meta })
       .from(videos)
       .innerJoin(chapters, eq(chapters.id, videos.chapterId))
       .where(eq(chapters.seriesId, s.id));
-    const hasRendering = rows.some((v) => v.status === "rendering");
-    const readyCount = rows.filter((v) => v.status === "ready").length;
-    if (!shouldDispatchHistoryAuto({ hasRendering, readyCount })) {
-      console.log(`  ${s.title}: ${hasRendering ? "đang có video dựng" : `đủ kho chờ đăng (${readyCount}/${HISTORY_BUFFER})`} — chưa dispatch thêm`);
+    const backlog = countHistoryBacklog(rows);
+    if (!shouldDispatchHistoryAuto(backlog)) {
+      console.log(`  ${s.title}: đủ kho (${backlog}/${HISTORY_BUFFER}) — chưa dispatch thêm`);
       continue;
     }
-    console.log(`🎬 ${s.title}: dispatch dựng video lịch sử kế tiếp (historyauto:${s.id})`);
+    console.log(`🎬 ${s.title}: dispatch historyauto:${s.id} (kho ${backlog}/${HISTORY_BUFFER})`);
     await dispatchHistoryAuto(s.id);
   }
 }

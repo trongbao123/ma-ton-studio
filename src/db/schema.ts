@@ -91,6 +91,12 @@ export type VideoMeta = {
   commentedAt?: string;
   /** Như trên nhưng cho Short của row này (Short phát sau video dài 2 tiếng nên bình luận cũng muộn hơn). */
   shortCommentedAt?: string;
+  /**
+   * Lịch sử: ghi công ảnh/nhạc đã dùng lúc dựng (không kèm đường file — chỉ nằm trên máy chạy job dựng, mất khi
+   * job đó xong). historyAuto đọc lại trường này để hoàn tất (meta + thumbnail + đăng) một video đã dựng xong
+   * ở lượt job trước mà chưa đăng được (vd hết quota AI lúc tạo tiêu đề/mô tả) — không phải dựng lại từ đầu.
+   */
+  historyCredits?: { images: { title: string; url: string; license: string; artist: string; synthetic: boolean }[]; musicFiles: string[] };
 };
 
 /** Một lần render cho một chương: video dài + 1 Short + thumbnail, lưu ở GitHub Release `video-<id>`. */

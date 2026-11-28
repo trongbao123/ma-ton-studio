@@ -1,6 +1,7 @@
 // Tiêu đề/mô tả/thumbnail cho video kênh lịch sử (historyauto gọi sau khi dựng đạt QC). AI chỉ viết phần tò mò
-// (tiêu đề, mô tả tóm tắt, tag, chữ thumbnail) — nguồn Wikipedia + ghi công ảnh Commons + ghi công nhạc do CODE
-// tự nối vào cuối mô tả, không để AI tự bịa đường dẫn hay giấy phép.
+// (tiêu đề, mô tả tóm tắt, tag, chữ thumbnail) — nguồn Wikipedia + ghi công nhạc (CC BY bắt buộc) + ghi công ảnh
+// Commons do CODE tự nối vào cuối mô tả, không để AI tự bịa đường dẫn hay giấy phép. YouTube giới hạn mô tả 5000
+// BYTE (không phải ký tự) — cắt theo Buffer.byteLength để tiếng Việt có dấu (nhiều byte/ký tự) không vượt trần.
 import { z } from "zod";
 import type { Chapter, Series, VideoMeta } from "@/db/schema";
 import { textProvider } from "@/lib/ai";
@@ -24,18 +25,74 @@ export const historyMetaSchema = z.object({
 
 export type HistoryMetaInput = { series: Series; chapter: Chapter; images: ArtImage[]; musicFiles: string[] };
 
-/** Dòng "Wikipedia: <tiêu đề>" + ghi công ảnh Commons + ghi công nhạc — nối sau phần AI viết, không do AI tạo ra. */
-export function historySourcesBlock({ chapter, images, musicFiles }: HistoryMetaInput): string {
-  const wiki = wikiTitleOf(chapter.outline);
-  const wikiLine = wiki ? `Nguồn tư liệu: Wikipedia — "${wiki}"` : "";
-  const artLine = artCredits(images);
-  const musicLine = musicFiles.length ? lifeMusicCredit(musicFiles) : "";
-  return [wikiLine, artLine, musicLine].filter(Boolean).join("\n\n");
+/** Trần mô tả thật của YouTube (byte, không phải ký tự). */
+const YOUTUBE_DESCRIPTION_BYTE_LIMIT = 5000;
+/** Chừa biên dưới trần YouTube cho sai số đo — không bao giờ cố lấp đầy sát trần. */
+const DESCRIPTION_BYTE_MARGIN = 100;
+const DESCRIPTION_BYTE_BUDGET = YOUTUBE_DESCRIPTION_BYTE_LIMIT - DESCRIPTION_BYTE_MARGIN;
+/** Bytes của dấu nối "\n\n" giữa 2 khối khi ghép mô tả. */
+const BLOCK_SEPARATOR_BYTES = 2;
+
+/** Cắt chuỗi còn ≤ `maxBytes` byte UTF-8 — slice theo SỐ KÝ TỰ không đủ an toàn vì ký tự tiếng Việt có dấu chiếm 2-3 byte. */
+export function truncateToBytes(text: string, maxBytes: number): string {
+  if (maxBytes <= 0) return "";
+  if (Buffer.byteLength(text, "utf8") <= maxBytes) return text;
+  let end = text.length;
+  while (end > 0 && Buffer.byteLength(text.slice(0, end), "utf8") > maxBytes) end--;
+  return text.slice(0, end);
+}
+
+/** Bỏ ảnh trùng trước khi ghi công — storyboard cắt một cảnh thành nhiều shot nên nhiều shot hay dùng lại cùng một ảnh. */
+export function dedupeArtImages(images: ArtImage[]): ArtImage[] {
+  const seen = new Set<string>();
+  return images.filter((image) => {
+    const key = `${image.title}|${image.url}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * Khối ghi công ảnh (dùng lại `artCredits` của scene-art.ts cho đúng khuôn dòng/giấy phép), khử trùng rồi bớt dần
+ * số ảnh liệt kê cho vừa `maxBytes`, thêm dòng "… và N ảnh khác" khi phải cắt — danh sách đầy đủ (mỗi shot một
+ * dòng, có thể hàng trăm dòng do storyboard cắt nhỏ cảnh) dễ vượt trần mô tả. Giữ 1 ảnh AI (nếu có) trong mọi lượt
+ * gọi `artCredits` chỉ để không mất dòng "Minh họa" — ảnh AI không có dòng ghi công riêng.
+ */
+export function artCreditBlock(images: ArtImage[], maxBytes: number): string {
+  const deduped = dedupeArtImages(images);
+  const real = deduped.filter((image) => !image.synthetic);
+  const syntheticSample = deduped.filter((image) => image.synthetic).slice(0, 1);
+  for (let kept = real.length; kept >= 0; kept--) {
+    const omitted = real.length - kept;
+    const block = artCredits([...real.slice(0, kept), ...syntheticSample]);
+    const tail = omitted ? `\n… và ${omitted} ảnh khác (xem nguồn Wikimedia Commons).` : "";
+    const full = `${block}${tail}`.trim();
+    if (!full || Buffer.byteLength(full, "utf8") <= maxBytes) return full;
+  }
+  return "";
+}
+
+/**
+ * Mô tả cuối: tóm tắt của AI + nguồn Wikipedia → ghi công nhạc (CC BY bắt buộc, không bao giờ cắt) → ghi công
+ * ảnh (cắt theo ngân sách byte còn lại) — tổng luôn ≤ `DESCRIPTION_BYTE_BUDGET` byte.
+ */
+export function buildHistoryDescription(aiDescription: string, video: Pick<HistoryMetaInput, "chapter" | "images" | "musicFiles">): string {
+  const wikiTitle = wikiTitleOf(video.chapter.outline);
+  const wikiLine = wikiTitle ? `Nguồn tư liệu: Wikipedia — "${wikiTitle}"` : "";
+  const musicLine = video.musicFiles.length ? lifeMusicCredit(video.musicFiles) : "";
+  const mandatory = [wikiLine, musicLine].filter(Boolean).join("\n\n");
+  const mandatoryBytes = mandatory ? Buffer.byteLength(mandatory, "utf8") + BLOCK_SEPARATOR_BYTES : 0;
+  const summary = truncateToBytes(aiDescription, Math.max(0, DESCRIPTION_BYTE_BUDGET - mandatoryBytes));
+  const withoutArt = [summary, wikiLine, musicLine].filter(Boolean).join("\n\n");
+  const artBudget = DESCRIPTION_BYTE_BUDGET - Buffer.byteLength(withoutArt, "utf8") - BLOCK_SEPARATOR_BYTES;
+  const artBlock = artBudget > 0 ? artCreditBlock(video.images, artBudget) : "";
+  return [summary, wikiLine, musicLine, artBlock].filter(Boolean).join("\n\n");
 }
 
 /** Tiêu đề/mô tả/tag/chữ thumbnail cho video lịch sử vừa dựng đạt QC; `shortTitle`/`shortDescription` rỗng (kênh không làm Short). */
-export async function historyVideoMeta(meta: HistoryMetaInput): Promise<VideoMeta> {
-  const { series: s, chapter: c } = meta;
+export async function historyVideoMeta(video: HistoryMetaInput): Promise<VideoMeta> {
+  const { series: s, chapter: c } = video;
   const draft = await textProvider().generateJson({
     system: HISTORY_META_SYSTEM,
     prompt: `Kênh: ${s.title}\nĐề tài: ${c.title}\n\nKịch bản:\n${c.content}`,
@@ -44,10 +101,9 @@ export async function historyVideoMeta(meta: HistoryMetaInput): Promise<VideoMet
     tier: "quality",
     task: "meta",
   });
-  const sources = historySourcesBlock(meta);
   return {
     title: draft.title,
-    description: sources ? `${draft.description}\n\n${sources}` : draft.description,
+    description: buildHistoryDescription(draft.description, video),
     tags: draft.tags,
     shortTitle: "",
     shortDescription: "",

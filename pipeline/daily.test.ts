@@ -44,16 +44,14 @@ describe("video kẹt 'đang render' quá lâu (job bị huỷ/hết giờ giữ
   });
 });
 
-describe("daily có nên dispatch dựng video lịch sử kế tiếp không", () => {
-  it("đang có video dựng → không dispatch thêm (chống chạy trùng)", () => {
-    expect(shouldDispatchHistoryAuto({ hasRendering: true, readyCount: 0 })).toBe(false);
+describe("daily có nên dispatch job lịch sử kế tiếp không — đếm bằng countHistoryBacklog, không phải status 'ready'", () => {
+  it("kho chưa đủ → dispatch", () => {
+    expect(shouldDispatchHistoryAuto(0, 2)).toBe(true);
+    expect(shouldDispatchHistoryAuto(1, 2)).toBe(true);
   });
 
-  it("không có video dựng và kho chờ đăng chưa đủ → dispatch", () => {
-    expect(shouldDispatchHistoryAuto({ hasRendering: false, readyCount: 0 }, 2)).toBe(true);
-  });
-
-  it("kho chờ đăng đã đủ → không dispatch thêm", () => {
-    expect(shouldDispatchHistoryAuto({ hasRendering: false, readyCount: 2 }, 2)).toBe(false);
+  it("kho đã đủ → không dispatch thêm", () => {
+    expect(shouldDispatchHistoryAuto(2, 2)).toBe(false);
+    expect(shouldDispatchHistoryAuto(3, 2)).toBe(false);
   });
 });

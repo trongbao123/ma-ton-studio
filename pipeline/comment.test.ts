@@ -47,6 +47,32 @@ describe("ctaComment", () => {
   });
 });
 
+describe("ctaComment cho kênh lịch sử (phim tài liệu, không dùng câu chuyện đời)", () => {
+  const historyBase = { ...base, cadence: "video mới mỗi 3 ngày", history: true };
+
+  it("hỏi người xem muốn xem tiếp sự kiện/nhân vật nào — không nói 'câu chuyện'/'chạm lòng'", () => {
+    const t = ctaComment(historyBase);
+    expect(t.toLowerCase()).toContain("sự kiện hay nhân vật lịch sử");
+    expect(t.toLowerCase()).not.toContain("câu chuyện");
+    expect(t.toLowerCase()).not.toContain("chạm lòng");
+    expect(t.toLowerCase()).not.toContain("gặp chuyện giống vậy");
+  });
+
+  it("vẫn mời thích/chia sẻ/đăng ký và dùng đúng nhịp đăng của hồ sơ kênh", () => {
+    const t = ctaComment(historyBase).toLowerCase();
+    expect(t).toContain("thích");
+    expect(t).toContain("chia sẻ");
+    expect(t).toContain("đăng ký");
+    expect(t).toContain("video mới mỗi 3 ngày");
+  });
+
+  it("bản Short lịch sử cũng tránh câu 'câu chuyện'/'chạm lòng' của chuyện đời", () => {
+    const t = ctaComment({ ...historyBase, short: true }).toLowerCase();
+    expect(t).not.toContain("câu chuyện");
+    expect(t).not.toContain("chạm lòng");
+  });
+});
+
 describe("ctaComment cho Short", () => {
   it("bản Short ngắn hơn bản video dài — người lướt Shorts không đọc đoạn dài", () => {
     const long = ctaComment(base);
