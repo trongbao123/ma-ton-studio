@@ -1,0 +1,32 @@
+name: setup-vieneu
+description: >
+  Cài VieNeu-TTS bản CPU (ONNX, không cần torch) vào ~/.vieneu và cache cả gói lẫn model HuggingFace (~800MB) để lượt sau
+  khỏi tải lại. Cài lỗi thì không chặn job: pipeline tự quay về ivoi/Gemini (tts-vieneu.ts → VieneuUnavailableError).
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with: { python-version: "3.12" }
+    - id: cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.vieneu
+          ~/.cache/huggingface/hub
+        key: vieneu-${{ runner.os }}-py3.12-3.8.5
+    - if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      continue-on-error: true
+      run: |
+        python -m venv ~/.vieneu
+        ~/.vieneu/bin/pip install -q vieneu==3.8.5
+        # Tải model ngay (vào cache), lượt dựng đầu khỏi chờ giữa chừng.
+        ~/.vieneu/bin/python -c "from vieneu import Vieneu; Vieneu(device='cpu')"
+    - shell: bash
+      run: |
+        if [ -x ~/.vieneu/bin/python ]; then
+          echo "VIENEU_PYTHON=$HOME/.vieneu/bin/python" >> "$GITHUB_ENV"
+          echo "VIENEU_THREADS=$(nproc)" >> "$GITHUB_ENV"
+        else
+          echo "::warning::Không cài được VieNeu — video sẽ đọc bằng ivoi/Gemini"
+        fi
