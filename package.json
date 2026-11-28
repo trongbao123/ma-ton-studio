@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
-    "db:migrate-neon": "node scripts/migrate-neon.mjs"
+    "db:migrate-neon": "tsx pipeline/migrate-neon.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.6.0",

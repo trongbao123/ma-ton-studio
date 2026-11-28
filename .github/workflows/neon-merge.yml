@@ -1,0 +1,43 @@
+name: neon-merge
+# Gộp dữ liệu Neon cũ vào Supabase (pipeline/migrate-neon.ts) — KHÔNG xoá, KHÔNG ghi đè. Bấm tay khi neon-watch báo Neon mở lại:
+# chạy "dry" trước (in kế hoạch rồi huỷ transaction), ổn thì chạy "run". "selftest" = thử trên 2 Postgres rỗng, không đụng DB thật.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "selftest = thử trên DB giả · dry = chạy thử rồi huỷ · run = gộp thật"
+        required: true
+        default: dry
+        type: choice
+        options: [selftest, dry, run]
+permissions:
+  contents: read
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      neon:
+        image: postgres:17
+        env: { POSTGRES_PASSWORD: postgres }
+        ports: ["5433:5432"]
+        options: --health-cmd pg_isready --health-interval 5s --health-retries 10
+      supabase:
+        image: postgres:17
+        env: { POSTGRES_PASSWORD: postgres }
+        ports: ["5434:5432"]
+        options: --health-cmd pg_isready --health-interval 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - if: inputs.mode == 'selftest'
+        run: pnpm exec tsx pipeline/neon-merge-selftest.ts
+      - if: inputs.mode != 'selftest'
+        run: pnpm exec tsx pipeline/migrate-neon.ts $MODE_FLAG
+        env:
+          MODE_FLAG: ${{ inputs.mode == 'run' && '' || '--dry' }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
